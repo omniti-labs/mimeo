@@ -1,0 +1,46 @@
+{
+    "name": "mimeo",
+    "abstract": "Extension for specialized replication between PostgreSQL instances",
+    "version": "0.1.0",
+    "maintainer": [ 
+        "Keith Fiske <keith@omniti.com>"
+    ],
+    "license": "postgresql",
+    "generated_by": "Keith Fiske",
+    "release_status": "testing",
+    "prereqs": {
+        "runtime": {
+            "requires": {
+                "PostgreSQL": "9.1.0",
+                "dblink": "1.0.0",
+                "pg_jobmon": "0.1.0"
+            }
+        }
+    },
+    "provides": {
+        "mimeo": {
+            "file": "sql/mimeo.sql",
+            "docfile": "doc/mimeo.md",
+            "version": "0.1.0",
+            "abstract": "Extension for specialized replication between PostgreSQL instances"
+        }
+    },
+    "resources": {
+        "bugtracker": {
+            "web": "https://github.com/keithf4/mimeo/issues"
+        },
+        "repository": {
+            "url": "git://github.com/keithf4/mimeo.git" ,
+            "web": "https://github.com/keithf4/mimeo",
+            "type": "git"
+        }
+    },    
+    "meta-spec": {
+      "version": "1.0.0",
+      "url": "http://pgxn.org/meta/spec.txt"
+    },
+    "tags": [
+        "replication",
+        "materialized view",
+    ]
+}
