@@ -67,7 +67,7 @@ $$;
  *  refresh_snap(p_destination text, p_debug boolean) RETURNS void
  *
  */
-CREATE FUNCTION refresh_snap(p_destination text, p_debug boolean) RETURNS void
+CREATE OR REPLACE FUNCTION refresh_snap(p_destination text, p_debug boolean) RETURNS void
     LANGUAGE plpgsql
     AS $$
 declare
@@ -114,14 +114,13 @@ PERFORM pg_advisory_lock(hashtext('refresh_snap'), hashtext(v_job_name));
 
 SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
 SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
-EXECUTE 'SELECT set_config(''search_path'', '''||v_dblink_schema||', '||v_jobmon_schema||', @extschema@'', ''false'')';
 
-SELECT INTO v_job_id add_job(v_job_name);
-PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
+EXECUTE 'SELECT '||v_jobmon_schema||'.add_job('||quote_literal(v_job_name)||')' INTO v_job_id;
+PERFORM @extschema@.gdb(p_debug,'Job ID: '||v_job_id::text);
 
-SELECT INTO v_step_id add_step(v_job_id,'Grabbing Mapping, Building SQL');
+EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Grabbing Mapping, Building SQL'')' INTO v_step_id;
 
-SELECT source_table, dest_table, dblink INTO v_source_table, v_dest_table, v_dblink FROM refresh_config
+SELECT source_table, dest_table, dblink INTO v_source_table, v_dest_table, v_dblink FROM @extschema@.refresh_config
 WHERE dest_table = p_destination; 
 IF NOT FOUND THEN
    RAISE EXCEPTION 'ERROR: This table is not set up for snapshot replication: %',v_job_name; 
@@ -142,23 +141,23 @@ SELECT INTO v_exists strpos(v_view_definition, 'snap1');
 
 v_refresh_snap := v_dest_table||v_snap;
 
-PERFORM gdb(p_debug,'v_refresh_snap: '||v_refresh_snap::text);
+PERFORM @extschema@.gdb(p_debug,'v_refresh_snap: '||v_refresh_snap::text);
 
 -- init sql statements 
 
 v_remote_sql := 'SELECT array_to_string(array_agg(attname),'','') as cols, array_to_string(array_agg(attname||'' ''||atttypid::regtype::text),'','') as cols_n_types FROM pg_attribute WHERE attnum > 0 AND attisdropped is false AND attrelid = ' || quote_literal(v_source_table) || '::regclass';
-v_remote_sql := 'SELECT cols, cols_n_types FROM '|| v_dblink_schema ||'.dblink(auth(' || v_dblink || '), ' || quote_literal(v_remote_sql) || ') t (cols text, cols_n_types text)';
-perform gdb(p_debug,'v_remote_sql: '||v_remote_sql);
+v_remote_sql := 'SELECT cols, cols_n_types FROM '|| v_dblink_schema ||'.dblink(@extschema@.auth(' || v_dblink || '), ' || quote_literal(v_remote_sql) || ') t (cols text, cols_n_types text)';
+perform @extschema@.gdb(p_debug,'v_remote_sql: '||v_remote_sql);
 EXECUTE v_remote_sql INTO v_cols, v_cols_n_types;  
-perform gdb(p_debug,'v_cols: '||v_cols);
-perform gdb(p_debug,'v_cols_n_types: '||v_cols_n_types);
+perform @extschema@.gdb(p_debug,'v_cols: '||v_cols);
+perform @extschema@.gdb(p_debug,'v_cols_n_types: '||v_cols_n_types);
 
 v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table;
-v_insert_sql := 'INSERT INTO ' || v_refresh_snap || ' SELECT '||v_cols||' FROM '|| v_dblink_schema ||'.dblink(auth('||v_dblink||'),'||quote_literal(v_remote_sql)||') t ('||v_cols_n_types||')';
+v_insert_sql := 'INSERT INTO ' || v_refresh_snap || ' SELECT '||v_cols||' FROM '|| v_dblink_schema ||'.dblink(@extschema@.auth('||v_dblink||'),'||quote_literal(v_remote_sql)||') t ('||v_cols_n_types||')';
 
-PERFORM update_step(v_job_id, v_step_id, 'OK','Grabbing rows from source table');
+EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Grabbing rows from source table'')';
 
-SELECT INTO v_step_id add_step(v_job_id,'Truncate non-active snap table');
+EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Truncate non-active snap table'')' INTO v_step_id;
 
 -- Create snap table if it doesn't exist
 SELECT string_to_array(v_refresh_snap, '.') AS oparts INTO v_parts;
@@ -167,10 +166,10 @@ SELECT INTO v_table_exists count(1) FROM pg_tables
            tablename = v_parts.oparts[2];
 IF v_table_exists = 0 THEN
 
-    perform gdb(p_debug,'Snap table does not exist. Creating... ');
+    perform @extschema@.gdb(p_debug,'Snap table does not exist. Creating... ');
     
     v_create_sql := 'CREATE TABLE ' || v_refresh_snap || ' (' || v_cols_n_types || ')';
-    perform gdb(p_debug,'v_create_sql: '||v_create_sql::text);
+    perform @extschema@.gdb(p_debug,'v_create_sql: '||v_create_sql::text);
     EXECUTE v_create_sql;
 ELSE 
 
@@ -178,7 +177,7 @@ ELSE
         snap tables if columns change (add, drop type change)  */  
     v_local_sql := 'SELECT array_agg(attname||'' ''||atttypid::regtype::text) as cols_n_types FROM pg_attribute WHERE attnum > 0 AND attisdropped is false AND attrelid = ' || quote_literal(v_refresh_snap) || '::regclass'; 
         
-    perform gdb(p_debug,'v_local_sql: '||v_local_sql::text);
+    perform @extschema@.gdb(p_debug,'v_local_sql: '||v_local_sql::text);
 
     EXECUTE v_local_sql INTO v_lcols_array;
     SELECT string_to_array(v_cols_n_types, ',') AS cols INTO v_rcols_array;
@@ -198,40 +197,40 @@ ELSE
         EXECUTE 'DROP TABLE ' || v_refresh_snap;
         EXECUTE 'DROP VIEW ' || v_dest_table;
         v_create_sql := 'CREATE TABLE ' || v_refresh_snap || ' (' || v_cols_n_types || ')';
-        perform gdb(p_debug,'v_create_sql: '||v_create_sql::text);
+        perform @extschema@.gdb(p_debug,'v_create_sql: '||v_create_sql::text);
         EXECUTE v_create_sql;
-        SELECT INTO v_step_id add_step(v_job_id,'Source table structure changed.');
-        PERFORM update_step(v_job_id, v_step_id, 'OK','Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc');
-        PERFORM gdb(p_debug,'Source table structure changed. Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc)');
+        EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Source table structure changed.'')' INTO v_step_id;
+        EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc'')';
+        PERFORM @extschema@.gdb(p_debug,'Source table structure changed. Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc)');
     END IF;
     -- truncate non-active snap table
     EXECUTE 'TRUNCATE TABLE ' || v_refresh_snap;
 
-PERFORM update_step(v_job_id, v_step_id, 'OK','Done');
+EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Done'')';
 END IF;
 -- populating snap table
-SELECT INTO v_step_id add_step(v_job_id,'Inserting records into local table');
-    PERFORM gdb(p_debug,'Inserting rows... '||v_insert_sql);
+EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Inserting records into local table'')' INTO v_step_id;
+    PERFORM @extschema@.gdb(p_debug,'Inserting rows... '||v_insert_sql);
     EXECUTE v_insert_sql; 
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
-PERFORM update_step(v_job_id, v_step_id, 'OK','Inserted '||v_rowcount||' records');
+EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Inserted '||v_rowcount||' records'')';
 
 IF v_rowcount IS NOT NULL THEN
      EXECUTE 'ANALYZE ' ||v_refresh_snap;
 
-    SET statement_timeout='30 min';
+    set statement_timeout='30 min';
     
     -- swap view
-    SELECT INTO v_step_id add_step(v_job_id,'Swap view :'|| v_dest_table);
+    EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Swap view :'|| v_dest_table||''')' INTO v_step_id;
          EXECUTE 'CREATE OR REPLACE VIEW '||v_dest_table||' AS SELECT * FROM '||v_refresh_snap;
-    PERFORM update_step(v_job_id, v_step_id, 'OK','View Swapped');
+    EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''View Swapped'')';
 
-    SELECT INTO v_step_id add_step(v_job_id,'Updating last value');
-    UPDATE refresh_config set last_value = now() WHERE dest_table = p_destination;  
+    EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Updating last value'')' INTO v_step_id;
+    UPDATE @extschema@.refresh_config set last_value = now() WHERE dest_table = p_destination;  
 
-    PERFORM update_step(v_job_id, v_step_id, 'OK','Done');
+    EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Done'')';
 
-    PERFORM close_job(v_job_id);
+    EXECUTE 'SELECT '||v_jobmon_schema||'.close_job('||v_job_id||')';
 ELSE
     RAISE EXCEPTION 'No rows found in source table';
 END IF;
@@ -240,13 +239,13 @@ PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
 
 EXCEPTION
     WHEN RAISE_EXCEPTION THEN
-        PERFORM update_step(v_job_id, v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
-        PERFORM fail_job(v_job_id);
+        EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''BAD'', ''ERROR: '''||coalesce(SQLERRM,'unknown')||''')';
+        EXECUTE 'SELECT '||v_jobmon_schema||'.fail_job('||v_job_id||')';
         PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;
     WHEN others THEN
-        PERFORM update_step(v_job_id, v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
-        PERFORM fail_job(v_job_id);
+        EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''BAD'', ''ERROR: '''||coalesce(SQLERRM,'unknown')||''')';
+        EXECUTE 'SELECT '||v_jobmon_schema||'.fail_job('||v_job_id||')';
         PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;
 END
@@ -286,21 +285,22 @@ v_create_sql     text;
 v_delete_sql     text;
 
 BEGIN
-    IF p_debug IS DISTINCT FROM true THEN
-        PERFORM set_config( 'client_min_messages', 'warning', true );
-    END IF;
 
-v_job_name := 'Refresh Inserters: '||p_destination;
+IF p_debug IS DISTINCT FROM true THEN
+    PERFORM set_config( 'client_min_messages', 'warning', true );
+END IF;
+
+v_job_name := 'Refresh Incremental: '||p_destination;
 
 PERFORM pg_advisory_lock(hashtext('refresh_incremental'), hashtext(v_job_name));
-
---LOGGER--SELECT v_jobmon_schema.add_job(v_job_name) INTO v_job_id;
---LOGGER--perform @extschema@.gdb(p_debug,'Job ID: '||v_job_id::text);
 
 SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
 SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
 
---LOGGER--SELECT v_jobmon_schema.add_step(v_job_id,'Grabbing Boundries, Building SQL') INTO v_step_id;
+EXECUTE 'SELECT '||v_jobmon_schema||'.add_job('||quote_literal(v_job_name)||')' INTO v_job_id;
+PERFORM @extschema@.gdb(p_debug,'Job ID: '||v_job_id::text);
+
+EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Grabbing Boundries, Building SQL'')' INTO v_step_id;
 
 SELECT source_table, dest_table, 'tmp_'||replace(dest_table,'.','_'), dblink, control_field, last_value, now() - boundary::interval, filter FROM @extschema@.refresh_config WHERE dest_table = p_destination INTO v_source_table, v_dest_table, v_tmp_table, v_dblink, v_control_field, v_last_value, v_boundary, v_filter; 
 IF NOT FOUND THEN
@@ -327,31 +327,31 @@ v_create_sql := 'CREATE TEMP TABLE '||v_tmp_table||' AS SELECT '||v_cols||' FROM
 
 v_insert_sql := 'INSERT INTO '||v_dest_table||'('||v_cols||') SELECT '||v_cols||' FROM '||v_tmp_table; 
 
---LOGGER--PERFORM v_jobmon_schema.update_step(v_job_id, v_step_id, 'OK','Grabbing rows from '||v_last_value::text||' to '||v_boundary::text);
+EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Grabbing rows from '||v_last_value::text||' to '||v_boundary::text||''')';
 
 -- create temp from remote
---LOGGER--SELECT v_jobmon_schema.add_step(v_job_id,'Creating temp table ('||v_tmp_table||') from remote table') INTO v_step_id;
-    perform @extschema@.gdb(p_debug,v_create_sql);
-    execute v_create_sql; 
+EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Creating temp table ('||v_tmp_table||') from remote table'')' INTO v_step_id;
+    PERFORM @extschema@.gdb(p_debug,v_create_sql);
+    EXECUTE v_create_sql; 
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
---LOGGER--PERFORM v_jobmon_schema.update_step(v_job_id, v_step_id, 'OK','Table contains '||v_rowcount||' records');
+    EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Table contains '||v_rowcount||' records'')';
     PERFORM @extschema@.gdb(p_debug, v_rowcount || ' rows added to temp table');
 
 -- insert
---LOGGER--SELECT v_jobmon_schema.add_step(v_job_id,'Inserting new records into local table') INTO v_step_id;
-    perform @extschema@.gdb(p_debug,v_insert_sql);
-    execute v_insert_sql; 
+EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Inserting new records into local table'')' INTO v_step_id;
+    PERFORM @extschema@.gdb(p_debug,v_insert_sql);
+    EXECUTE v_insert_sql; 
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
---LOGGER--PERFORM v_jobmon_schema.update_step(v_job_id, v_step_id, 'OK','Inserted '||v_rowcount||' records');
+    EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Inserted '||v_rowcount||' records'')';
     PERFORM @extschema@.gdb(p_debug, v_rowcount || ' rows added to ' || v_dest_table);
 
 -- update boundries
---LOGGER--SELECT v_jobmon_schema.add_step(v_job_id,'Updating boundary values') INTO v_step_id;
+EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Updating boundary values'')' INTO v_step_id;
 UPDATE @extschema@.refresh_config set last_value = v_boundary WHERE dest_table = p_destination;  
 
---LOGGER--PERFORM v_jobmon_schema.update_step(v_job_id, v_step_id, 'OK','Done');
+EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Done'')';
 
---LOGGER--PERFORM v_jobmon_schema.close_job(v_job_id);
+EXECUTE 'SELECT '||v_jobmon_schema||'.close_job('||v_job_id||')';
 
 EXECUTE 'DROP TABLE IF EXISTS ' || v_tmp_table;
 
@@ -359,10 +359,10 @@ PERFORM pg_advisory_unlock(hashtext('refresh_incremental'), hashtext(v_job_name)
 
 EXCEPTION
     WHEN others THEN
---LOGGER--        PERFORM v_jobmon_schema.update_step(v_job_id, v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
---LOGGER--        PERFORM v_jobmon_schema.fail_job(v_job_id);
-    RAISE EXCEPTION '%', SQLERRM;
+    EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''BAD'', ''ERROR: '''||coalesce(SQLERRM,'unknown')||''')';
+    EXECUTE 'SELECT '||v_jobmon_schema||'.fail_job('||v_job_id||')';
     PERFORM pg_advisory_unlock(hashtext('refresh_incremental'), hashtext(v_job_name));
+    RAISE EXCEPTION '%', SQLERRM;    
 END
 $$;
 
@@ -412,15 +412,16 @@ BEGIN
     END IF;
 
 v_job_name := 'Refresh DML: '||p_destination;
---LOGGER--SELECT v_jobmon_schema.add_job(v_job_name) INTO v_job_id;
---LOGGER--perform @extschema@.gdb(p_debug,'Job ID: '||v_job_id::text);
 
 PERFORM pg_advisory_lock(hashtext('refresh_dml'), hashtext(v_job_name));
 
 SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
 SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
 
---LOGGER--SELECT v_jobmon_schema.add_step(v_job_id,'Grabbing Boundries, Building SQL') INTO v_step_id;
+EXECUTE 'SELECT '||v_jobmon_schema||'.add_job('||quote_literal(v_job_name)||')' INTO v_job_id;
+PERFORM @extschema@.gdb(p_debug,'Job ID: '||v_job_id::text);
+
+EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Grabbing Boundries, Building SQL'')' INTO v_step_id;
 
 SELECT source_table, dest_table, 'tmp_'||replace(dest_table,'.','_'), dblink, control_field, pk_field, pk_type, filter FROM @extschema@.refresh_config 
 WHERE dest_table = p_destination INTO v_source_table, v_dest_table, v_tmp_table, v_dblink, v_control_field, v_pk_field, v_pk_type, v_filter; 
@@ -462,56 +463,59 @@ v_delete_sql := 'DELETE FROM '||v_dest_table||' USING '||v_tmp_table||'_queue t 
 
 v_insert_sql := 'INSERT INTO '||v_dest_table||'('||v_cols||') SELECT '||v_cols||' FROM '||v_tmp_table||'_full'; 
 
---LOGGER--PERFORM v_jobmon_schema.update_step(v_job_id, v_step_id, 'OK','Remote table is '||v_source_table);
+EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Remote table is '||v_source_table||''')';
 
 -- update remote entries
---LOGGER--SELECT v_jobmon_schema.add_step(v_job_id,'Updateing remote trigger table') INTO v_step_id;
+EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Updating remote trigger table'')' INTO v_step_id;
     perform @extschema@.gdb(p_debug,v_trigger_update);
     execute v_trigger_update into v_exec_status;    
---LOGGER--PERFORM v_jobmon_schema.update_step(v_job_id, v_step_id, 'OK','Result was '||v_exec_status);
+EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Result was '||v_exec_status||''')';
 
 -- create temp table that contains queue of primary key values that changed 
---LOGGER--SELECT v_jobmon_schema.add_step(v_job_id,'Create temp table from remote _q table') INTO v_step_id;
-    perform @extschema@.gdb(p_debug,v_create_q_sql);
+EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Create temp table from remote _q table'')' INTO v_step_id;
+    PERFORM @extschema@.gdb(p_debug,v_create_q_sql);
     execute v_create_q_sql;  
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
---LOGGER--PERFORM v_jobmon_schema.update_step(v_job_id, v_step_id, 'OK','Table contains '||v_rowcount||' records');
+EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Table contains '||v_rowcount||' records'')';
 
 -- create temp table for insertion 
---LOGGER--SELECT v_jobmon_schema.add_step(v_job_id,'Create temp table from remote full table') INTO v_step_id;
+EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Create temp table from remote full table'')' INTO v_step_id;
     perform @extschema@.gdb(p_debug,v_create_f_sql);
     execute v_create_f_sql;  
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
---LOGGER--PERFORM v_jobmon_schema.update_step(v_job_id, v_step_id, 'OK','Table contains '||v_rowcount||' records');
+    PERFORM @extschema@.gdb(p_debug,'Temp table row count '||v_rowcount::text);
+EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Table contains '||v_rowcount||' records'')';
 
 -- remove records from local table 
---LOGGER--SELECT v_jobmon_schema.add_step(v_job_id,'Deleting records from local table') INTO v_step_id;
+EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Deleting records from local table'')' INTO v_step_id;
     perform @extschema@.gdb(p_debug,v_delete_sql);
     execute v_delete_sql; 
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
---LOGGER--PERFORM v_jobmon_schema.update_step(v_job_id, v_step_id, 'OK','Removed '||v_rowcount||' records');
+    PERFORM @extschema@.gdb(p_debug,'Rows removed from local table before applying changes: '||v_rowcount::text);
+EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Removed '||v_rowcount||' records'')';
 
 -- insert records to local table
---LOGGER--SELECT v_jobmon_schema.add_step(v_job_id,'Inserting new records into local table') INTO v_step_id;
+EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Inserting new records into local table'')' INTO v_step_id;
     perform @extschema@.gdb(p_debug,v_insert_sql);
     execute v_insert_sql;
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
---LOGGER--PERFORM v_jobmon_schema.update_step(v_job_id, v_step_id, 'OK','Inserted '||v_rowcount||' records');
+    PERFORM @extschema@.gdb(p_debug,'Rows inserted: '||v_rowcount::text);
+EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Inserted '||v_rowcount||' records'')';
 
 -- clean out rows from txn table
---LOGGER--SELECT v_jobmon_schema.add_step(v_job_id,'Cleaning out rows from txn table') INTO v_step_id;
+EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Cleaning out rows from txn table'')' INTO v_step_id;
     perform @extschema@.gdb(p_debug,v_trigger_delete);
     execute v_trigger_delete into v_exec_status;
---LOGGER--PERFORM v_jobmon_schema.update_step(v_job_id, v_step_id, 'OK','Result was '||v_exec_status);
+EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Result was '||v_exec_status||''')';
 
 -- update activity status
---LOGGER--SELECT v_jobmon_schema.add_step(v_job_id,'Cleaning out rows from txn table') INTO v_step_id;
+EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Updating last_value in config table'')' INTO v_step_id;
     v_last_value_sql := 'UPDATE @extschema@.refresh_config SET last_value = '|| quote_literal(current_timestamp::timestamp) ||' WHERE dest_table = ' ||quote_literal(p_destination); 
     perform @extschema@.gdb(p_debug,v_last_value_sql);
     execute v_last_value_sql; 
---LOGGER--PERFORM v_jobmon_schema.update_step(v_job_id, v_step_id, 'OK','Last Value was '||current_timestamp);
+EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Last Value was '||current_timestamp||''')';
 
---LOGGER--PERFORM v_jobmon_schema.close_job(v_job_id);
+EXECUTE 'SELECT '||v_jobmon_schema||'.close_job('||v_job_id||')';
 
 EXECUTE 'DROP TABLE IF EXISTS '||v_tmp_table||'_queue';
 EXECUTE 'DROP TABLE IF EXISTS '||v_tmp_table||'_full';
@@ -520,10 +524,10 @@ PERFORM pg_advisory_unlock(hashtext('refresh_dml'), hashtext(v_job_name));
 
 EXCEPTION
     WHEN others THEN
---LOGGER--PERFORM v_jobmon_schema.update_step(v_job_id, v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
---LOGGER--PERFORM v_jobmon_schema.fail_job(v_job_id);
-        RAISE EXCEPTION '%', SQLERRM;
+        EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''BAD'', ''ERROR: '''||coalesce(SQLERRM,'unknown')||''')';
+        EXECUTE 'SELECT '||v_jobmon_schema||'.fail_job('||v_job_id||')';
         PERFORM pg_advisory_unlock(hashtext('refresh_dml'), hashtext(v_job_name));
+        RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
 
