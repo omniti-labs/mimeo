@@ -67,7 +67,7 @@ $$;
  *  refresh_snap(p_destination text, p_debug boolean) RETURNS void
  *
  */
-CREATE OR REPLACE FUNCTION refresh_snap(p_destination text, p_debug boolean) RETURNS void
+CREATE FUNCTION refresh_snap(p_destination text, p_debug boolean) RETURNS void
     LANGUAGE plpgsql
     AS $$
 declare
@@ -81,7 +81,8 @@ v_dest_table        text;
 v_dblink            text;
 v_dblink_schema     text;
 v_jobmon_schema     text;
---v_dblink_sql        text;
+v_old_search_path   text;
+
 v_cols              text;
 v_cols_n_types      text;
 v_rcols_array       text[];
@@ -115,12 +116,19 @@ PERFORM pg_advisory_lock(hashtext('refresh_snap'), hashtext(v_job_name));
 SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
 SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
 
-EXECUTE 'SELECT '||v_jobmon_schema||'.add_job('||quote_literal(v_job_name)||')' INTO v_job_id;
-PERFORM @extschema@.gdb(p_debug,'Job ID: '||v_job_id::text);
+-- Set custom search path to allow easier calls to other functions, especially job logging
+SELECT current_setting('search_path') INTO v_old_search_path;
+--RAISE NOTICE 'search path before add job: %', v_old_search_path;
+EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''true'')';
+--SELECT current_setting('search_path') INTO v_sp;
+--RAISE NOTICE 'search path after add job: %', v_sp;
 
-EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Grabbing Mapping, Building SQL'')' INTO v_step_id;
+SELECT add_job(quote_literal(v_job_name)) INTO v_job_id;
+PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
 
-SELECT source_table, dest_table, dblink INTO v_source_table, v_dest_table, v_dblink FROM @extschema@.refresh_config
+SELECT add_step(v_job_id,'Grabbing Mapping, Building SQL') INTO v_step_id;
+
+SELECT source_table, dest_table, dblink INTO v_source_table, v_dest_table, v_dblink FROM refresh_config
 WHERE dest_table = p_destination; 
 IF NOT FOUND THEN
    RAISE EXCEPTION 'ERROR: This table is not set up for snapshot replication: %',v_job_name; 
@@ -141,23 +149,23 @@ SELECT INTO v_exists strpos(v_view_definition, 'snap1');
 
 v_refresh_snap := v_dest_table||v_snap;
 
-PERFORM @extschema@.gdb(p_debug,'v_refresh_snap: '||v_refresh_snap::text);
+PERFORM gdb(p_debug,'v_refresh_snap: '||v_refresh_snap::text);
 
 -- init sql statements 
 
 v_remote_sql := 'SELECT array_to_string(array_agg(attname),'','') as cols, array_to_string(array_agg(attname||'' ''||atttypid::regtype::text),'','') as cols_n_types FROM pg_attribute WHERE attnum > 0 AND attisdropped is false AND attrelid = ' || quote_literal(v_source_table) || '::regclass';
-v_remote_sql := 'SELECT cols, cols_n_types FROM '|| v_dblink_schema ||'.dblink(@extschema@.auth(' || v_dblink || '), ' || quote_literal(v_remote_sql) || ') t (cols text, cols_n_types text)';
-perform @extschema@.gdb(p_debug,'v_remote_sql: '||v_remote_sql);
+v_remote_sql := 'SELECT cols, cols_n_types FROM dblink(auth(' || v_dblink || '), ' || quote_literal(v_remote_sql) || ') t (cols text, cols_n_types text)';
+perform gdb(p_debug,'v_remote_sql: '||v_remote_sql);
 EXECUTE v_remote_sql INTO v_cols, v_cols_n_types;  
-perform @extschema@.gdb(p_debug,'v_cols: '||v_cols);
-perform @extschema@.gdb(p_debug,'v_cols_n_types: '||v_cols_n_types);
+perform gdb(p_debug,'v_cols: '||v_cols);
+perform gdb(p_debug,'v_cols_n_types: '||v_cols_n_types);
 
 v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table;
-v_insert_sql := 'INSERT INTO ' || v_refresh_snap || ' SELECT '||v_cols||' FROM '|| v_dblink_schema ||'.dblink(@extschema@.auth('||v_dblink||'),'||quote_literal(v_remote_sql)||') t ('||v_cols_n_types||')';
+v_insert_sql := 'INSERT INTO ' || v_refresh_snap || ' SELECT '||v_cols||' FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_sql)||') t ('||v_cols_n_types||')';
 
-EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Grabbing rows from source table'')';
+PERFORM update_step(v_job_id, v_step_id, 'OK','Grabbing rows from source table');
 
-EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Truncate non-active snap table'')' INTO v_step_id;
+SELECT add_step(v_job_id,'Truncate non-active snap table') INTO v_step_id;
 
 -- Create snap table if it doesn't exist
 SELECT string_to_array(v_refresh_snap, '.') AS oparts INTO v_parts;
@@ -166,18 +174,18 @@ SELECT INTO v_table_exists count(1) FROM pg_tables
            tablename = v_parts.oparts[2];
 IF v_table_exists = 0 THEN
 
-    perform @extschema@.gdb(p_debug,'Snap table does not exist. Creating... ');
+    PERFORM gdb(p_debug,'Snap table does not exist. Creating... ');
     
     v_create_sql := 'CREATE TABLE ' || v_refresh_snap || ' (' || v_cols_n_types || ')';
-    perform @extschema@.gdb(p_debug,'v_create_sql: '||v_create_sql::text);
+    perform gdb(p_debug,'v_create_sql: '||v_create_sql::text);
     EXECUTE v_create_sql;
 ELSE 
 
-/* Check local column definitions against remote and recreate table if different. allows automatic recreation of
+/* Check local column definitions against remote and recreate table if different. Allows automatic recreation of
         snap tables if columns change (add, drop type change)  */  
     v_local_sql := 'SELECT array_agg(attname||'' ''||atttypid::regtype::text) as cols_n_types FROM pg_attribute WHERE attnum > 0 AND attisdropped is false AND attrelid = ' || quote_literal(v_refresh_snap) || '::regclass'; 
         
-    perform @extschema@.gdb(p_debug,'v_local_sql: '||v_local_sql::text);
+    PERFORM gdb(p_debug,'v_local_sql: '||v_local_sql::text);
 
     EXECUTE v_local_sql INTO v_lcols_array;
     SELECT string_to_array(v_cols_n_types, ',') AS cols INTO v_rcols_array;
@@ -197,59 +205,60 @@ ELSE
         EXECUTE 'DROP TABLE ' || v_refresh_snap;
         EXECUTE 'DROP VIEW ' || v_dest_table;
         v_create_sql := 'CREATE TABLE ' || v_refresh_snap || ' (' || v_cols_n_types || ')';
-        perform @extschema@.gdb(p_debug,'v_create_sql: '||v_create_sql::text);
+        PERFORM gdb(p_debug,'v_create_sql: '||v_create_sql::text);
         EXECUTE v_create_sql;
-        EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Source table structure changed.'')' INTO v_step_id;
-        EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc'')';
-        PERFORM @extschema@.gdb(p_debug,'Source table structure changed. Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc)');
+        SELECT add_step(v_job_id,'Source table structure changed.') INTO v_step_id;
+        PERFORM update_step(v_job_id, v_step_id, 'OK','Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc');
+        PERFORM gdb(p_debug,'Source table structure changed. Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc)');
     END IF;
     -- truncate non-active snap table
     EXECUTE 'TRUNCATE TABLE ' || v_refresh_snap;
 
-EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Done'')';
+PERFORM update_step(v_job_id, v_step_id, 'OK','Done');
 END IF;
 -- populating snap table
-EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Inserting records into local table'')' INTO v_step_id;
-    PERFORM @extschema@.gdb(p_debug,'Inserting rows... '||v_insert_sql);
+SELECT add_step(v_job_id,'Inserting records into local table') INTO v_step_id;
+    PERFORM gdb(p_debug,'Inserting rows... '||v_insert_sql);
     EXECUTE v_insert_sql; 
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
-EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Inserted '||v_rowcount||' records'')';
+PERFORM update_step(v_job_id, v_step_id, 'OK','Inserted '||v_rowcount||' records');
 
 IF v_rowcount IS NOT NULL THEN
      EXECUTE 'ANALYZE ' ||v_refresh_snap;
 
-    set statement_timeout='30 min';
+    SET statement_timeout='30 min';
     
     -- swap view
-    EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Swap view :'|| v_dest_table||''')' INTO v_step_id;
-         EXECUTE 'CREATE OR REPLACE VIEW '||v_dest_table||' AS SELECT * FROM '||v_refresh_snap;
-    EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''View Swapped'')';
+    SELECT add_step(v_job_id,'Swap view to '||v_refresh_snap) INTO v_step_id;
+    PERFORM gdb(p_debug,'Swapping view to '||v_refresh_snap);
+    EXECUTE 'CREATE OR REPLACE VIEW '||v_dest_table||' AS SELECT * FROM '||v_refresh_snap;
+    PERFORM update_step(v_job_id, v_step_id, 'OK','View Swapped');
 
-    EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||',''Updating last value'')' INTO v_step_id;
-    UPDATE @extschema@.refresh_config set last_value = now() WHERE dest_table = p_destination;  
+    SELECT add_step(v_job_id,'Updating last value') INTO v_step_id;
+    UPDATE refresh_config set last_value = now() WHERE dest_table = p_destination;  
 
-    EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''OK'',''Done'')';
+    PERFORM update_step(v_job_id, v_step_id, 'OK','Done');
 
-    EXECUTE 'SELECT '||v_jobmon_schema||'.close_job('||v_job_id||')';
+    PERFORM close_job(v_job_id);
 ELSE
     RAISE EXCEPTION 'No rows found in source table';
 END IF;
 
+-- Ensure old search path is reset for the current session
+EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
+
 PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
 
 EXCEPTION
-    WHEN RAISE_EXCEPTION THEN
-        EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''BAD'', ''ERROR: '''||coalesce(SQLERRM,'unknown')||''')';
-        EXECUTE 'SELECT '||v_jobmon_schema||'.fail_job('||v_job_id||')';
-        PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
-        RAISE EXCEPTION '%', SQLERRM;
-    WHEN others THEN
+-- See if there's exception to handle for the timeout
+    WHEN OTHERS THEN
         EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_job_id||', '||v_step_id||', ''BAD'', ''ERROR: '''||coalesce(SQLERRM,'unknown')||''')';
         EXECUTE 'SELECT '||v_jobmon_schema||'.fail_job('||v_job_id||')';
         PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
+
 
 
 /*
