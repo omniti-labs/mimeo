@@ -2,17 +2,18 @@
 CREATE TABLE mviews (
     mv_name text NOT NULL,
     v_name text NOT NULL,
-    last_refresh timestamp with time zone
+    last_refresh timestamp with time zone,
+    CONSTRAINT mviews_mv_name_pkey PRIMARY KEY (mv_name);
 );
-CREATE UNIQUE INDEX mviews_pkey ON mviews USING btree (mv_name);
 
 
 CREATE TABLE dblink_mapping (
     data_source_id integer NOT NULL,
     data_source text NOT NULL,
-    user_name text NOT NULL,
-    auth text,
-    dbh_attr text
+    username text NOT NULL,
+    pwd text,
+    dbh_attr text,
+    CONSTRAINT dblink_mapping_data_source_id_pkey PRIMARY KEY (data_source_id)
 );
 
 CREATE SEQUENCE dblink_mapping_data_source_id_seq
@@ -22,23 +23,21 @@ CREATE SEQUENCE dblink_mapping_data_source_id_seq
     NO MAXVALUE
     CACHE 1;
 ALTER SEQUENCE dblink_mapping_data_source_id_seq OWNED BY dblink_mapping.data_source_id;
-CREATE UNIQUE INDEX dblink_mapping_pkey ON dblink_mapping USING btree (data_source_id);
 
 
 CREATE TABLE refresh_config (
     source_table text NOT NULL,
     dest_table text NOT NULL,
     dblink integer REFERENCES dblink_mapping(data_source_id) NOT NULL,
-    control_field text,
+    control text,
     last_value timestamp with time zone,
     boundary interval,
     pk_field text,
     pk_type text,
     filter text[],
-    condition text  
+    condition text,
+    CONSTRAINT refresh_config_dest_table_pkey PRIMARY KEY (dest_table)
 );
-ALTER TABLE ONLY refresh_config
-    ADD CONSTRAINT refresh_config_pkey PRIMARY KEY (dest_table);
     
 
 -- ########## mimeo function definitions ##########
@@ -49,7 +48,7 @@ ALTER TABLE ONLY refresh_config
 CREATE FUNCTION auth(integer) RETURNS text
     LANGUAGE sql
     AS $$
-    select data_source||' user='||user_name||' password='||auth from @extschema@.dblink_mapping where data_source_id = $1; 
+    select data_source||' user='||username||' password='||pwd from @extschema@.dblink_mapping where data_source_id = $1; 
 $$;
 
 
@@ -163,7 +162,7 @@ perform gdb(p_debug,'v_cols_n_types: '||v_cols_n_types);
 v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table;
 v_insert_sql := 'INSERT INTO ' || v_refresh_snap || ' SELECT '||v_cols||' FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_sql)||') t ('||v_cols_n_types||')';
 
-PERFORM update_step(v_job_id, v_step_id, 'OK','Grabbing rows from source table');
+PERFORM update_step(v_step_id, 'OK','Grabbing rows from source table');
 
 SELECT add_step(v_job_id,'Truncate non-active snap table') INTO v_step_id;
 
@@ -208,20 +207,20 @@ ELSE
         PERFORM gdb(p_debug,'v_create_sql: '||v_create_sql::text);
         EXECUTE v_create_sql;
         SELECT add_step(v_job_id,'Source table structure changed.') INTO v_step_id;
-        PERFORM update_step(v_job_id, v_step_id, 'OK','Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc');
+        PERFORM update_step(v_step_id, 'OK','Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc');
         PERFORM gdb(p_debug,'Source table structure changed. Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc)');
     END IF;
     -- truncate non-active snap table
     EXECUTE 'TRUNCATE TABLE ' || v_refresh_snap;
 
-PERFORM update_step(v_job_id, v_step_id, 'OK','Done');
+PERFORM update_step(v_step_id, 'OK','Done');
 END IF;
 -- populating snap table
 SELECT add_step(v_job_id,'Inserting records into local table') INTO v_step_id;
     PERFORM gdb(p_debug,'Inserting rows... '||v_insert_sql);
     EXECUTE v_insert_sql; 
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
-PERFORM update_step(v_job_id, v_step_id, 'OK','Inserted '||v_rowcount||' records');
+PERFORM update_step(v_step_id, 'OK','Inserted '||v_rowcount||' records');
 
 IF v_rowcount IS NOT NULL THEN
      EXECUTE 'ANALYZE ' ||v_refresh_snap;
@@ -232,12 +231,12 @@ IF v_rowcount IS NOT NULL THEN
     SELECT add_step(v_job_id,'Swap view to '||v_refresh_snap) INTO v_step_id;
     PERFORM gdb(p_debug,'Swapping view to '||v_refresh_snap);
     EXECUTE 'CREATE OR REPLACE VIEW '||v_dest_table||' AS SELECT * FROM '||v_refresh_snap;
-    PERFORM update_step(v_job_id, v_step_id, 'OK','View Swapped');
+    PERFORM update_step(v_step_id, 'OK','View Swapped');
 
     SELECT add_step(v_job_id,'Updating last value') INTO v_step_id;
     UPDATE refresh_config set last_value = now() WHERE dest_table = p_destination;  
 
-    PERFORM update_step(v_job_id, v_step_id, 'OK','Done');
+    PERFORM update_step(v_step_id, 'OK','Done');
 
     PERFORM close_job(v_job_id);
 ELSE
@@ -252,7 +251,7 @@ PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
 EXCEPTION
 -- See if there's exception to handle for the timeout
     WHEN OTHERS THEN
-        PERFORM update_step(v_job_id, v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
+        PERFORM update_step(v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
         PERFORM fail_job(v_job_id);
 
         -- Ensure old search path is reset for the current session
@@ -285,7 +284,7 @@ v_source_table   text;
 v_dest_table     text;
 v_tmp_table      text;
 v_dblink         text;
-v_control_field  text;
+v_control  text;
 v_last_value     timestamptz;
 v_boundary        timestamptz;
 v_pk_field       text;
@@ -320,7 +319,7 @@ PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
 
 SELECT add_step(v_job_id,'Grabbing Boundries, Building SQL') INTO v_step_id;
 
-SELECT source_table, dest_table, 'tmp_'||replace(dest_table,'.','_'), dblink, control_field, last_value, now() - boundary::interval, filter FROM @extschema@.refresh_config WHERE dest_table = p_destination INTO v_source_table, v_dest_table, v_tmp_table, v_dblink, v_control_field, v_last_value, v_boundary, v_filter; 
+SELECT source_table, dest_table, 'tmp_'||replace(dest_table,'.','_'), dblink, control, last_value, now() - boundary::interval, filter FROM refresh_config WHERE dest_table = p_destination INTO v_source_table, v_dest_table, v_tmp_table, v_dblink, v_control, v_last_value, v_boundary, v_filter; 
 IF NOT FOUND THEN
    RAISE EXCEPTION 'ERROR: no mapping found for %',v_job_name; 
 END IF;  
@@ -339,20 +338,20 @@ END IF;
 -- does >= and < to keep missing data from happening on rare edge case where a newly inserted row outside the transaction batch
 -- has the exact same timestamp as the previous batch's max timestamp
 -- Note that this means the destination table is always at least one row behind even when no new data is entered on the source.
-v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table||' WHERE '||v_control_field||' >= '||quote_literal(v_last_value)||' AND '||v_control_field||' < '||quote_literal(v_boundary);
+v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table||' WHERE '||v_control||' >= '||quote_literal(v_last_value)||' AND '||v_control||' < '||quote_literal(v_boundary);
 
 v_create_sql := 'CREATE TEMP TABLE '||v_tmp_table||' AS SELECT '||v_cols||' FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_sql)||') t ('||v_cols_n_types||')';
 
 v_insert_sql := 'INSERT INTO '||v_dest_table||'('||v_cols||') SELECT '||v_cols||' FROM '||v_tmp_table; 
 
-PERFORM update_step(v_job_id, v_step_id, 'OK','Grabbing rows from '||v_last_value::text||' to '||v_boundary::text);
+PERFORM update_step(v_step_id, 'OK','Grabbing rows from '||v_last_value::text||' to '||v_boundary::text);
 
 -- create temp from remote
 SELECT add_step(v_job_id,'Creating temp table ('||v_tmp_table||') from remote table') INTO v_step_id;
     PERFORM gdb(p_debug,v_create_sql);
     EXECUTE v_create_sql; 
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
-    PERFORM update_step(v_job_id, v_step_id, 'OK','Table contains '||v_rowcount||' records');
+    PERFORM update_step(v_step_id, 'OK','Table contains '||v_rowcount||' records');
     PERFORM gdb(p_debug, v_rowcount || ' rows added to temp table');
 
 -- insert
@@ -360,14 +359,14 @@ SELECT add_step(v_job_id,'Inserting new records into local table') INTO v_step_i
     PERFORM gdb(p_debug,v_insert_sql);
     EXECUTE v_insert_sql; 
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
-    PERFORM update_step(v_job_id, v_step_id, 'OK','Inserted '||v_rowcount||' records');
+    PERFORM update_step(v_step_id, 'OK','Inserted '||v_rowcount||' records');
     PERFORM gdb(p_debug, v_rowcount || ' rows added to ' || v_dest_table);
 
 -- update boundries
 SELECT add_step(v_job_id,'Updating boundary values') INTO v_step_id;
 UPDATE refresh_config set last_value = v_boundary WHERE dest_table = p_destination;  
 
-PERFORM update_step(v_job_id, v_step_id, 'OK','Done');
+PERFORM update_step(v_step_id, 'OK','Done');
 
 PERFORM close_job(v_job_id);
 
@@ -380,7 +379,7 @@ PERFORM pg_advisory_unlock(hashtext('refresh_incremental'), hashtext(v_job_name)
 
 EXCEPTION
     WHEN OTHERS THEN
-    PERFORM update_step(v_job_id, v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
+    PERFORM update_step(v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
     PERFORM fail_job(v_job_id);
 
     -- Ensure old search path is reset for the current session
@@ -412,7 +411,7 @@ v_source_table      text;
 v_dest_table        text;
 v_tmp_table         text;
 v_dblink            text;
-v_control_field     text;
+v_control     text;
 v_last_value_sql    text; 
 v_boundry           timestamptz;
 v_pk_field          text;
@@ -453,8 +452,8 @@ PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
 
 SELECT add_step(v_job_id,'Grabbing Boundries, Building SQL') INTO v_step_id;
 
-SELECT source_table, dest_table, 'tmp_'||replace(dest_table,'.','_'), dblink, control_field, pk_field, pk_type, filter FROM @extschema@.refresh_config 
-WHERE dest_table = p_destination INTO v_source_table, v_dest_table, v_tmp_table, v_dblink, v_control_field, v_pk_field, v_pk_type, v_filter; 
+SELECT source_table, dest_table, 'tmp_'||replace(dest_table,'.','_'), dblink, control, pk_field, pk_type, filter FROM @extschema@.refresh_config 
+WHERE dest_table = p_destination INTO v_source_table, v_dest_table, v_tmp_table, v_dblink, v_control, v_pk_field, v_pk_type, v_filter; 
 IF NOT FOUND THEN
    RAISE EXCEPTION 'ERROR: no mapping found for %',v_job_name; 
 END IF;  
@@ -475,11 +474,11 @@ END IF;
 
 -- init sql statements 
 
-v_trigger_update := 'SELECT dblink_exec(auth('||v_dblink||'),'||quote_literal('UPDATE '||v_control_field||' SET processed = true WHERE '||v_pk_field||' IN (SELECT '|| v_pk_field||' FROM '|| v_control_field ||' ORDER BY 1 LIMIT 100000)')||')';
+v_trigger_update := 'SELECT dblink_exec(auth('||v_dblink||'),'||quote_literal('UPDATE '||v_control||' SET processed = true WHERE '||v_pk_field||' IN (SELECT '|| v_pk_field||' FROM '|| v_control ||' ORDER BY 1 LIMIT 100000)')||')';
 
-v_trigger_delete := 'SELECT dblink_exec(auth('||v_dblink||'),'||quote_literal('DELETE FROM '||v_control_field||' WHERE processed = true')||')'; 
+v_trigger_delete := 'SELECT dblink_exec(auth('||v_dblink||'),'||quote_literal('DELETE FROM '||v_control||' WHERE processed = true')||')'; 
 
-v_remote_q_sql := 'SELECT DISTINCT '||v_pk_field||' FROM '||v_control_field||' WHERE processed = true';
+v_remote_q_sql := 'SELECT DISTINCT '||v_pk_field||' FROM '||v_control||' WHERE processed = true';
 
 v_remote_f_sql := 'SELECT '||v_cols||' FROM '||v_source_table||' JOIN ('||v_remote_q_sql||') x USING ('||v_pk_field||')';
 
@@ -493,20 +492,20 @@ v_delete_sql := 'DELETE FROM '||v_dest_table||' USING '||v_tmp_table||'_queue t 
 
 v_insert_sql := 'INSERT INTO '||v_dest_table||'('||v_cols||') SELECT '||v_cols||' FROM '||v_tmp_table||'_full'; 
 
-PERFORM update_step(v_job_id, v_step_id, 'OK','Remote table is '||v_source_table);
+PERFORM update_step(v_step_id, 'OK','Remote table is '||v_source_table);
 
 -- update remote entries
 SELECT add_step(v_job_id,'Updating remote trigger table') INTO v_step_id;
     PERFORM gdb(p_debug,v_trigger_update);
     EXECUTE v_trigger_update INTO v_exec_status;    
-PERFORM update_step(v_job_id, v_step_id, 'OK','Result was '||v_exec_status);
+PERFORM update_step(v_step_id, 'OK','Result was '||v_exec_status);
 
 -- create temp table that contains queue of primary key values that changed 
 SELECT add_step(v_job_id,'Create temp table from remote _q table') INTO v_step_id;
     PERFORM gdb(p_debug,v_create_q_sql);
     EXECUTE v_create_q_sql;  
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
-PERFORM update_step(v_job_id, v_step_id, 'OK','Table contains '||v_rowcount||' records');
+PERFORM update_step(v_step_id, 'OK','Table contains '||v_rowcount||' records');
 
 -- create temp table for insertion 
 SELECT add_step(v_job_id,'Create temp table from remote full table') INTO v_step_id;
@@ -514,7 +513,7 @@ SELECT add_step(v_job_id,'Create temp table from remote full table') INTO v_step
     EXECUTE v_create_f_sql;  
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
     PERFORM gdb(p_debug,'Temp table row count '||v_rowcount::text);
-PERFORM update_step(v_job_id, v_step_id, 'OK','Table contains '||v_rowcount||' records');
+PERFORM update_step(v_step_id, 'OK','Table contains '||v_rowcount||' records');
 
 -- remove records from local table 
 SELECT add_step(v_job_id,'Deleting records from local table') INTO v_step_id;
@@ -522,7 +521,7 @@ SELECT add_step(v_job_id,'Deleting records from local table') INTO v_step_id;
     EXECUTE v_delete_sql; 
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
     PERFORM gdb(p_debug,'Rows removed from local table before applying changes: '||v_rowcount::text);
-PERFORM update_step(v_job_id, v_step_id, 'OK','Removed '||v_rowcount||' records');
+PERFORM update_step(v_step_id, 'OK','Removed '||v_rowcount||' records');
 
 -- insert records to local table
 SELECT add_step(v_job_id,'Inserting new records into local table') INTO v_step_id;
@@ -530,20 +529,20 @@ SELECT add_step(v_job_id,'Inserting new records into local table') INTO v_step_i
     EXECUTE v_insert_sql;
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
     PERFORM gdb(p_debug,'Rows inserted: '||v_rowcount::text);
-PERFORM update_step(v_job_id, v_step_id, 'OK','Inserted '||v_rowcount||' records');
+PERFORM update_step(v_step_id, 'OK','Inserted '||v_rowcount||' records');
 
 -- clean out rows from txn table
 SELECT add_step(v_job_id,'Cleaning out rows from txn table') INTO v_step_id;
     PERFORM gdb(p_debug,v_trigger_delete);
     EXECUTE v_trigger_delete INTO v_exec_status;
-PERFORM update_step(v_job_id, v_step_id, 'OK','Result was '||v_exec_status);
+PERFORM update_step(v_step_id, 'OK','Result was '||v_exec_status);
 
 -- update activity status
 SELECT add_step(v_job_id,'Updating last_value in config table') INTO v_step_id;
     v_last_value_sql := 'UPDATE refresh_config SET last_value = '|| quote_literal(current_timestamp::timestamp) ||' WHERE dest_table = ' ||quote_literal(p_destination); 
     PERFORM gdb(p_debug,v_last_value_sql);
     EXECUTE v_last_value_sql; 
-PERFORM update_step(v_job_id, v_step_id, 'OK','Last Value was '||current_timestamp);
+PERFORM update_step(v_step_id, 'OK','Last Value was '||current_timestamp);
 
 PERFORM close_job(v_job_id);
 
@@ -557,7 +556,7 @@ PERFORM pg_advisory_unlock(hashtext('refresh_dml'), hashtext(v_job_name));
 
 EXCEPTION
     WHEN others THEN
-        PERFORM update_step(v_job_id, v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
+        PERFORM update_step(v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
         PERFORM fail_job(v_job_id);
 
         -- Ensure old search path is reset for the current session
