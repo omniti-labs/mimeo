@@ -3,7 +3,7 @@ CREATE TABLE mviews (
     mv_name text NOT NULL,
     v_name text NOT NULL,
     last_refresh timestamp with time zone,
-    CONSTRAINT mviews_mv_name_pkey PRIMARY KEY (mv_name);
+    CONSTRAINT mviews_mv_name_pkey PRIMARY KEY (mv_name)
 );
 
 
@@ -32,18 +32,18 @@ CREATE TABLE refresh_config (
     control text,
     last_value timestamp with time zone,
     boundary interval,
-    pk_field text,
-    pk_type text,
+    pk_field text[],
+    pk_type text[],
     filter text[],
     condition text,
+    post_script text[],
     CONSTRAINT refresh_config_dest_table_pkey PRIMARY KEY (dest_table)
 );
     
 
 -- ########## mimeo function definitions ##########
 /*
- *  auth(integer) RETURNS text
- *
+ *  Authentication for dblink
  */
 CREATE FUNCTION auth(integer) RETURNS text
     LANGUAGE sql
@@ -51,7 +51,9 @@ CREATE FUNCTION auth(integer) RETURNS text
     select data_source||' user='||username||' password='||pwd from @extschema@.dblink_mapping where data_source_id = $1; 
 $$;
 
-
+/*
+ *  Debug function
+ */
 CREATE FUNCTION gdb(in_debug boolean, in_notice text) RETURNS void
     LANGUAGE plpgsql
     AS $$
@@ -63,8 +65,7 @@ END
 $$;
 
 /*
- *  refresh_snap(p_destination text, p_debug boolean) RETURNS void
- *
+ *  Snap refresh to repull all table data
  */
 CREATE FUNCTION refresh_snap(p_destination text, p_debug boolean) RETURNS void
     LANGUAGE plpgsql
@@ -265,8 +266,7 @@ $$;
 
 
 /*
- *  refresh_incremental(p_destination text, p_debug boolean) RETURNS void
- *
+ *  Incremental refresh based on timestamp control field
  */
 CREATE FUNCTION refresh_incremental(p_destination text, p_debug boolean) RETURNS void
     LANGUAGE plpgsql
@@ -287,7 +287,6 @@ v_dblink         text;
 v_control  text;
 v_last_value     timestamptz;
 v_boundary        timestamptz;
-v_pk_field       text;
 v_filter         text[]; 
 v_cols           text;
 v_cols_n_types   text;
@@ -392,7 +391,7 @@ $$;
 
 
 /*
- *  refresh_dml(p_destination text, p_debug boolean) RETURNS void
+ *  Refresh based on DML (Insert, Update, Delete)
  *
  */
 CREATE FUNCTION refresh_dml(p_destination text, p_debug boolean) RETURNS void
@@ -411,14 +410,18 @@ v_source_table      text;
 v_dest_table        text;
 v_tmp_table         text;
 v_dblink            text;
-v_control     text;
+v_control           text;
 v_last_value_sql    text; 
 v_boundry           timestamptz;
-v_pk_field          text;
-v_pk_type           text;
+v_pk_field          text[];
+v_pk_type           text[];
+v_pk_counter        int := 1;
+v_field             text;
 v_filter            text[];
 v_cols              text;
 v_cols_n_types      text;
+v_with_update       text;
+
 
 v_trigger_update    text;
 v_trigger_delete    text; 
@@ -447,39 +450,64 @@ SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.
 SELECT current_setting('search_path') INTO v_old_search_path;
 EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''true'')';
 
+SELECT source_table, dest_table, 'tmp_'||replace(dest_table,'.','_'), dblink, control, pk_field, pk_type, filter FROM @extschema@.refresh_config 
+WHERE dest_table = p_destination INTO v_source_table, v_dest_table, v_tmp_table, v_dblink, v_control, v_pk_field, v_pk_type, v_filter; 
+IF NOT FOUND THEN
+   RAISE EXCEPTION 'ERROR: no mapping found for %',v_job_name; 
+END IF;
+
 SELECT add_job(quote_literal(v_job_name)) INTO v_job_id;
 PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
 
 SELECT add_step(v_job_id,'Grabbing Boundries, Building SQL') INTO v_step_id;
 
-SELECT source_table, dest_table, 'tmp_'||replace(dest_table,'.','_'), dblink, control, pk_field, pk_type, filter FROM @extschema@.refresh_config 
-WHERE dest_table = p_destination INTO v_source_table, v_dest_table, v_tmp_table, v_dblink, v_control, v_pk_field, v_pk_type, v_filter; 
-IF NOT FOUND THEN
-   RAISE EXCEPTION 'ERROR: no mapping found for %',v_job_name; 
-END IF;  
+IF v_pk_field IS NULL OR v_pk_type IS NULL THEN
+    RAISE EXCEPTION 'ERROR: primary key fields in refresh_config must be defined';
+END IF;
 
 -- determine column list, column type list
 IF v_filter IS NULL THEN 
     SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||atttypid::regtype::text),',') FROM 
         pg_attribute WHERE attnum > 0 AND attisdropped is false AND attrelid = p_destination::regclass INTO v_cols, v_cols_n_types;
 ELSE
-    IF v_pk_field = ANY(v_filter) THEN
-        SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||atttypid::regtype::text),',') FROM 
-            (SELECT unnest(filter) FROM @extschema@.refresh_config WHERE dest_table = p_destination) x 
-             JOIN pg_attribute ON (unnest=attname::text AND attrelid=p_destination::regclass) INTO v_cols, v_cols_n_types;
-    ELSE
-        RAISE EXCEPTION 'ERROR: filter list did not contain primary key for %',v_job_name; 
-    END IF;
+    -- ensure all primary keys are included in any column filters
+    FOREACH v_field IN ARRAY v_pk_field LOOP
+        IF v_field = ANY(v_filter) THEN
+            CONTINUE;
+        ELSE
+            RAISE EXCEPTION 'ERROR: filter list did not contain all columns that compose primary key for %',v_job_name; 
+        END IF;
+    END LOOP;
+    SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||atttypid::regtype::text),',') FROM 
+        (SELECT unnest(filter) FROM @extschema@.refresh_config WHERE dest_table = p_destination) x 
+         JOIN pg_attribute ON (unnest=attname::text AND attrelid=p_destination::regclass) INTO v_cols, v_cols_n_types;
 END IF;    
 
+-- build primary 
 -- init sql statements 
 
-v_trigger_update := 'SELECT dblink_exec(auth('||v_dblink||'),'||quote_literal('UPDATE '||v_control||' SET processed = true WHERE '||v_pk_field||' IN (SELECT '|| v_pk_field||' FROM '|| v_control ||' ORDER BY 1 LIMIT 100000)')||')';
+--v_trigger_update := 'SELECT dblink_exec(auth('||v_dblink||'),'||quote_literal('UPDATE '||v_control||' SET processed = true WHERE '||v_pk_field||' IN (SELECT '|| v_pk_field||' FROM '|| v_control ||' ORDER BY 1 LIMIT 100000)')||')';
+
+-- use unnest for the loop
+v_with_update := 'WITH row_batch AS SELECT '|| v_pk_field||' FROM '|| v_control ||' ORDER BY 1 LIMIT 10) UPDATE '||v_control||' SET processed = true FROM row_batch WHERE row_batch.'||v_pk_field[0]::text||' = '||v_control::text||'.'||v_pk_field[0]::text;
+IF array_length(v_pk_field, 1) > 1 THEN
+    WHILE v_pk_counter < array_length(v_pk_field,1) LOOP
+        v_with_update := v_with_update || ' AND row_batch.'||v_pk_field[v_pk_counter]::text||' = '||v_control::text||'.'||v_pk_field[v_pk_counter]::text;
+    END LOOP;
+END IF;
+
+RAISE NOTICE 'v_with: %', v_with_update;
+--PERFORM gdb(p_debug, v_with_update);
+
+/***********
+v_trigger_update := 'SELECT dblink_exec(auth('||v_dblink||'),'|| quote_literal(v_with_update);
+--  If condition that only does a single concat if there's a single pk field, else loops over pk fields with ANDs.
 
 v_trigger_delete := 'SELECT dblink_exec(auth('||v_dblink||'),'||quote_literal('DELETE FROM '||v_control||' WHERE processed = true')||')'; 
 
 v_remote_q_sql := 'SELECT DISTINCT '||v_pk_field||' FROM '||v_control||' WHERE processed = true';
 
+-- using can be a comma separated list of fields
 v_remote_f_sql := 'SELECT '||v_cols||' FROM '||v_source_table||' JOIN ('||v_remote_q_sql||') x USING ('||v_pk_field||')';
 
 v_create_q_sql := 'CREATE TEMP TABLE '||v_tmp_table||'_queue AS SELECT '||v_pk_field||' 
@@ -548,6 +576,7 @@ PERFORM close_job(v_job_id);
 
 EXECUTE 'DROP TABLE IF EXISTS '||v_tmp_table||'_queue';
 EXECUTE 'DROP TABLE IF EXISTS '||v_tmp_table||'_full';
+*************/
 
 -- Ensure old search path is reset for the current session
 EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
@@ -556,8 +585,8 @@ PERFORM pg_advisory_unlock(hashtext('refresh_dml'), hashtext(v_job_name));
 
 EXCEPTION
     WHEN others THEN
-        PERFORM update_step(v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
-        PERFORM fail_job(v_job_id);
+    --    PERFORM update_step(v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
+    --    PERFORM fail_job(v_job_id);
 
         -- Ensure old search path is reset for the current session
         EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
