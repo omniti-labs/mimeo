@@ -312,10 +312,10 @@ SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.
 SELECT current_setting('search_path') INTO v_old_search_path;
 EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''true'')';
 
-SELECT add_job(quote_literal(v_job_name)) INTO v_job_id;
+v_job_id := add_job(v_job_name);
 PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
 
-SELECT add_step(v_job_id,'Grabbing Boundries, Building SQL') INTO v_step_id;
+v_step_id := add_step(v_job_id,'Grabbing Boundries, Building SQL');
 
 SELECT source_table, dest_table, 'tmp_'||replace(dest_table,'.','_'), dblink, control, last_value, now() - boundary::interval, filter FROM refresh_config WHERE dest_table = p_destination INTO v_source_table, v_dest_table, v_tmp_table, v_dblink, v_control, v_last_value, v_boundary, v_filter; 
 IF NOT FOUND THEN
@@ -345,7 +345,7 @@ v_insert_sql := 'INSERT INTO '||v_dest_table||'('||v_cols||') SELECT '||v_cols||
 PERFORM update_step(v_step_id, 'OK','Grabbing rows from '||v_last_value::text||' to '||v_boundary::text);
 
 -- create temp from remote
-SELECT add_step(v_job_id,'Creating temp table ('||v_tmp_table||') from remote table') INTO v_step_id;
+v_step_id := add_step(v_job_id,'Creating temp table ('||v_tmp_table||') from remote table');
     PERFORM gdb(p_debug,v_create_sql);
     EXECUTE v_create_sql; 
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
@@ -353,7 +353,7 @@ SELECT add_step(v_job_id,'Creating temp table ('||v_tmp_table||') from remote ta
     PERFORM gdb(p_debug, v_rowcount || ' rows added to temp table');
 
 -- insert
-SELECT add_step(v_job_id,'Inserting new records into local table') INTO v_step_id;
+v_step_id := add_step(v_job_id,'Inserting new records into local table');
     PERFORM gdb(p_debug,v_insert_sql);
     EXECUTE v_insert_sql; 
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
@@ -361,7 +361,7 @@ SELECT add_step(v_job_id,'Inserting new records into local table') INTO v_step_i
     PERFORM gdb(p_debug, v_rowcount || ' rows added to ' || v_dest_table);
 
 -- update boundries
-SELECT add_step(v_job_id,'Updating boundary values') INTO v_step_id;
+v_step_id := add_step(v_job_id,'Updating boundary values');
 UPDATE refresh_config set last_value = v_boundary WHERE dest_table = p_destination;  
 
 PERFORM update_step(v_step_id, 'OK','Done');
@@ -522,20 +522,20 @@ v_insert_sql := 'INSERT INTO '||v_dest_table||'('||v_cols||') SELECT '||v_cols||
 PERFORM update_step(v_step_id, 'OK','Remote table is '||v_source_table);
 
 -- update remote entries
-SELECT add_step(v_job_id,'Updating remote trigger table') INTO v_step_id;
+v_step_id := add_step(v_job_id,'Updating remote trigger table');
     PERFORM gdb(p_debug,v_trigger_update);
     EXECUTE v_trigger_update INTO v_exec_status;    
 PERFORM update_step(v_step_id, 'OK','Result was '||v_exec_status);
 
 -- create temp table that contains queue of primary key values that changed 
-SELECT add_step(v_job_id,'Create temp table from remote _q table') INTO v_step_id;
+v_step_id := add_step(v_job_id,'Create temp table from remote _q table');
     PERFORM gdb(p_debug,v_create_q_sql);
     EXECUTE v_create_q_sql;  
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
 PERFORM update_step(v_step_id, 'OK','Table contains '||v_rowcount||' records');
 
 -- create temp table for insertion 
-SELECT add_step(v_job_id,'Create temp table from remote full table') INTO v_step_id;
+v_step_id := add_step(v_job_id,'Create temp table from remote full table');
     PERFORM gdb(p_debug,v_create_f_sql);
     EXECUTE v_create_f_sql;  
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
@@ -543,7 +543,7 @@ SELECT add_step(v_job_id,'Create temp table from remote full table') INTO v_step
 PERFORM update_step(v_step_id, 'OK','Table contains '||v_rowcount||' records');
 
 -- remove records from local table 
-SELECT add_step(v_job_id,'Deleting records from local table') INTO v_step_id;
+v_step_id := add_step(v_job_id,'Deleting records from local table');
     PERFORM gdb(p_debug,v_delete_sql);
     EXECUTE v_delete_sql; 
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
@@ -551,7 +551,7 @@ SELECT add_step(v_job_id,'Deleting records from local table') INTO v_step_id;
 PERFORM update_step(v_step_id, 'OK','Removed '||v_rowcount||' records');
 
 -- insert records to local table
-SELECT add_step(v_job_id,'Inserting new records into local table') INTO v_step_id;
+v_step_id := add_step(v_job_id,'Inserting new records into local table');
     PERFORM gdb(p_debug,v_insert_sql);
     EXECUTE v_insert_sql;
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
@@ -559,13 +559,13 @@ SELECT add_step(v_job_id,'Inserting new records into local table') INTO v_step_i
 PERFORM update_step(v_step_id, 'OK','Inserted '||v_rowcount||' records');
 
 -- clean out rows from txn table
-SELECT add_step(v_job_id,'Cleaning out rows from txn table') INTO v_step_id;
+v_step_id := add_step(v_job_id,'Cleaning out rows from txn table');
     PERFORM gdb(p_debug,v_trigger_delete);
     EXECUTE v_trigger_delete INTO v_exec_status;
 PERFORM update_step(v_step_id, 'OK','Result was '||v_exec_status);
 
 -- update activity status
-SELECT add_step(v_job_id,'Updating last_value in config table') INTO v_step_id;
+v_step_id := add_step(v_job_id,'Updating last_value in config table');
     v_last_value_sql := 'UPDATE refresh_config SET last_value = '|| quote_literal(current_timestamp::timestamp) ||' WHERE dest_table = ' ||quote_literal(p_destination); 
     PERFORM gdb(p_debug,v_last_value_sql);
     EXECUTE v_last_value_sql; 
