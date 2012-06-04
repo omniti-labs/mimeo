@@ -123,10 +123,10 @@ EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','
 --SELECT current_setting('search_path') INTO v_sp;
 --RAISE NOTICE 'search path after add job: %', v_sp;
 
-SELECT add_job(quote_literal(v_job_name)) INTO v_job_id;
+v_job_id := add_job(v_job_name);
 PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
 
-SELECT add_step(v_job_id,'Grabbing Mapping, Building SQL') INTO v_step_id;
+v_step_id := add_step(v_job_id,'Grabbing Mapping, Building SQL');
 
 SELECT source_table, dest_table, dblink INTO v_source_table, v_dest_table, v_dblink FROM refresh_config
 WHERE dest_table = p_destination; 
@@ -136,10 +136,10 @@ END IF;
 
 -- checking for current view
 
-SELECT INTO v_view_definition definition FROM pg_views where
+SELECT definition INTO v_view_definition FROM pg_views where
       ((schemaname || '.') || viewname)=v_dest_table;
 
-SELECT INTO v_exists strpos(v_view_definition, 'snap1');
+v_exists := strpos(v_view_definition, 'snap1');
   IF v_exists > 0 THEN
     v_snap := '_snap2';
     ELSE
@@ -163,9 +163,9 @@ perform gdb(p_debug,'v_cols_n_types: '||v_cols_n_types);
 v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table;
 v_insert_sql := 'INSERT INTO ' || v_refresh_snap || ' SELECT '||v_cols||' FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_sql)||') t ('||v_cols_n_types||')';
 
-PERFORM update_step(v_step_id, 'OK','Grabbing rows from source table');
+PERFORM update_step(v_step_id, 'OK','Done');
 
-SELECT add_step(v_job_id,'Truncate non-active snap table') INTO v_step_id;
+v_step_id := add_step(v_job_id,'Truncate non-active snap table');
 
 -- Create snap table if it doesn't exist
 SELECT string_to_array(v_refresh_snap, '.') AS oparts INTO v_parts;
@@ -207,7 +207,7 @@ ELSE
         v_create_sql := 'CREATE TABLE ' || v_refresh_snap || ' (' || v_cols_n_types || ')';
         PERFORM gdb(p_debug,'v_create_sql: '||v_create_sql::text);
         EXECUTE v_create_sql;
-        SELECT add_step(v_job_id,'Source table structure changed.') INTO v_step_id;
+        v_step_id := add_step(v_job_id,'Source table structure changed.');
         PERFORM update_step(v_step_id, 'OK','Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc');
         PERFORM gdb(p_debug,'Source table structure changed. Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc)');
     END IF;
@@ -217,7 +217,7 @@ ELSE
 PERFORM update_step(v_step_id, 'OK','Done');
 END IF;
 -- populating snap table
-SELECT add_step(v_job_id,'Inserting records into local table') INTO v_step_id;
+v_step_id := add_step(v_job_id,'Inserting records into local table');
     PERFORM gdb(p_debug,'Inserting rows... '||v_insert_sql);
     EXECUTE v_insert_sql; 
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
@@ -229,12 +229,12 @@ IF v_rowcount IS NOT NULL THEN
     SET statement_timeout='30 min';
     
     -- swap view
-    SELECT add_step(v_job_id,'Swap view to '||v_refresh_snap) INTO v_step_id;
+    v_step_id := add_step(v_job_id,'Swap view to '||v_refresh_snap);
     PERFORM gdb(p_debug,'Swapping view to '||v_refresh_snap);
     EXECUTE 'CREATE OR REPLACE VIEW '||v_dest_table||' AS SELECT * FROM '||v_refresh_snap;
     PERFORM update_step(v_step_id, 'OK','View Swapped');
 
-    SELECT add_step(v_job_id,'Updating last value') INTO v_step_id;
+    v_step_id := add_step(v_job_id,'Updating last value');
     UPDATE refresh_config set last_value = now() WHERE dest_table = p_destination;  
 
     PERFORM update_step(v_step_id, 'OK','Done');
@@ -262,7 +262,6 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
-
 
 
 /*
@@ -456,10 +455,10 @@ IF NOT FOUND THEN
    RAISE EXCEPTION 'ERROR: no mapping found for %',v_job_name; 
 END IF;
 
-SELECT add_job(quote_literal(v_job_name)) INTO v_job_id;
+v_job_id := add_job(quote_literal(v_job_name));
 PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
 
-SELECT add_step(v_job_id,'Grabbing Boundries, Building SQL') INTO v_step_id;
+v_step_id := add_step(v_job_id,'Grabbing Boundries, Building SQL');
 
 IF v_pk_field IS NULL OR v_pk_type IS NULL THEN
     RAISE EXCEPTION 'ERROR: primary key fields in refresh_config must be defined';
