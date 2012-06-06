@@ -65,6 +65,26 @@ END
 $$;
 
 /*
+ *  Function to run any SQL after object recreation due to schema changes on source
+ */
+CREATE FUNCTION post_script(p_dest_table text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_post_script   text[];
+    v_sql           text;
+BEGIN
+    
+     SELECT post_script INTO v_post_script FROM @extschema@.refresh_config WHERE dest_table = p_dest_table;
+
+    FOREACH v_sql IN ARRAY v_post_script LOOP
+        RAISE NOTICE 'v_sql: %', v_sql;
+        EXECUTE v_sql;
+    END LOOP;
+END
+$$;
+
+/*
  *  Snap refresh to repull all table data
  */
 CREATE FUNCTION refresh_snap(p_destination text, p_debug boolean) RETURNS void
@@ -79,6 +99,7 @@ v_rowcount          bigint;
 v_source_table      text;
 v_dest_table        text;
 v_dblink            text;
+v_post_script       text[];
 v_dblink_schema     text;
 v_jobmon_schema     text;
 v_old_search_path   text;
@@ -128,7 +149,7 @@ PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
 
 v_step_id := add_step(v_job_id,'Grabbing Mapping, Building SQL');
 
-SELECT source_table, dest_table, dblink INTO v_source_table, v_dest_table, v_dblink FROM refresh_config
+SELECT source_table, dest_table, dblink, post_script INTO v_source_table, v_dest_table, v_dblink, v_post_script FROM refresh_config
 WHERE dest_table = p_destination; 
 IF NOT FOUND THEN
    RAISE EXCEPTION 'ERROR: This table is not set up for snapshot replication: %',v_job_name; 
@@ -210,6 +231,7 @@ ELSE
         v_step_id := add_step(v_job_id,'Source table structure changed.');
         PERFORM update_step(v_step_id, 'OK','Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc');
         PERFORM gdb(p_debug,'Source table structure changed. Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc)');
+
     END IF;
     -- truncate non-active snap table
     EXECUTE 'TRUNCATE TABLE ' || v_refresh_snap;
@@ -239,6 +261,14 @@ IF v_rowcount IS NOT NULL THEN
 
     PERFORM update_step(v_step_id, 'OK','Done');
 
+    -- Runs special sql to fix indexes, permissions, etc on recreated objects
+    -- TODO Add step to log here
+    IF v_match = 'f' AND v_post_script IS NOT NULL THEN
+        v_step_id := add_step(v_job_id,'Applying post_script sql commands due to schema change');
+        PERFORM @extschema@.post_script(v_dest_table);
+        PERFORM update_step(v_step_id, 'OK','Done');
+    END IF;
+
     PERFORM close_job(v_job_id);
 ELSE
     RAISE EXCEPTION 'No rows found in source table';
@@ -252,6 +282,7 @@ PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
 EXCEPTION
 -- See if there's exception to handle for the timeout
     WHEN OTHERS THEN
+        EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''true'')';
         PERFORM update_step(v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
         PERFORM fail_job(v_job_id);
 
@@ -421,7 +452,6 @@ v_cols              text;
 v_cols_n_types      text;
 v_with_update       text;
 
-
 v_trigger_update    text;
 v_trigger_delete    text; 
 v_exec_status       text;
@@ -490,10 +520,12 @@ END IF;
 -- use unnest for the loop
 v_with_update := 'WITH row_batch AS SELECT '|| v_pk_field||' FROM '|| v_control ||' ORDER BY 1 LIMIT 10) UPDATE '||v_control||' SET processed = true FROM row_batch WHERE row_batch.'||v_pk_field[0]::text||' = '||v_control::text||'.'||v_pk_field[0]::text;
 IF array_length(v_pk_field, 1) > 1 THEN
-    WHILE v_pk_counter < array_length(v_pk_field,1) LOOP
+/*    WHILE v_pk_counter < array_length(v_pk_field,1) LOOP
         v_with_update := v_with_update || ' AND row_batch.'||v_pk_field[v_pk_counter]::text||' = '||v_control::text||'.'||v_pk_field[v_pk_counter]::text;
     END LOOP;
+*/
 END IF;
+
 
 RAISE NOTICE 'v_with: %', v_with_update;
 --PERFORM gdb(p_debug, v_with_update);
