@@ -5,7 +5,7 @@ CREATE TABLE mviews (
     last_refresh timestamp with time zone,
     CONSTRAINT mviews_mv_name_pkey PRIMARY KEY (mv_name)
 );
-
+SELECT pg_catalog.pg_extension_config_dump('mviews', '');
 
 CREATE TABLE dblink_mapping (
     data_source_id integer NOT NULL,
@@ -15,6 +15,7 @@ CREATE TABLE dblink_mapping (
     dbh_attr text,
     CONSTRAINT dblink_mapping_data_source_id_pkey PRIMARY KEY (data_source_id)
 );
+SELECT pg_catalog.pg_extension_config_dump('dblink_mapping', '');
 
 CREATE SEQUENCE dblink_mapping_data_source_id_seq
     START WITH 1
@@ -39,6 +40,7 @@ CREATE TABLE refresh_config (
     post_script text[],
     CONSTRAINT refresh_config_dest_table_pkey PRIMARY KEY (dest_table)
 );
+SELECT pg_catalog.pg_extension_config_dump('refresh_config', '');
     
 
 -- ########## mimeo function definitions ##########
@@ -139,10 +141,7 @@ SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.
 
 -- Set custom search path to allow easier calls to other functions, especially job logging
 SELECT current_setting('search_path') INTO v_old_search_path;
---RAISE NOTICE 'search path before add job: %', v_old_search_path;
 EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
---SELECT current_setting('search_path') INTO v_sp;
---RAISE NOTICE 'search path after add job: %', v_sp;
 
 v_job_id := add_job(v_job_name);
 PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
@@ -534,7 +533,6 @@ IF v_pk_where IS NOT NULL THEN
     v_with_update := v_with_update || v_pk_where;
 END IF;
 PERFORM gdb(p_debug, v_with_update);
-EXECUTE v_with_update;
 
 
 v_trigger_update := 'SELECT dblink_exec(auth('||v_dblink||'),'|| quote_literal(v_with_update)||')';
