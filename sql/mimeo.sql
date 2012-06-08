@@ -140,7 +140,7 @@ SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.
 -- Set custom search path to allow easier calls to other functions, especially job logging
 SELECT current_setting('search_path') INTO v_old_search_path;
 --RAISE NOTICE 'search path before add job: %', v_old_search_path;
-EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''true'')';
+EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
 --SELECT current_setting('search_path') INTO v_sp;
 --RAISE NOTICE 'search path after add job: %', v_sp;
 
@@ -262,7 +262,6 @@ IF v_rowcount IS NOT NULL THEN
     PERFORM update_step(v_step_id, 'OK','Done');
 
     -- Runs special sql to fix indexes, permissions, etc on recreated objects
-    -- TODO Add step to log here
     IF v_match = 'f' AND v_post_script IS NOT NULL THEN
         v_step_id := add_step(v_job_id,'Applying post_script sql commands due to schema change');
         PERFORM @extschema@.post_script(v_dest_table);
@@ -282,7 +281,7 @@ PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
 EXCEPTION
 -- See if there's exception to handle for the timeout
     WHEN OTHERS THEN
-        EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''true'')';
+        EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
         PERFORM update_step(v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
         PERFORM fail_job(v_job_id);
 
@@ -341,7 +340,7 @@ SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.
 
 -- Set custom search path to allow easier calls to other functions, especially job logging
 SELECT current_setting('search_path') INTO v_old_search_path;
-EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''true'')';
+EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
 
 v_job_id := add_job(v_job_name);
 PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
@@ -408,14 +407,15 @@ PERFORM pg_advisory_unlock(hashtext('refresh_incremental'), hashtext(v_job_name)
 
 EXCEPTION
     WHEN OTHERS THEN
-    PERFORM update_step(v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
-    PERFORM fail_job(v_job_id);
+        EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
+        PERFORM update_step(v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
+        PERFORM fail_job(v_job_id);
 
-    -- Ensure old search path is reset for the current session
-    EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
+        -- Ensure old search path is reset for the current session
+        EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
 
-    PERFORM pg_advisory_unlock(hashtext('refresh_incremental'), hashtext(v_job_name));
-    RAISE EXCEPTION '%', SQLERRM;    
+        PERFORM pg_advisory_unlock(hashtext('refresh_incremental'), hashtext(v_job_name));
+        RAISE EXCEPTION '%', SQLERRM;    
 END
 $$;
 
@@ -424,7 +424,7 @@ $$;
  *  Refresh based on DML (Insert, Update, Delete)
  *
  */
-CREATE FUNCTION refresh_dml(p_destination text, p_debug boolean) RETURNS void
+CREATE FUNCTION refresh_dml(p_destination text, p_debug boolean, int default 100000) RETURNS void
     LANGUAGE plpgsql
     AS $$
 declare
@@ -445,12 +445,14 @@ v_last_value_sql    text;
 v_boundry           timestamptz;
 v_pk_field          text[];
 v_pk_type           text[];
-v_pk_counter        int := 1;
+v_pk_counter        int := 2;
+v_pk_field_csv      text;
+v_with_update       text;
 v_field             text;
 v_filter            text[];
 v_cols              text;
 v_cols_n_types      text;
-v_with_update       text;
+v_pk_where          text;
 
 v_trigger_update    text;
 v_trigger_delete    text; 
@@ -464,9 +466,10 @@ v_create_f_sql      text;
 v_delete_sql        text;
 
 BEGIN
-    IF p_debug IS DISTINCT FROM true THEN
-        PERFORM set_config( 'client_min_messages', 'warning', true );
-    END IF;
+
+IF p_debug IS DISTINCT FROM true THEN
+    PERFORM set_config( 'client_min_messages', 'warning', true );
+END IF;
 
 v_job_name := 'Refresh DML: '||p_destination;
 
@@ -477,9 +480,11 @@ SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.
 
 -- Set custom search path to allow easier calls to other functions, especially job logging
 SELECT current_setting('search_path') INTO v_old_search_path;
-EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''true'')';
+EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
 
-SELECT source_table, dest_table, 'tmp_'||replace(dest_table,'.','_'), dblink, control, pk_field, pk_type, filter FROM @extschema@.refresh_config 
+RAISE NOTICE 'search path start: %', current_setting('search_path');
+
+SELECT source_table, dest_table, 'tmp_'||replace(dest_table,'.','_'), dblink, control, pk_field, pk_type, filter FROM refresh_config 
 WHERE dest_table = p_destination INTO v_source_table, v_dest_table, v_tmp_table, v_dblink, v_control, v_pk_field, v_pk_type, v_filter; 
 IF NOT FOUND THEN
    RAISE EXCEPTION 'ERROR: no mapping found for %',v_job_name; 
@@ -499,7 +504,7 @@ IF v_filter IS NULL THEN
     SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||atttypid::regtype::text),',') FROM 
         pg_attribute WHERE attnum > 0 AND attisdropped is false AND attrelid = p_destination::regclass INTO v_cols, v_cols_n_types;
 ELSE
-    -- ensure all primary keys are included in any column filters
+    -- ensure all primary key columns are included in any column filters
     FOREACH v_field IN ARRAY v_pk_field LOOP
         IF v_field = ANY(v_filter) THEN
             CONTINUE;
@@ -508,46 +513,56 @@ ELSE
         END IF;
     END LOOP;
     SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||atttypid::regtype::text),',') FROM 
-        (SELECT unnest(filter) FROM @extschema@.refresh_config WHERE dest_table = p_destination) x 
+        (SELECT unnest(filter) FROM refresh_config WHERE dest_table = p_destination) x 
          JOIN pg_attribute ON (unnest=attname::text AND attrelid=p_destination::regclass) INTO v_cols, v_cols_n_types;
 END IF;    
 
--- build primary 
 -- init sql statements 
 
---v_trigger_update := 'SELECT dblink_exec(auth('||v_dblink||'),'||quote_literal('UPDATE '||v_control||' SET processed = true WHERE '||v_pk_field||' IN (SELECT '|| v_pk_field||' FROM '|| v_control ||' ORDER BY 1 LIMIT 100000)')||')';
+v_pk_field_csv := array_to_string(v_pk_field,',');
+v_with_update := 'WITH a AS (SELECT '||v_pk_field_csv||' FROM '|| v_control ||' ORDER BY 1 LIMIT '|| $3 ||') UPDATE '||v_control||' b SET processed = true FROM a WHERE a.'||v_pk_field[1]||' = b.'||v_pk_field[1];
 
--- use unnest for the loop
-v_with_update := 'WITH row_batch AS SELECT '|| v_pk_field||' FROM '|| v_control ||' ORDER BY 1 LIMIT 10) UPDATE '||v_control||' SET processed = true FROM row_batch WHERE row_batch.'||v_pk_field[0]::text||' = '||v_control::text||'.'||v_pk_field[0]::text;
 IF array_length(v_pk_field, 1) > 1 THEN
-/*    WHILE v_pk_counter < array_length(v_pk_field,1) LOOP
-        v_with_update := v_with_update || ' AND row_batch.'||v_pk_field[v_pk_counter]::text||' = '||v_control::text||'.'||v_pk_field[v_pk_counter]::text;
+    v_pk_where := '';
+    WHILE v_pk_counter <= array_length(v_pk_field,1) LOOP
+        v_pk_where := v_pk_where || ' AND a.'||v_pk_field[v_pk_counter]||' = b.'||v_pk_field[v_pk_counter];
+        v_pk_counter := v_pk_counter + 1;
     END LOOP;
-*/
 END IF;
 
+IF v_pk_where IS NOT NULL THEN
+    v_with_update := v_with_update || v_pk_where;
+END IF;
+PERFORM gdb(p_debug, v_with_update);
+EXECUTE v_with_update;
 
-RAISE NOTICE 'v_with: %', v_with_update;
---PERFORM gdb(p_debug, v_with_update);
 
-/***********
-v_trigger_update := 'SELECT dblink_exec(auth('||v_dblink||'),'|| quote_literal(v_with_update);
---  If condition that only does a single concat if there's a single pk field, else loops over pk fields with ANDs.
+v_trigger_update := 'SELECT dblink_exec(auth('||v_dblink||'),'|| quote_literal(v_with_update)||')';
 
 v_trigger_delete := 'SELECT dblink_exec(auth('||v_dblink||'),'||quote_literal('DELETE FROM '||v_control||' WHERE processed = true')||')'; 
 
-v_remote_q_sql := 'SELECT DISTINCT '||v_pk_field||' FROM '||v_control||' WHERE processed = true';
+v_remote_q_sql := 'SELECT DISTINCT '||v_pk_field_csv||' FROM '||v_control||' WHERE processed = true';
 
--- using can be a comma separated list of fields
-v_remote_f_sql := 'SELECT '||v_cols||' FROM '||v_source_table||' JOIN ('||v_remote_q_sql||') x USING ('||v_pk_field||')';
+v_remote_f_sql := 'SELECT '||v_cols||' FROM '||v_source_table||' JOIN ('||v_remote_q_sql||') x USING ('||v_pk_field_csv||')';
 
-v_create_q_sql := 'CREATE TEMP TABLE '||v_tmp_table||'_queue AS SELECT '||v_pk_field||' 
-    FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_q_sql)||') t ('||v_pk_field||' '||v_pk_type||')';
+v_create_q_sql := 'CREATE TEMP TABLE '||v_tmp_table||'_queue AS SELECT '||v_pk_field_csv||' 
+    FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_q_sql)||') t ('||v_pk_field[1]||' '||v_pk_type[1];
+IF array_length(v_pk_field, 1) > 1 THEN
+    v_pk_counter := 2;
+    WHILE v_pk_counter <= array_length(v_pk_field,1) LOOP
+        v_create_q_sql := v_create_q_sql || ','||v_pk_field[v_pk_counter]||' '||v_pk_type[v_pk_counter];
+        v_pk_counter := v_pk_counter + 1;
+    END LOOP;
+END IF;
+v_create_q_sql := v_create_q_sql ||')';
 
 v_create_f_sql := 'CREATE TEMP TABLE '||v_tmp_table||'_full AS SELECT '||v_cols||' 
     FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_f_sql)||') t ('||v_cols_n_types||')';
 
-v_delete_sql := 'DELETE FROM '||v_dest_table||' USING '||v_tmp_table||'_queue t WHERE '||v_dest_table||'.'||v_pk_field||'=t.'||v_pk_field; 
+v_delete_sql := 'DELETE FROM '||v_dest_table||' a USING '||v_tmp_table||'_queue b WHERE a.'||v_pk_field[1]||'= b.'||v_pk_field[1];
+IF array_length(v_pk_field, 1) > 1 THEN
+    v_delete_sql := v_delete_sql || v_pk_where;
+END IF; 
 
 v_insert_sql := 'INSERT INTO '||v_dest_table||'('||v_cols||') SELECT '||v_cols||' FROM '||v_tmp_table||'_full'; 
 
@@ -607,7 +622,6 @@ PERFORM close_job(v_job_id);
 
 EXECUTE 'DROP TABLE IF EXISTS '||v_tmp_table||'_queue';
 EXECUTE 'DROP TABLE IF EXISTS '||v_tmp_table||'_full';
-*************/
 
 -- Ensure old search path is reset for the current session
 EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
@@ -616,14 +630,17 @@ PERFORM pg_advisory_unlock(hashtext('refresh_dml'), hashtext(v_job_name));
 
 EXCEPTION
     WHEN others THEN
-    --    PERFORM update_step(v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
-    --    PERFORM fail_job(v_job_id);
+        -- Exception block resets path, so have to reset it again
+        EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
+        PERFORM update_step(v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
+        PERFORM fail_job(v_job_id);
 
         -- Ensure old search path is reset for the current session
-        EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
+       EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
 
         PERFORM pg_advisory_unlock(hashtext('refresh_dml'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
+
 
