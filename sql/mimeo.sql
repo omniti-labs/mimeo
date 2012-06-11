@@ -70,7 +70,7 @@ $$;
  *  Function to run any SQL after object recreation due to schema changes on source
  */
 CREATE FUNCTION post_script(p_dest_table text) RETURNS void
-    LANGUAGE plpgsql
+    LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
     v_post_script   text[];
@@ -90,7 +90,7 @@ $$;
  *  Snap refresh to repull all table data
  */
 CREATE FUNCTION refresh_snap(p_destination text, p_debug boolean) RETURNS void
-    LANGUAGE plpgsql
+    LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 declare
 v_job_name          text;
@@ -296,8 +296,8 @@ $$;
 /*
  *  Incremental refresh based on timestamp control field
  */
-CREATE FUNCTION refresh_incremental(p_destination text, p_debug boolean) RETURNS void
-    LANGUAGE plpgsql
+CREATE FUNCTION refresh_incremental(p_destination text, p_debug boolean, int default 100000) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 declare
 v_job_name       text;
@@ -365,7 +365,7 @@ END IF;
 -- does >= and < to keep missing data from happening on rare edge case where a newly inserted row outside the transaction batch
 -- has the exact same timestamp as the previous batch's max timestamp
 -- Note that this means the destination table is always at least one row behind even when no new data is entered on the source.
-v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table||' WHERE '||v_control||' >= '||quote_literal(v_last_value)||' AND '||v_control||' < '||quote_literal(v_boundary);
+v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table||' WHERE '||v_control||' >= '||quote_literal(v_last_value)||' AND '||v_control||' < '||quote_literal(v_boundary)||' LIMIT '|| $3;
 
 v_create_sql := 'CREATE TEMP TABLE '||v_tmp_table||' AS SELECT '||v_cols||' FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_sql)||') t ('||v_cols_n_types||')';
 
@@ -424,7 +424,7 @@ $$;
  *
  */
 CREATE FUNCTION refresh_dml(p_destination text, p_debug boolean, int default 100000) RETURNS void
-    LANGUAGE plpgsql
+    LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 declare
 v_job_name          text;
