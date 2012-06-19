@@ -857,6 +857,7 @@ v_rowcount          bigint;
 v_dblink_schema     text;
 v_jobmon_schema     text;
 v_old_search_path   text;
+v_adv_lock          boolean;
 
 v_source_table      text;
 v_dest_table        text;
