@@ -16,7 +16,6 @@ CREATE TABLE dblink_mapping (
     CONSTRAINT dblink_mapping_data_source_id_pkey PRIMARY KEY (data_source_id)
 );
 SELECT pg_catalog.pg_extension_config_dump('dblink_mapping', '');
-
 CREATE SEQUENCE dblink_mapping_data_source_id_seq
     START WITH 1
     INCREMENT BY 1
@@ -25,10 +24,11 @@ CREATE SEQUENCE dblink_mapping_data_source_id_seq
     CACHE 1;
 ALTER SEQUENCE dblink_mapping_data_source_id_seq OWNED BY dblink_mapping.data_source_id;
 
-
+CREATE TYPE refresh_type AS ENUM ('snap', 'inserter', 'updater', 'dml', 'logdel');
 CREATE TABLE refresh_config (
     source_table text NOT NULL,
     dest_table text NOT NULL,
+    type refresh_type NOT NULL,
     dblink integer REFERENCES dblink_mapping(data_source_id) NOT NULL,
     control text,
     last_value timestamp with time zone,
@@ -41,6 +41,7 @@ CREATE TABLE refresh_config (
     CONSTRAINT refresh_config_dest_table_pkey PRIMARY KEY (dest_table)
 );
 SELECT pg_catalog.pg_extension_config_dump('refresh_config', '');
+CREATE INDEX refresh_config_type_idx ON refresh_config (type);
     
 
 -- ########## mimeo function definitions ##########
@@ -294,11 +295,11 @@ $$;
 
 
 /*
- *  Incremental refresh based on timestamp control field
+ *  Refresh insert only table based on timestamp control field
  */
-CREATE FUNCTION refresh_incremental(p_destination text, p_debug boolean, int default 100000) RETURNS void
+CREATE FUNCTION refresh_inserter(p_destination text, p_debug boolean, integer DEFAULT 100000) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
-    AS $$
+    AS $_$
 declare
 v_job_name       text;
 v_job_id         int;
@@ -318,6 +319,7 @@ v_boundary        timestamptz;
 v_filter         text[]; 
 v_cols           text;
 v_cols_n_types   text;
+v_last_value_sql     text;
 
 v_remote_sql     text;
 v_insert_sql     text;
@@ -330,9 +332,9 @@ IF p_debug IS DISTINCT FROM true THEN
     PERFORM set_config( 'client_min_messages', 'warning', true );
 END IF;
 
-v_job_name := 'Refresh Incremental: '||p_destination;
+v_job_name := 'Refresh Inserter: '||p_destination;
 
-PERFORM pg_advisory_lock(hashtext('refresh_incremental'), hashtext(v_job_name));
+PERFORM pg_advisory_lock(hashtext('refresh_inserter'), hashtext(v_job_name));
 
 SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
 SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
@@ -362,14 +364,16 @@ END IF;
 
 -- init sql statements 
 
--- does >= and < to keep missing data from happening on rare edge case where a newly inserted row outside the transaction batch
+-- does < for upper boundary to keep missing data from happening on rare edge case where a newly inserted row outside the transaction batch
 -- has the exact same timestamp as the previous batch's max timestamp
--- Note that this means the destination table is always at least one row behind even when no new data is entered on the source.
-v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table||' WHERE '||v_control||' >= '||quote_literal(v_last_value)||' AND '||v_control||' < '||quote_literal(v_boundary)||' LIMIT '|| $3;
+-- Note that this means the destination table may always be at least one row behind even when no new data is entered on the source.
+v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table||' WHERE '||v_control||' > '||quote_literal(v_last_value)||' AND '||v_control||' < '||quote_literal(v_boundary)||' LIMIT '|| $3;
 
 v_create_sql := 'CREATE TEMP TABLE '||v_tmp_table||' AS SELECT '||v_cols||' FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_sql)||') t ('||v_cols_n_types||')';
 
 v_insert_sql := 'INSERT INTO '||v_dest_table||'('||v_cols||') SELECT '||v_cols||' FROM '||v_tmp_table; 
+
+v_last_value_sql := 'SELECT max('||v_control||') FROM '||v_tmp_table;
 
 PERFORM update_step(v_step_id, 'OK','Grabbing rows from '||v_last_value::text||' to '||v_boundary::text);
 
@@ -381,6 +385,12 @@ v_step_id := add_step(v_job_id,'Creating temp table ('||v_tmp_table||') from rem
     PERFORM update_step(v_step_id, 'OK','Table contains '||v_rowcount||' records');
     PERFORM gdb(p_debug, v_rowcount || ' rows added to temp table');
 
+v_step_id := add_step(v_job_id, 'Getting max control field value');
+    PERFORM gdb(p_debug, v_last_value_sql);
+    EXECUTE v_last_value_sql INTO v_last_value;
+    PERFORM update_step(v_step_id, 'OK','Max value is: '||v_last_value);
+    PERFORM gdb(p_debug, 'Max value is: '||v_last_value);
+
 -- insert
 v_step_id := add_step(v_job_id,'Inserting new records into local table');
     PERFORM gdb(p_debug,v_insert_sql);
@@ -391,7 +401,7 @@ v_step_id := add_step(v_job_id,'Inserting new records into local table');
 
 -- update boundries
 v_step_id := add_step(v_job_id,'Updating boundary values');
-UPDATE refresh_config set last_value = v_boundary WHERE dest_table = p_destination;  
+UPDATE refresh_config set last_value = v_last_value WHERE dest_table = p_destination;  
 
 PERFORM update_step(v_step_id, 'OK','Done');
 
@@ -402,7 +412,7 @@ EXECUTE 'DROP TABLE IF EXISTS ' || v_tmp_table;
 -- Ensure old search path is reset for the current session
 EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
 
-PERFORM pg_advisory_unlock(hashtext('refresh_incremental'), hashtext(v_job_name));
+PERFORM pg_advisory_unlock(hashtext('refresh_inserter'), hashtext(v_job_name));
 
 EXCEPTION
     WHEN OTHERS THEN
@@ -413,10 +423,186 @@ EXCEPTION
         -- Ensure old search path is reset for the current session
         EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
 
-        PERFORM pg_advisory_unlock(hashtext('refresh_incremental'), hashtext(v_job_name));
+        PERFORM pg_advisory_unlock(hashtext('refresh_inserter'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;    
 END
-$$;
+$_$;
+
+
+/*
+ *  Refresh insert/update only table based on timestamp control field
+ *
+ */
+CREATE FUNCTION refresh_updater(p_destination text, p_debug boolean, integer DEFAULT 100000) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $_$
+declare
+v_job_name          text;
+v_job_id            int;
+v_step_id           int;
+v_rowcount          bigint; 
+v_dblink_schema     text;
+v_jobmon_schema     text;
+v_old_search_path   text;
+
+v_source_table      text;
+v_dest_table        text;
+v_tmp_table         text;
+v_dblink            text;
+v_control           text;
+v_last_value_sql    text; 
+v_last_value        timestamptz; 
+v_boundry           timestamptz;
+v_remote_boundry      timestamptz;
+v_pk_field          text[];
+v_pk_type           text[];
+v_pk_counter        int := 2;
+v_pk_field_csv      text;
+v_with_update       text;
+v_field             text;
+v_filter            text[];
+v_cols              text;
+v_cols_n_types      text;
+v_pk_where          text;
+
+v_trigger_update    text;
+v_trigger_delete    text; 
+v_exec_status       text;
+
+v_remote_sql      text;
+v_remote_f_sql      text;
+v_insert_sql        text;
+v_create_sql      text;
+v_create_f_sql      text;
+v_delete_sql        text;
+v_boundry_sql       text;
+v_remote_boundry_sql        text;
+
+BEGIN
+
+IF p_debug IS DISTINCT FROM true THEN
+    PERFORM set_config( 'client_min_messages', 'warning', true );
+END IF;
+
+v_job_name := 'Refresh Updater: '||p_destination;
+
+PERFORM pg_advisory_lock(hashtext('refresh_updaters'), hashtext(v_job_name));
+
+SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
+SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
+
+-- Set custom search path to allow easier calls to other functions, especially job logging
+SELECT current_setting('search_path') INTO v_old_search_path;
+EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
+
+
+v_job_id := add_job(v_job_name);
+PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
+
+-- grab boundry
+v_step_id := add_step(v_job_id,'Grabbing Boundries, Building SQL');
+
+SELECT source_table, dest_table, 'tmp_'||replace(dest_table,'.','_'), dblink, control, last_value, now() - boundary::interval, pk_field, pk_type, filter FROM refresh_config
+WHERE dest_table = p_destination INTO v_source_table, v_dest_table, v_tmp_table, v_dblink, v_control, v_last_value, v_boundry, v_pk_field, v_pk_type, v_filter;
+IF NOT FOUND THEN
+   RAISE EXCEPTION 'ERROR: no mapping found for %',v_job_name;
+END IF;
+
+-- determine column list, column type list
+IF v_filter IS NULL THEN 
+    SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||atttypid::regtype::text),',') FROM 
+        pg_attribute WHERE attnum > 0 AND attisdropped is false AND attrelid = p_destination::regclass INTO v_cols, v_cols_n_types;
+ELSE
+    -- ensure all primary key columns are included in any column filters
+    FOREACH v_field IN ARRAY v_pk_field LOOP
+        IF v_field = ANY(v_filter) THEN
+            CONTINUE;
+        ELSE
+            RAISE EXCEPTION 'ERROR: filter list did not contain all columns that compose primary key for %',v_job_name; 
+        END IF;
+    END LOOP;
+    SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||atttypid::regtype::text),',') FROM 
+        (SELECT unnest(filter) FROM refresh_config WHERE dest_table = p_destination) x 
+         JOIN pg_attribute ON (unnest=attname::text AND attrelid=p_destination::regclass) INTO v_cols, v_cols_n_types;
+END IF;    
+
+PERFORM update_step(v_step_id, 'OK','Initial boundary from '||v_last_value::text||' to '||v_boundry::text);
+
+-- Find boundary that will limit to ~ 50k rows 
+
+v_remote_boundry_sql := 'SELECT max(' || v_control || ') as i FROM (SELECT * FROM '||v_source_table||' WHERE '||v_control||' > '||quote_literal(v_last_value)||' AND '||v_control||' <= '||quote_literal(v_boundry) || ' ORDER BY '||v_control||' ASC LIMIT '|| $3 ||' ) as x';
+
+v_boundry_sql := 'SELECT i FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_boundry_sql)||') t (i timestamptz)';
+
+SELECT add_step(v_job_id,'Getting real boundary') INTO v_step_id;
+    perform gdb(p_debug,v_boundry_sql);
+    execute v_boundry_sql INTO v_remote_boundry;
+
+PERFORM update_step(v_step_id, 'OK','Real boundary: ' || coalesce( v_remote_boundry, v_boundry ) || ' ' || ( v_boundry - coalesce( v_remote_boundry, v_boundry ) ) );
+
+    v_boundry := coalesce( v_remote_boundry, v_boundry );
+
+-- init sql statements 
+
+v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table||' WHERE '||v_control||' > '||quote_literal(v_last_value)||' AND '||v_control||' <= '||quote_literal(v_boundry);
+
+v_create_sql := 'CREATE TEMP TABLE '||v_tmp_table||' AS SELECT '||v_cols||' FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_sql)||') t ('||v_cols_n_types||')';
+
+v_delete_sql := 'DELETE FROM '||v_dest_table||' USING '||v_tmp_table||' t WHERE '||v_dest_table||'.'||v_pk_field[1]||'=t.'||v_pk_field[1]; 
+
+v_insert_sql := 'INSERT INTO '||v_dest_table||'('||v_cols||') SELECT '||v_cols||' FROM '||v_tmp_table; 
+
+-- create temp from remote
+SELECT add_step(v_job_id,'Creating temp table ('||v_tmp_table||') from remote table') INTO v_step_id;
+    perform gdb(p_debug,v_create_sql);
+    execute v_create_sql;     
+    GET DIAGNOSTICS v_rowcount = ROW_COUNT;
+PERFORM update_step(v_step_id, 'OK','Table contains '||v_rowcount||' records');
+
+-- delete (update)
+SELECT add_step(v_job_id,'Updating records in local table') INTO v_step_id;
+    perform gdb(p_debug,v_delete_sql);
+    execute v_delete_sql; 
+    GET DIAGNOSTICS v_rowcount = ROW_COUNT;
+PERFORM update_step(v_step_id, 'OK','Updated '||v_rowcount||' records');
+
+-- insert
+SELECT add_step(v_job_id,'Inserting new records into local table') INTO v_step_id;
+    perform gdb(p_debug,v_insert_sql);
+    execute v_insert_sql; 
+    GET DIAGNOSTICS v_rowcount = ROW_COUNT;
+PERFORM update_step(v_step_id, 'OK','Inserted '||v_rowcount||' records');
+
+-- update activity status
+v_step_id := add_step(v_job_id,'Updating last_value in config table');
+    v_last_value_sql := 'UPDATE refresh_config SET last_value = '|| quote_literal(v_boundry) ||' WHERE dest_table = ' ||quote_literal(p_destination); 
+    PERFORM gdb(p_debug,v_last_value_sql);
+    EXECUTE v_last_value_sql; 
+PERFORM update_step(v_step_id, 'OK','Last Value was '||quote_literal(v_boundry));
+
+EXECUTE 'DROP TABLE IF EXISTS '||v_tmp_table;
+
+PERFORM close_job(v_job_id);
+
+-- Ensure old search path is reset for the current session
+EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
+
+PERFORM pg_advisory_unlock(hashtext('refresh_updaters'), hashtext(v_job_name));
+
+EXCEPTION
+    WHEN others THEN
+        -- Exception block resets path, so have to reset it again
+        EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
+        PERFORM update_step(v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
+        PERFORM fail_job(v_job_id);
+
+        -- Ensure old search path is reset for the current session
+       EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
+
+        PERFORM pg_advisory_unlock(hashtext('refresh_updaters'), hashtext(v_job_name));
+        RAISE EXCEPTION '%', SQLERRM;
+END
+$_$;
 
 
 /*
@@ -480,8 +666,6 @@ SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.
 -- Set custom search path to allow easier calls to other functions, especially job logging
 SELECT current_setting('search_path') INTO v_old_search_path;
 EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
-
-RAISE NOTICE 'search path start: %', current_setting('search_path');
 
 SELECT source_table, dest_table, 'tmp_'||replace(dest_table,'.','_'), dblink, control, pk_field, pk_type, filter FROM refresh_config 
 WHERE dest_table = p_destination INTO v_source_table, v_dest_table, v_tmp_table, v_dblink, v_control, v_pk_field, v_pk_type, v_filter; 
