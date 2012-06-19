@@ -1,96 +1,6 @@
--- ########## mimeo table definitions ##########
-CREATE TABLE mviews (
-    mv_name text NOT NULL,
-    v_name text NOT NULL,
-    last_refresh timestamp with time zone,
-    CONSTRAINT mviews_mv_name_pkey PRIMARY KEY (mv_name)
-);
-SELECT pg_catalog.pg_extension_config_dump('mviews', '');
+-- Changed to using pg_try_advisory_lock and failing gracefully when concurrent jobs are running. Logs that job didn't run and why
 
-CREATE TABLE dblink_mapping (
-    data_source_id integer NOT NULL,
-    data_source text NOT NULL,
-    username text NOT NULL,
-    pwd text,
-    dbh_attr text,
-    CONSTRAINT dblink_mapping_data_source_id_pkey PRIMARY KEY (data_source_id)
-);
-SELECT pg_catalog.pg_extension_config_dump('dblink_mapping', '');
-CREATE SEQUENCE dblink_mapping_data_source_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-ALTER SEQUENCE dblink_mapping_data_source_id_seq OWNED BY dblink_mapping.data_source_id;
-
-CREATE TYPE refresh_type AS ENUM ('snap', 'inserter', 'updater', 'dml', 'logdel');
-CREATE TABLE refresh_config (
-    source_table text NOT NULL,
-    dest_table text NOT NULL,
-    type refresh_type NOT NULL,
-    dblink integer REFERENCES dblink_mapping(data_source_id) NOT NULL,
-    control text,
-    last_value timestamp with time zone,
-    boundary interval,
-    pk_field text[],
-    pk_type text[],
-    filter text[],
-    condition text,
-    post_script text[],
-    CONSTRAINT refresh_config_dest_table_pkey PRIMARY KEY (dest_table)
-);
-SELECT pg_catalog.pg_extension_config_dump('refresh_config', '');
-CREATE INDEX refresh_config_type_idx ON refresh_config (type);
-    
-
--- ########## mimeo function definitions ##########
-/*
- *  Authentication for dblink
- */
-CREATE FUNCTION auth(integer) RETURNS text
-    LANGUAGE sql
-    AS $$
-    select data_source||' user='||username||' password='||pwd from @extschema@.dblink_mapping where data_source_id = $1; 
-$$;
-
-/*
- *  Debug function
- */
-CREATE FUNCTION gdb(in_debug boolean, in_notice text) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    IF in_debug THEN 
-        RAISE NOTICE '%', in_notice;
-    END IF;
-END
-$$;
-
-/*
- *  Function to run any SQL after object recreation due to schema changes on source
- */
-CREATE FUNCTION post_script(p_dest_table text) RETURNS void
-    LANGUAGE plpgsql SECURITY DEFINER
-    AS $$
-DECLARE
-    v_post_script   text[];
-    v_sql           text;
-BEGIN
-    
-     SELECT post_script INTO v_post_script FROM @extschema@.refresh_config WHERE dest_table = p_dest_table;
-
-    FOREACH v_sql IN ARRAY v_post_script LOOP
-        RAISE NOTICE 'v_sql: %', v_sql;
-        EXECUTE v_sql;
-    END LOOP;
-END
-$$;
-
-/*
- *  Snap refresh to repull all table data
- */
-CREATE FUNCTION refresh_snap(p_destination text, p_debug boolean) RETURNS void
+CREATE OR REPLACE FUNCTION refresh_snap(p_destination text, p_debug boolean) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 declare
@@ -303,10 +213,8 @@ END
 $$;
 
 
-/*
- *  Refresh insert only table based on timestamp control field
- */
-CREATE FUNCTION refresh_inserter(p_destination text, p_debug boolean, integer DEFAULT 100000) RETURNS void
+
+CREATE OR REPLACE FUNCTION refresh_inserter(p_destination text, p_debug boolean, integer DEFAULT 100000) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $_$
 declare
@@ -447,11 +355,7 @@ END
 $_$;
 
 
-/*
- *  Refresh insert/update only table based on timestamp control field
- *
- */
-CREATE FUNCTION refresh_updater(p_destination text, p_debug boolean, integer DEFAULT 100000) RETURNS void
+CREATE OR REPLACE FUNCTION refresh_updater(p_destination text, p_debug boolean, integer DEFAULT 100000) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $_$
 declare
@@ -632,11 +536,7 @@ END
 $_$;
 
 
-/*
- *  Refresh based on DML (Insert, Update, Delete)
- *
- */
-CREATE FUNCTION refresh_dml(p_destination text, p_debug boolean, int default 100000) RETURNS void
+CREATE OR REPLACE FUNCTION refresh_dml(p_destination text, p_debug boolean, int default 100000) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 declare
@@ -846,7 +746,7 @@ $$;
  *  Refresh based on DML (Insert, Update, Delete), but logs all deletes on the destination table
  *  Destination table requires extra column: source_deleted timestamptz
  */
-CREATE FUNCTION refresh_logdel(p_destination text, p_debug boolean, int default 100000) RETURNS void
+CREATE OR REPLACE FUNCTION refresh_logdel(p_destination text, p_debug boolean, int default 100000) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 declare
