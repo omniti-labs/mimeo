@@ -7,8 +7,14 @@ CREATE TABLE mviews (
 );
 SELECT pg_catalog.pg_extension_config_dump('mviews', '');
 
+CREATE SEQUENCE dblink_mapping_data_source_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
 CREATE TABLE dblink_mapping (
-    data_source_id integer NOT NULL,
+    data_source_id integer NOT NULL DEFAULT nextval('@extschema@.dblink_mapping_data_source_id_seq'),
     data_source text NOT NULL,
     username text NOT NULL,
     pwd text,
@@ -16,12 +22,6 @@ CREATE TABLE dblink_mapping (
     CONSTRAINT dblink_mapping_data_source_id_pkey PRIMARY KEY (data_source_id)
 );
 SELECT pg_catalog.pg_extension_config_dump('dblink_mapping', '');
-CREATE SEQUENCE dblink_mapping_data_source_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
 ALTER SEQUENCE dblink_mapping_data_source_id_seq OWNED BY dblink_mapping.data_source_id;
 
 CREATE TYPE refresh_type AS ENUM ('snap', 'inserter', 'updater', 'dml', 'logdel');
@@ -449,7 +449,6 @@ $_$;
 
 /*
  *  Refresh insert/update only table based on timestamp control field
- *
  */
 CREATE FUNCTION refresh_updater(p_destination text, p_debug boolean, integer DEFAULT 100000) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
@@ -634,7 +633,6 @@ $_$;
 
 /*
  *  Refresh based on DML (Insert, Update, Delete)
- *
  */
 CREATE FUNCTION refresh_dml(p_destination text, p_debug boolean, int default 100000) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
@@ -1091,19 +1089,18 @@ $$;
 
 /*
  *  Snapshot maker function. Assumes source and destination are the same tablename.
- *
  */
 CREATE FUNCTION snapshot_maker(p_src_table text, p_dblink_id int) RETURNS void
     LANGUAGE plpgsql
     AS $_$
 declare
-v_insert_refresh_config          text;
-v_data_source			 text;
+v_insert_refresh_config     text;
+v_data_source               text;
 
 BEGIN
 	SELECT data_source INTO v_data_source FROM @extschema@.dblink_mapping WHERE data_source_id = p_dblink_id; 
 	IF NOT FOUND THEN
-   		RAISE EXCEPTION 'ERROR: database link ID is incorrect %', p_dblink_id; 
+   		RAISE EXCEPTION 'Database link ID does not exist in @extschema@.dblink_mapping: %', p_dblink_id; 
 	END IF;  
 
 	v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config(source_table, dest_table, type, dblink) VALUES('||quote_literal(p_src_table)||', '||quote_literal(p_src_table)||',''snap'', '|| p_dblink_id||');';
@@ -1126,7 +1123,6 @@ $_$;
 
 /*
  *  Snapshot maker function. Accepts custom destination name.
- *
  */
 CREATE FUNCTION snapshot_maker(p_src_table text, p_dest_table text, p_dblink_id int) RETURNS void
     LANGUAGE plpgsql
@@ -1138,7 +1134,7 @@ v_data_source			 text;
 BEGIN
 	SELECT data_source INTO v_data_source FROM @extschema@.dblink_mapping WHERE data_source_id = p_dblink_id; 
 	IF NOT FOUND THEN
-   		RAISE EXCEPTION 'ERROR: database link ID is incorrect %', p_dblink_id; 
+   		RAISE EXCEPTION 'ERROR: Database link ID does not exist in @extschema@.dblink_mapping: %', p_dblink_id; 
 	END IF;  
 
 	v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config(source_table, dest_table, type, dblink) VALUES('||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||',''snap'', '|| p_dblink_id||');';
@@ -1161,9 +1157,8 @@ $_$;
 
 /*
  *  Snapshot destroyer function. Pass archive to keep permanent copy of snap view.
- *
  */
-CREATE FUNCTION snapshot_destroyer(p_dest_table text, p_option text) RETURNS void
+CREATE FUNCTION snapshot_destroyer(p_dest_table text, p_archive_option text) RETURNS void
     LANGUAGE plpgsql
     AS $_$
     
@@ -1183,7 +1178,7 @@ IF NOT FOUND THEN
 END IF;
 
 -- Make a brand new, real table to keep the data that is not part of the snap system anymore
-IF p_option = 'ARCHIVE' THEN
+IF p_archive_option = 'ARCHIVE' THEN
 
     SELECT definition INTO v_view_definition FROM pg_views WHERE schemaname || '.' || viewname = v_dest_table;
     v_exists := strpos(v_view_definition, 'snap1');

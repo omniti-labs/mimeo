@@ -1,22 +1,25 @@
--- Added new snapshot_maker and snapshot_destroyer functions
+-- Made dblink_mapping.data_source_id column a real serial column (default is the next sequence ID) to make setup easier
+-- Made non-existent database link ID error a little clearer
+-- Made snapshot_destroyer parameter name clearer in what its use is. Required dropping function so please re-check your function permissions.
+-- Documentation update.
 
-/*
- *  Snapshot maker function. Assumes source and destination are the same tablename.
- *
- */
-CREATE FUNCTION snapshot_maker(p_src_table text, p_dblink_id int) RETURNS void
+
+ALTER TABLE dblink_mapping ALTER COLUMN data_source_id SET DEFAULT nextval('@extschema@.dblink_mapping_data_source_id_seq');
+
+
+CREATE OR REPLACE FUNCTION snapshot_maker(p_src_table text, p_dblink_id int) RETURNS void
     LANGUAGE plpgsql
     AS $_$
 declare
-v_insert_refresh_config          text;
-v_data_source			 text;
+v_insert_refresh_config     text;
+v_data_source               text;
 
 BEGIN
 	SELECT data_source INTO v_data_source FROM @extschema@.dblink_mapping WHERE data_source_id = p_dblink_id; 
 	IF NOT FOUND THEN
-   		RAISE EXCEPTION 'ERROR: database link ID is incorrect %', p_dblink_id; 
+   		RAISE EXCEPTION 'Database link ID does not exist in @extschema@.dblink_mapping: %', p_dblink_id; 
 	END IF;  
-
+doc
 	v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config(source_table, dest_table, type, dblink) VALUES('||quote_literal(p_src_table)||', '||quote_literal(p_src_table)||',''snap'', '|| p_dblink_id||');';
 
 	RAISE NOTICE 'Inserting record in @extschema@.refresh_config';
@@ -35,21 +38,18 @@ BEGIN
 END
 $_$;
 
-/*
- *  Snapshot maker function. Accepts custom destination name.
- *
- */
-CREATE FUNCTION snapshot_maker(p_src_table text, p_dest_table text, p_dblink_id int) RETURNS void
+
+CREATE OR REPLACE FUNCTION snapshot_maker(p_src_table text, p_dest_table text, p_dblink_id int) RETURNS void
     LANGUAGE plpgsql
     AS $_$
 declare
-v_insert_refresh_config          text;
-v_data_source			 text;
+v_insert_refresh_config     text;
+v_data_source	            text;
 
 BEGIN
 	SELECT data_source INTO v_data_source FROM @extschema@.dblink_mapping WHERE data_source_id = p_dblink_id; 
 	IF NOT FOUND THEN
-   		RAISE EXCEPTION 'ERROR: database link ID is incorrect %', p_dblink_id; 
+   		RAISE EXCEPTION 'ERROR: Database link ID does not exist in @extschema@.dblink_mapping: %', p_dblink_id; 
 	END IF;  
 
 	v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config(source_table, dest_table, type, dblink) VALUES('||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||',''snap'', '|| p_dblink_id||');';
@@ -70,11 +70,9 @@ BEGIN
 END
 $_$;
 
-/*
- *  Snapshot destroyer function. Pass archive to keep permanent copy of snap view.
- *
- */
-CREATE FUNCTION snapshot_destroyer(p_dest_table text, p_option text) RETURNS void
+ALTER EXTENSION mimeo DROP FUNCTION snapshot_destroyer(text, text);
+DROP FUNCTION snapshot_destroyer(text, text);
+CREATE FUNCTION snapshot_destroyer(p_dest_table text, p_archive_option text) RETURNS void
     LANGUAGE plpgsql
     AS $_$
     
@@ -94,7 +92,7 @@ IF NOT FOUND THEN
 END IF;
 
 -- Make a brand new, real table to keep the data that is not part of the snap system anymore
-IF p_option = 'ARCHIVE' THEN
+IF p_archive_option = 'ARCHIVE' THEN
 
     SELECT definition INTO v_view_definition FROM pg_views WHERE schemaname || '.' || viewname = v_dest_table;
     v_exists := strpos(v_view_definition, 'snap1');
