@@ -19,7 +19,6 @@ BEGIN
 	IF NOT FOUND THEN
    		RAISE EXCEPTION 'Database link ID does not exist in @extschema@.dblink_mapping: %', p_dblink_id; 
 	END IF;  
-doc
 	v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config(source_table, dest_table, type, dblink) VALUES('||quote_literal(p_src_table)||', '||quote_literal(p_src_table)||',''snap'', '|| p_dblink_id||');';
 
 	RAISE NOTICE 'Inserting record in @extschema@.refresh_config';
