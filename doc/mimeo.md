@@ -32,7 +32,7 @@ Functions
     Third, optional argument can be used to change the limit on how many rows are grabbed from the source with each run of the function.
     
 *refresh_updater(p_destination text, p_debug boolean, int default 100000)*  
-    Replication for tables that have INSERT AND/OR UPDATE ONLY data and contain a timestamp column that is incrementend with every INSERT AND UPDATE
+    Replication for tables that have INSERT AND/OR UPDATE ONLY data and contain a timestamp column that is incremented with every INSERT AND UPDATE
     ...SETUP...
     Passing TRUE to second argument turns on debugging output to see details in real-time.  
     Third, optional argument can be used to change the limit on how many rows are grabbed from the source with each run of the function.
@@ -51,16 +51,29 @@ Functions
     Third, optional argument can be used to change the limit on how many rows are grabbed from the source with each run of the function.
 
 *snapshot_maker(p_src_table text, p_dblink_id int)*  
-    Function to automatically setup snapshot replicatation for a table. Source and destination table will have same scheme and table names.  
-    Pass the data_source_id from the dblink_mapping table as the second argument for where the source table is located.
+    Function to automatically setup snapshot replication for a table. Source and destination table will have same schema and table names.  
+    The second argument is the data_source_id from the dblink_mapping table for where the source table is located.
 
 *snapshot_maker(p_src_table text, p_dest_table text, p_dblink_id int)*  
     Function to automatically setup snapshot replication for a table. Allows setting of custom destination table. Include schema name in the destination table parameter.  
-    Pass the data_source_id from the dblink_mapping table as the third argument for where the source table is located.
+	The second argument is the data_source_id from the dblink_mapping table for where the source table is located.
 
 *snapshot_destroyer(p_dest_table text, p_archive_option text)*  
     Function to automatically remove a snapshot replication table from the destination.  
     Pass 'ARCHIVE' as the second argument to keep a permanent copy of the snapshot table on the destination. Turns what was the view into a real table. 
     Pass any other value to completely remove everything.
-    
+
+*inserter_maker(p_src_table text, p_control_field text, p_dblink_id int)*  
+	Function to automatically setup inserter replication for a table. Source and destination table will have same schema and table names.  
+	The second argument is the column which is used as the control field (a timestamp field that is new for every insert).  
+    The third argument is the data_source_id from the dblink_mapping table for where the source table is located.
+
+*inserter_maker(p_src_table text, p_dest_table text, p_control_field text, p_dblink_id int)*  
+	Function to automatically setup inserter replication for a table. Allows setting of custom destination table. Include schema name in the destination table parameter.  
+	The third argument is the column which is used as the control field (a timestamp field that is new for every insert).  
+    The fourth argument is the data_source_id from the dblink_mapping table for where the source table is located.
+
+*inserter_destroyer(p_dest_table text, p_archive_option text)*  
+    Function to automatically remove an inserter replication table from the destination.  
+    Pass 'ARCHIVE' as the second argument to leave the destination table intact. Pass any other value to completely remove everything.
     
