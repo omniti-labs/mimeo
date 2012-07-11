@@ -1256,7 +1256,7 @@ BEGIN
 	EXECUTE 'SELECT max('||p_control_field||') FROM '||p_dest_table||';' INTO v_max_timestamp;
 	RAISE NOTICE 'The select statement ran successfully.';
 
-	v_update_refresh_config := 'UPDATE @extschema@.refresh_config SET last_value = '||quote_literal(v_max_timestamp)||' WHERE dest_table = '||quote_literal(p_dest_table)||';';
+	v_update_refresh_config := 'UPDATE @extschema@.refresh_config SET (type, last_value) = (''inserter'', '||quote_literal(v_max_timestamp)||') WHERE dest_table = '||quote_literal(p_src_table)||';';
 
 	RAISE NOTICE 'Updating config table with highest timestamp value';
 	EXECUTE v_update_refresh_config;
@@ -1316,7 +1316,7 @@ BEGIN
 	EXECUTE 'SELECT max('||p_control_field||') FROM '||p_src_table||';' INTO v_max_timestamp;
 	RAISE NOTICE 'The select statement ran successfully.';
 
-	v_update_refresh_config := 'UPDATE @extschema@.refresh_config SET last_value = '||quote_literal(v_max_timestamp)||' WHERE dest_table = '||quote_literal(p_src_table)||';';
+	v_update_refresh_config := 'UPDATE @extschema@.refresh_config SET (type, last_value) = (''inserter'', '||quote_literal(v_max_timestamp)||') WHERE dest_table = '||quote_literal(p_src_table)||';';
 
 	RAISE NOTICE 'Updating config table with highest timestamp value';
 	EXECUTE v_update_refresh_config;
