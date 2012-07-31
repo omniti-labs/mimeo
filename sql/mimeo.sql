@@ -51,7 +51,7 @@ ALTER TABLE @extschema@.refresh_config_inserter ADD CONSTRAINT refresh_config_in
 ALTER TABLE @extschema@.refresh_config_inserter ADD CONSTRAINT refresh_config_inserter_dest_table_pkey PRIMARY KEY (dest_table);
 ALTER TABLE @extschema@.refresh_config_inserter ADD COLUMN source_table text NOT NULL; 
 ALTER TABLE @extschema@.refresh_config_inserter ADD COLUMN control text NOT NULL;   
-ALTER TABLE @extschema@.refresh_config_inserter ADD COLUMN boundary interval NOT NULL;
+ALTER TABLE @extschema@.refresh_config_inserter ADD COLUMN boundary interval;
 ALTER TABLE @extschema@.refresh_config_inserter ALTER COLUMN type SET DEFAULT 'inserter';
 ALTER TABLE @extschema@.refresh_config_inserter ADD CONSTRAINT refresh_config_inserter_type_check CHECK (type = 'inserter');
 
@@ -61,7 +61,7 @@ ALTER TABLE @extschema@.refresh_config_updater ADD CONSTRAINT refresh_config_upd
 ALTER TABLE @extschema@.refresh_config_updater ADD CONSTRAINT refresh_config_updater_dest_table_pkey PRIMARY KEY (dest_table);
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN source_table text NOT NULL;
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN control text NOT NULL;  
-ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN boundary interval NOT NULL;
+ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN boundary interval;
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN pk_field text[] NOT NULL; 
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN pk_type text[] NOT NULL;
 ALTER TABLE @extschema@.refresh_config_updater ALTER COLUMN type SET DEFAULT 'updater';

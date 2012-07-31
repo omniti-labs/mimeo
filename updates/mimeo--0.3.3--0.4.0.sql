@@ -33,7 +33,7 @@ ALTER TABLE @extschema@.refresh_config_inserter ADD CONSTRAINT refresh_config_in
 ALTER TABLE @extschema@.refresh_config_inserter ADD CONSTRAINT refresh_config_inserter_dest_table_pkey PRIMARY KEY (dest_table);
 ALTER TABLE @extschema@.refresh_config_inserter ADD COLUMN source_table text NOT NULL; 
 ALTER TABLE @extschema@.refresh_config_inserter ADD COLUMN control text NOT NULL;   
-ALTER TABLE @extschema@.refresh_config_inserter ADD COLUMN boundary interval NOT NULL;
+ALTER TABLE @extschema@.refresh_config_inserter ADD COLUMN boundary interval;
 ALTER TABLE @extschema@.refresh_config_inserter ALTER COLUMN type SET DEFAULT 'inserter';
 ALTER TABLE @extschema@.refresh_config_inserter ADD CONSTRAINT refresh_config_inserter_type_check CHECK (type = 'inserter');
 
@@ -43,7 +43,7 @@ ALTER TABLE @extschema@.refresh_config_updater ADD CONSTRAINT refresh_config_upd
 ALTER TABLE @extschema@.refresh_config_updater ADD CONSTRAINT refresh_config_updater_dest_table_pkey PRIMARY KEY (dest_table);
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN source_table text NOT NULL;
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN control text NOT NULL;  
-ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN boundary interval NOT NULL;
+ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN boundary interval;
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN pk_field text[] NOT NULL; 
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN pk_type text[] NOT NULL;
 ALTER TABLE @extschema@.refresh_config_updater ALTER COLUMN type SET DEFAULT 'updater';
@@ -91,7 +91,7 @@ INSERT INTO @extschema@.refresh_config_dml (source_table, dest_table, dblink, la
     FROM @extschema@.refresh_config_old
     WHERE type = 'dml'::@extschema@.refresh_type;
 
-INSERT INTO @extschema@.refresh_config_dml (source_table, dest_table, dblink, last_value, filter, condition, control, pk_field, pk_type)
+INSERT INTO @extschema@.refresh_config_logdel (source_table, dest_table, dblink, last_value, filter, condition, control, pk_field, pk_type)
     SELECT source_table, dest_table, dblink, last_value, filter, condition, control, pk_field, pk_type
     FROM @extschema@.refresh_config_old
     WHERE type = 'logdel'::@extschema@.refresh_type;
