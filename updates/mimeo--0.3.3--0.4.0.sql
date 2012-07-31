@@ -1,30 +1,13 @@
--- ########## mimeo table definitions ##########
-CREATE TABLE mviews (
-    mv_name text NOT NULL,
-    v_name text NOT NULL,
-    last_refresh timestamp with time zone,
-    CONSTRAINT mviews_mv_name_pkey PRIMARY KEY (mv_name)
-);
-SELECT pg_catalog.pg_extension_config_dump('mviews', '');
+-- Restructured config table. Made a child table for each refresh type inheriting from a generic parent. Allows tighter control of data and easier extension maintenance
+-- Simplified inserter/updater destroyer functions
+-- Fixed inserter/updater/dml/logdel refresh functions to better handle no new rows from source
+-- Fixed inserter/updater maker functions to set proper type in config table and changed boundary parameter from text to interval
+-- Cleaned up unused variables in functions
+-- More consistent code formatting of functions
 
-CREATE SEQUENCE dblink_mapping_data_source_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-CREATE TABLE dblink_mapping (
-    data_source_id integer NOT NULL DEFAULT nextval('@extschema@.dblink_mapping_data_source_id_seq'),
-    data_source text NOT NULL,
-    username text NOT NULL,
-    pwd text,
-    dbh_attr text,
-    CONSTRAINT dblink_mapping_data_source_id_pkey PRIMARY KEY (data_source_id)
-);
-SELECT pg_catalog.pg_extension_config_dump('dblink_mapping', '');
-ALTER SEQUENCE dblink_mapping_data_source_id_seq OWNED BY dblink_mapping.data_source_id;
+ALTER TABLE @extschema@.refresh_config RENAME TO refresh_config_old;
+ALTER INDEX @extschema@.refresh_config_type_idx RENAME TO refresh_config_type_idx_old;
 
-CREATE TYPE refresh_type AS ENUM ('snap', 'inserter', 'updater', 'dml', 'logdel');
 CREATE TABLE refresh_config (
     dest_table text NOT NULL,
     type mimeo.refresh_type NOT NULL,
@@ -33,7 +16,6 @@ CREATE TABLE refresh_config (
     filter text[],
     condition text
 );
-SELECT pg_catalog.pg_extension_config_dump('refresh_config', '');
 CREATE RULE refresh_config_parent_nodata AS ON INSERT TO @extschema@.refresh_config DO INSTEAD NOTHING;
 
 CREATE TABLE refresh_config_snap (LIKE @extschema@.refresh_config INCLUDING ALL) INHERITS (@extschema@.refresh_config);
@@ -87,53 +69,34 @@ ALTER TABLE @extschema@.refresh_config_logdel ADD COLUMN control text NOT NULL;
 ALTER TABLE @extschema@.refresh_config_logdel ADD COLUMN pk_field text[] NOT NULL; 
 ALTER TABLE @extschema@.refresh_config_logdel ADD COLUMN pk_type text[] NOT NULL;
 ALTER TABLE @extschema@.refresh_config_logdel ALTER COLUMN type SET DEFAULT 'logdel';
-ALTER TABLE @extschema@.refresh_config_logdel ADD CONSTRAINT refresh_config_logdel_type_check CHECK (type = 'logdel');
-    
+ALTER TABLE @extschema@.refresh_config_logdel ADD CONSTRAINT refresh_config_logdel_type_check CHECK (type = 'logdel');      
 
--- ########## mimeo function definitions ##########
-/*
- *  Authentication for dblink
- */
-CREATE FUNCTION auth(integer) RETURNS text
-    LANGUAGE sql
-    AS $$
-    select data_source||' user='||username||' password='||pwd from @extschema@.dblink_mapping where data_source_id = $1; 
-$$;
+INSERT INTO @extschema@.refresh_config_snap (source_table, dest_table, dblink, last_value, filter, condition, post_script)
+    SELECT source_table, dest_table, dblink, last_value, filter, condition, post_script 
+    FROM @extschema@.refresh_config_old
+    WHERE type = 'snap'::@extschema@.refresh_type;
 
+INSERT INTO @extschema@.refresh_config_inserter (source_table, dest_table, dblink, last_value, filter, condition, control, boundary)
+    SELECT source_table, dest_table, dblink, last_value, filter, condition, control, boundary 
+    FROM @extschema@.refresh_config_old
+    WHERE type = 'inserter'::@extschema@.refresh_type;
 
-/*
- *  Debug function
- */
-CREATE FUNCTION gdb(in_debug boolean, in_notice text) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    IF in_debug THEN 
-        RAISE NOTICE '%', in_notice;
-    END IF;
-END
-$$;
+INSERT INTO @extschema@.refresh_config_updater (source_table, dest_table, dblink, last_value, filter, condition, control, boundary, pk_field, pk_type)
+    SELECT source_table, dest_table, dblink, last_value, filter, condition, control, boundary, pk_field, pk_type
+    FROM @extschema@.refresh_config_old
+    WHERE type = 'updater'::@extschema@.refresh_type;
 
+INSERT INTO @extschema@.refresh_config_dml (source_table, dest_table, dblink, last_value, filter, condition, control, pk_field, pk_type)
+    SELECT source_table, dest_table, dblink, last_value, filter, condition, control, pk_field, pk_type
+    FROM @extschema@.refresh_config_old
+    WHERE type = 'dml'::@extschema@.refresh_type;
 
-/*
- *  Function to run any SQL after object recreation due to schema changes on source
- */
-CREATE FUNCTION post_script(p_dest_table text) RETURNS void
-    LANGUAGE plpgsql SECURITY DEFINER
-    AS $$
-DECLARE
-    v_post_script   text[];
-    v_sql           text;
-BEGIN
-    
-     SELECT post_script INTO v_post_script FROM @extschema@.refresh_config WHERE dest_table = p_dest_table;
+INSERT INTO @extschema@.refresh_config_dml (source_table, dest_table, dblink, last_value, filter, condition, control, pk_field, pk_type)
+    SELECT source_table, dest_table, dblink, last_value, filter, condition, control, pk_field, pk_type
+    FROM @extschema@.refresh_config_old
+    WHERE type = 'logdel'::@extschema@.refresh_type;
 
-    FOREACH v_sql IN ARRAY v_post_script LOOP
-        RAISE NOTICE 'v_sql: %', v_sql;
-        EXECUTE v_sql;
-    END LOOP;
-END
-$$;
+DROP TABLE @extschema@.refresh_config_old;
 
 
 /*
@@ -1203,7 +1166,6 @@ RETURN;
 END
 $$;
 
-
 /*
  *  Snapshot maker function. Accepts custom destination name.
  */
@@ -1241,7 +1203,6 @@ RETURN;
 
 END
 $$;
-
 
 /*
  *  Snapshot destroyer function. Pass archive to keep permanent copy of snap view.
@@ -1300,6 +1261,7 @@ $$;
 /*
  *  Inserter maker function. Assumes source and destination are the same tablename.
  */
+DROP FUNCTION @extschema@.inserter_maker(text,text,int,text);
 CREATE FUNCTION inserter_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00') RETURNS void
     LANGUAGE plpgsql
     AS $$
@@ -1366,10 +1328,10 @@ RETURN;
 END
 $$;
 
-
 /*
  *  Inserter maker function. Accepts custom destination name.
  */
+DROP FUNCTION @extschema@.inserter_maker(text,text,text,int,text);
 CREATE FUNCTION inserter_maker(p_src_table text, p_dest_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00') RETURNS void
     LANGUAGE plpgsql
     AS $$
@@ -1436,7 +1398,6 @@ RETURN;
 END
 $$;
 
-
 /*
  *  Inserter destroyer function. Pass archive to keep table intact.
  */
@@ -1467,10 +1428,10 @@ EXECUTE 'DELETE FROM @extschema@.refresh_config_inserter WHERE dest_table = ' ||
 END
 $$;
 
-
 /*
  *  Updater maker function. Assumes source and destination are the same tablename.
  */
+DROP FUNCTION updater_maker(text,text,int,text[],text[],text);
 CREATE FUNCTION updater_maker(p_src_table text, p_control_field text, p_dblink_id int, p_pk_field text[], p_pk_type text[], p_boundary interval DEFAULT '00:10:00') RETURNS void
     LANGUAGE plpgsql
     AS $$
@@ -1549,10 +1510,10 @@ RETURN;
 END
 $$;
 
-
 /*
  *  Updater maker function. Accepts custom destination name.
  */
+DROP FUNCTION updater_maker(text,text,text,int,text[],text[],text);
 CREATE FUNCTION updater_maker(p_src_table text, p_dest_table text, p_control_field text, p_dblink_id int, p_pk_field text[], p_pk_type text[], p_boundary interval DEFAULT '00:10:00') RETURNS void
     LANGUAGE plpgsql
     AS $$
@@ -1633,7 +1594,6 @@ RETURN;
 END
 $$;
 
-
 /*
  *  Updater destroyer function. Pass archive to keep table intact.
  */
@@ -1662,4 +1622,3 @@ EXECUTE 'DELETE FROM @extschema@.refresh_config_updater WHERE dest_table = ' || 
 
 END
 $$;
-

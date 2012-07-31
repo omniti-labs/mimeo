@@ -1,4 +1,4 @@
-mimeo
+Mimeo
 =====
 
 Setup
