@@ -23,17 +23,9 @@ EXECUTE 'SELECT set_config(''search_path'','''||v_mimeo_schema||','||v_dblink_sc
 v_source_dblink := 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test password=mimeo_test';
 v_this_dblink := 'host=localhost port=5432 dbname='||current_database()||' user=mimeo_test password=mimeo_test';
 
-
-
 -- Run refresh tests
 PERFORM refresh_snap('mimeo_source.snap_test_source', true);
 PERFORM refresh_snap('mimeo_dest.snap_test_dest', true);
-
--- Must be done via dblink otherwise last_value and boundary get mixed up due to function transaction
---v_refresh_inserter_source := 'SELECT '||v_mimeo_schema||'.refresh_inserter(''mimeo_source.inserter_test_source'', true)';
---EXECUTE 'SELECT dblink_exec('||quote_literal(v_this_dblink)||', '||quote_literal(v_refresh_inserter_source)||')' INTO v_trash;
---EXECUTE 'SELECT dblink_exec('''||v_this_dblink||''', ''SELECT '||v_mimeo_schema||'.refresh_inserter(''''mimeo_source.inserter_test_source'''', true)'')';
---v_trash := dblink(v_this_dblink, v_refresh_inserter_source);
 
 PERFORM refresh_inserter('mimeo_source.inserter_test_source', true);
 PERFORM refresh_inserter('mimeo_dest.inserter_test_dest', true);
