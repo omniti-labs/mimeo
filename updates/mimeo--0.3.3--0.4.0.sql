@@ -96,6 +96,7 @@ INSERT INTO @extschema@.refresh_config_logdel (source_table, dest_table, dblink,
     FROM @extschema@.refresh_config_old
     WHERE type = 'logdel'::@extschema@.refresh_type;
 
+ALTER EXTENSION mimeo DROP TABLE @extschema@.refresh_config_old;
 DROP TABLE @extschema@.refresh_config_old;
 
 
@@ -1261,7 +1262,7 @@ $$;
 /*
  *  Inserter maker function. Assumes source and destination are the same tablename.
  */
-DROP FUNCTION IF EXISTS @extschema@.inserter_maker(text,text,int,text);
+ALTER EXTENSION mimeo DROP FUNCTION @extschema@.inserter_maker(text,text,int);
 DROP FUNCTION IF EXISTS @extschema@.inserter_maker(text,text,int);
 CREATE FUNCTION inserter_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00') RETURNS void
     LANGUAGE plpgsql
@@ -1332,7 +1333,8 @@ $$;
 /*
  *  Inserter maker function. Accepts custom destination name.
  */
-DROP FUNCTION IF EXISTS @extschema@.inserter_maker(text,text,text,int,text);
+
+ALTER EXTENSION mimeo DROP FUNCTION @extschema@.inserter_maker(text,text,text,int);
 DROP FUNCTION IF EXISTS @extschema@.inserter_maker(text,text,text,int);
 CREATE FUNCTION inserter_maker(p_src_table text, p_dest_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00') RETURNS void
     LANGUAGE plpgsql
@@ -1433,6 +1435,7 @@ $$;
 /*
  *  Updater maker function. Assumes source and destination are the same tablename.
  */
+ALTER EXTENSION mimeo DROP FUNCTION updater_maker(text,text,int,text[],text[],text);
 DROP FUNCTION updater_maker(text,text,int,text[],text[],text);
 CREATE FUNCTION updater_maker(p_src_table text, p_control_field text, p_dblink_id int, p_pk_field text[], p_pk_type text[], p_boundary interval DEFAULT '00:10:00') RETURNS void
     LANGUAGE plpgsql
@@ -1515,6 +1518,7 @@ $$;
 /*
  *  Updater maker function. Accepts custom destination name.
  */
+ALTER EXTENSION mimeo DROP FUNCTION updater_maker(text,text,text,int,text[],text[],text);
 DROP FUNCTION updater_maker(text,text,text,int,text[],text[],text);
 CREATE FUNCTION updater_maker(p_src_table text, p_dest_table text, p_control_field text, p_dblink_id int, p_pk_field text[], p_pk_type text[], p_boundary interval DEFAULT '00:10:00') RETURNS void
     LANGUAGE plpgsql
