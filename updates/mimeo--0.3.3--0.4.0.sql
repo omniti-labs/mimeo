@@ -1261,7 +1261,8 @@ $$;
 /*
  *  Inserter maker function. Assumes source and destination are the same tablename.
  */
-DROP FUNCTION @extschema@.inserter_maker(text,text,int,text);
+DROP FUNCTION IF EXISTS @extschema@.inserter_maker(text,text,int,text);
+DROP FUNCTION IF EXISTS @extschema@.inserter_maker(text,text,int);
 CREATE FUNCTION inserter_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00') RETURNS void
     LANGUAGE plpgsql
     AS $$
@@ -1331,7 +1332,8 @@ $$;
 /*
  *  Inserter maker function. Accepts custom destination name.
  */
-DROP FUNCTION @extschema@.inserter_maker(text,text,text,int,text);
+DROP FUNCTION IF EXISTS @extschema@.inserter_maker(text,text,text,int,text);
+DROP FUNCTION IF EXISTS @extschema@.inserter_maker(text,text,text,int);
 CREATE FUNCTION inserter_maker(p_src_table text, p_dest_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00') RETURNS void
     LANGUAGE plpgsql
     AS $$

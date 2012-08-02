@@ -186,7 +186,7 @@ $_$;
 /*
  *  Refresh insert/update only table based on timestamp control field
  */
-CREATE FUNCTION refresh_updater(p_destination text, p_debug boolean, integer DEFAULT 100000) RETURNS void
+CREATE OR REPLACE FUNCTION refresh_updater(p_destination text, p_debug boolean, integer DEFAULT 100000) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $_$
 declare
