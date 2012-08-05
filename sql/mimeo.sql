@@ -363,6 +363,9 @@ EXCEPTION
 -- See if there's exception to handle for the timeout
     WHEN OTHERS THEN
         EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
+        IF v_step_id IS NULL THEN
+            v_step_id := jobmon.add_step(v_job_id, 'EXCEPTION before first step logged');
+        END IF;
         PERFORM update_step(v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
         PERFORM fail_job(v_job_id);
 
@@ -999,6 +1002,9 @@ EXCEPTION
     WHEN others THEN
         -- Exception block resets path, so have to reset it again
         EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
+        IF v_step_id IS NULL THEN
+            v_step_id := jobmon.add_step(v_job_id, 'EXCEPTION before first step logged');
+        END IF;
         PERFORM update_step(v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
         PERFORM fail_job(v_job_id);
 
@@ -1255,6 +1261,9 @@ EXCEPTION
     WHEN others THEN
         -- Exception block resets path, so have to reset it again
         EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
+        IF v_step_id IS NULL THEN
+            v_step_id := jobmon.add_step(v_job_id, 'EXCEPTION before first step logged');
+        END IF;
         PERFORM update_step(v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
         PERFORM fail_job(v_job_id);
 
