@@ -80,8 +80,8 @@ EXECUTE 'SELECT inserter_maker(''mimeo_source.inserter_test_source'', ''mimeo_de
 EXECUTE 'SELECT updater_maker(''mimeo_source.updater_test_source'', ''col3'', '||v_ds_id||', ''{col1}'', ''{int}'', ''00:00:05''::interval)';
 EXECUTE 'SELECT updater_maker(''mimeo_source.updater_test_source'',''mimeo_dest.updater_test_dest'', ''col3'', '||v_ds_id||', ''{col1}'', ''{int}'', ''00:00:05''::interval)';
 
-RAISE NOTICE 'Sleeping for 30 seconds to ensure gap for incremental tests...';
-PERFORM pg_sleep(30);
+RAISE NOTICE 'Sleeping for 35 seconds to ensure gap for incremental tests...';
+PERFORM pg_sleep(35);
 
 -- Insert new data
 PERFORM dblink_exec(v_source_dblink, 'INSERT INTO mimeo_source.snap_test_source VALUES (3, ''test3'', now() + ''00:00:15''::interval)');
