@@ -24,14 +24,14 @@ v_source_dblink := 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test
 v_this_dblink := 'host=localhost port=5432 dbname='||current_database()||' user=mimeo_test password=mimeo_test';
 
 -- Run refresh tests
-PERFORM refresh_snap('mimeo_source.snap_test_source', true);
-PERFORM refresh_snap('mimeo_dest.snap_test_dest', true);
+PERFORM refresh_snap('mimeo_source.snap_test_source', p_debug := true);
+PERFORM refresh_snap('mimeo_dest.snap_test_dest', p_debug := true);
 
-PERFORM refresh_inserter('mimeo_source.inserter_test_source', true);
-PERFORM refresh_inserter('mimeo_dest.inserter_test_dest', true);
+PERFORM refresh_inserter('mimeo_source.inserter_test_source', p_debug := true);
+PERFORM refresh_inserter('mimeo_dest.inserter_test_dest', p_debug := true);
 
-PERFORM refresh_updater('mimeo_source.updater_test_source', true);
-PERFORM refresh_updater('mimeo_dest.updater_test_dest', true);
+PERFORM refresh_updater('mimeo_source.updater_test_source', p_debug := true);
+PERFORM refresh_updater('mimeo_dest.updater_test_dest', p_debug := true);
 
 EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
 

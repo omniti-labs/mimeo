@@ -84,9 +84,9 @@ RAISE NOTICE 'Sleeping for 35 seconds to ensure gap for incremental tests...';
 PERFORM pg_sleep(35);
 
 -- Insert new data
-PERFORM dblink_exec(v_source_dblink, 'INSERT INTO mimeo_source.snap_test_source VALUES (3, ''test3'', now() + ''00:00:15''::interval)');
-PERFORM dblink_exec(v_source_dblink, 'INSERT INTO mimeo_source.inserter_test_source VALUES (3, ''test3'', now() + ''00:00:15''::interval)');
-PERFORM dblink_exec(v_source_dblink, 'INSERT INTO mimeo_source.updater_test_source VALUES (3, ''test3'', now() + ''00:00:15''::interval)');
+PERFORM dblink_exec(v_source_dblink, 'INSERT INTO mimeo_source.snap_test_source VALUES (3, ''test3'', clock_timestamp())');
+PERFORM dblink_exec(v_source_dblink, 'INSERT INTO mimeo_source.inserter_test_source VALUES (3, ''test3'', clock_timestamp())');
+PERFORM dblink_exec(v_source_dblink, 'INSERT INTO mimeo_source.updater_test_source VALUES (3, ''test3'', clock_timestamp())');
 
 EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
 

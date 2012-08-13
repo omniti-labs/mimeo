@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION test_mimeo_destroyer (p_archive text) RETURNS void
+CREATE OR REPLACE FUNCTION test_mimeo_destroyer (p_archive text DEFAULT 'n') RETURNS void
     LANGUAGE plpgsql
     AS $$
 DECLARE
