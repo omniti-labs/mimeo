@@ -1,12 +1,4 @@
 -- ########## mimeo table definitions ##########
-CREATE TABLE mviews (
-    mv_name text NOT NULL,
-    v_name text NOT NULL,
-    last_refresh timestamp with time zone,
-    CONSTRAINT mviews_mv_name_pkey PRIMARY KEY (mv_name)
-);
-SELECT pg_catalog.pg_extension_config_dump('mviews', '');
-
 CREATE SEQUENCE dblink_mapping_data_source_id_seq
     START WITH 1
     INCREMENT BY 1
@@ -154,7 +146,7 @@ DECLARE
     v_sql           text;
 BEGIN
     
-     SELECT post_script INTO v_post_script FROM @extschema@.refresh_config WHERE dest_table = p_dest_table;
+     SELECT post_script INTO v_post_script FROM @extschema@.refresh_config_snap WHERE dest_table = p_dest_table;
 
     FOREACH v_sql IN ARRAY v_post_script LOOP
         RAISE NOTICE 'v_sql: %', v_sql;

@@ -11,7 +11,7 @@ The **dblink_mapping** table contains the configuration information for the sour
 
 The data_source value is the connection format required by dblink.
 **username** and **pwd** are the credentials for connecting to the source database.
-The **dbh_attr** column in this table is used for ...
+The **dbh_attr** column in this table is currently unused. Will add use for it if special config options for connection are needed.
 
 The role on the source database(s) should have at minimum select access on all tables/views to be replicated. For DML replication, you will also have to grant update/delete permissions on the queue table.
 

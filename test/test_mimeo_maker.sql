@@ -33,6 +33,7 @@ RAISE NOTICE 'Creating source tables';
 v_source_dblink := 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test password=mimeo_test';
 --v_this_dblink := 'host=localhost port=5432 dbname='||current_database()||' user=mimeo_test password=mimeo_test';
 PERFORM dblink_exec(v_source_dblink, 'CREATE SCHEMA mimeo_source');
+PERFORM dblink_exec(v_source_dblink, 'CREATE SCHEMA mimeo');
 
 PERFORM dblink_exec(v_source_dblink, 'CREATE TABLE mimeo_source.snap_test_source (
     col1 int,
