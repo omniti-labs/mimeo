@@ -1,12 +1,7 @@
--- Fixed bug in refresh_snap that was causing the post_scripts not to run when a change on source schema happened
--- Removed unused mviews table
-
-DROP TABLE IF EXISTS @extschema@.mviews;
-
 /*
  *  Function to run any SQL after object recreation due to schema changes on source
  */
-CREATE OR REPLACE FUNCTION post_script(p_dest_table text) RETURNS void
+CREATE FUNCTION post_script(p_dest_table text) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE

@@ -40,6 +40,24 @@ IF v_check >= 1 THEN
     PERFORM updater_destroyer('mimeo_dest.updater_test_dest', p_archive);
 END IF;
 
+SELECT count(*) INTO v_check FROM refresh_config WHERE dest_table = 'mimeo_source.dml_test_source';
+IF v_check >= 1 THEN
+    PERFORM dml_destroyer('mimeo_source.dml_test_source', p_archive);
+END IF;
+SELECT count(*) INTO v_check FROM refresh_config WHERE dest_table = 'mimeo_dest.dml_test_dest';
+IF v_check >= 1 THEN
+    PERFORM dml_destroyer('mimeo_dest.dml_test_dest', p_archive);
+END IF;
+
+SELECT count(*) INTO v_check FROM refresh_config WHERE dest_table = 'mimeo_source.logdel_test_source';
+IF v_check >= 1 THEN
+    PERFORM logdel_destroyer('mimeo_source.logdel_test_source', p_archive);
+END IF;
+SELECT count(*) INTO v_check FROM refresh_config WHERE dest_table = 'mimeo_dest.logdel_test_dest';
+IF v_check >= 1 THEN
+    PERFORM logdel_destroyer('mimeo_dest.logdel_test_dest', p_archive);
+END IF;
+
 EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
 
 END
