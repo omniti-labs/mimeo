@@ -8,14 +8,14 @@ Mimeo is a specialized replication extension for copying specific tables in one 
 
 Snapshot replication is for copying the entire table from the source to the destination every time it is run. This is the only one of the replication types that can automatically replicated column changes (add, drop, rename, new type). If you're taking advantage of this please use the post_script column in the refresh_config_snap table to reproduce permissions, indexes, constraints, etc after the table is recreated.
 
-Incremental replication comes in two forms: Insert Only and Insert/Update Only. This can only be done on a table that has a timestamp control column that is set during every insert and/or update. The update replication requires that the source has a primary key. Insert-only replication doesn't require a primary key, just the control colulmn. If the source table ever has rows deleted, this WILL NOT be replicated to the destination.  
+Incremental replication comes in two forms: Insert Only and Insert/Update Only. This can only be done on a table that has a timestamp control column that is set during every insert and/or update. The update replication requires that the source has a primary key. Insert-only replication doesn't require a primary key, just the control column. If the source table ever has rows deleted, this WILL NOT be replicated to the destination.  
 Since incremental replication is time-based, systems that do not run in UTC time can have issues during DST changes. To account for this, these maker functions check the timezone of the server and if it is anything but UTC/GMT, it sets dst_active to true in the config table. This causes all replication to pause between 12:30am and 2:30am on the morning of any DST change day. These times can be adjusted if needed using the dst_start and dst_end columns in the refresh_config_inserter or refresh_config_updater table accordingly.
 
-DML replication replays on the destination every insert, update and delete that happens on the source table. The special "logdel" dml replication does not remove rows that are deleted on the source. Instead it grabs the latest data that was deleted from the source, updates that on the destinaton and logs a timestamp of when it was deleted from the source (special destination timestamp field is called *mimeo_source_deleted* to try and keep it from conflicting with any existing column names).
+DML replication replays on the destination every insert, update and delete that happens on the source table. The special "logdel" dml replication does not remove rows that are deleted on the source. Instead it grabs the latest data that was deleted from the source, updates that on the destination and logs a timestamp of when it was deleted from the source (special destination timestamp field is called *mimeo_source_deleted* to try and keep it from conflicting with any existing column names).
 
 Incremental and DML replication by default have a batch limit of 10000 rows for any newly created job. This can be changed two ways. A permanent change for every run can be done by updating the batch_limit column in the associated refresh_config table. You can also set the p_limit argument when the refresh function is called to change it for that specific run.
 
-All refresh functions use the advisory lock system to ensure that jobs do not run concurrently. If a job is found to already be running, it will cleanly exit immediately and record that another job was already running in pg_jobmon. run_refresh has its own advistory lock independent of the refresh functions it calls to ensure that it does not run concurrently as well.
+All refresh functions use the advisory lock system to ensure that jobs do not run concurrently. If a job is found to already be running, it will cleanly exit immediately and record that another job was already running in pg_jobmon. run_refresh has its own advisory lock independent of the refresh functions it calls to ensure that it does not run concurrently as well.
 
 The p_debug argument for any function that has it will output more verbose feedback to show what that job is doing. Most of this is also logged with pg_jobmon, but this is a quick way to see detailed info immediately.
 
@@ -139,7 +139,7 @@ Tables
 *dblink_mapping*  
     Stores all source database connection data
 
-    data_source_id  - automaticly assigned ID number for the source database connection
+    data_source_id  - automatically assigned ID number for the source database connection
     data_source     - dblink string for source database connection
     username        - role that mimeo uses to connect to the source database
     pwd             - password for above role
