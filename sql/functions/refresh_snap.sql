@@ -49,7 +49,7 @@ SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.
 
 -- Set custom search path to allow easier calls to other functions, especially job logging
 SELECT current_setting('search_path') INTO v_old_search_path;
-EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
+EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||',public'',''false'')';
 
 v_job_id := add_job(v_job_name);
 PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);

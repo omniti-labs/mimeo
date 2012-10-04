@@ -26,7 +26,7 @@ SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.
 
 -- Set custom search path to allow easier calls to other functions
 SELECT current_setting('search_path') INTO v_old_search_path;
-EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_dblink_schema||''',''false'')';
+EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_dblink_schema||',public'',''false'')';
 
 IF p_dest_table IS NULL THEN
     p_dest_table := p_src_table;

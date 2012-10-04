@@ -19,7 +19,7 @@ ALTER SEQUENCE dblink_mapping_data_source_id_seq OWNED BY dblink_mapping.data_so
 CREATE TYPE refresh_type AS ENUM ('snap', 'inserter', 'updater', 'dml', 'logdel');
 CREATE TABLE refresh_config (
     dest_table text NOT NULL,
-    type mimeo.refresh_type NOT NULL,
+    type @extschema@.refresh_type NOT NULL,
     dblink integer NOT NULL,
     last_value timestamp with time zone,
     filter text[],

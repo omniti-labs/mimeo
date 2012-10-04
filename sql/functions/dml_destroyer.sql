@@ -22,7 +22,7 @@ BEGIN
 
 SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
 SELECT current_setting('search_path') INTO v_old_search_path;
-EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_dblink_schema||''',''false'')';
+EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_dblink_schema||',public'',''false'')';
 
 SELECT source_table, dest_table, dblink INTO v_src_table, v_dest_table, v_dblink
 		FROM @extschema@.refresh_config_dml WHERE dest_table = p_dest_table;
