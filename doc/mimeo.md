@@ -74,6 +74,7 @@ Functions
 
 *snapshot_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL)*  
  * Function to automatically setup snapshot replication for a table. By default source and destination table will have same schema and table names.  
+ * Destination table CANNOT exist first due to the way the snapshot system works (view /w two tables).
  * The second argument is the data_source_id from the dblink_mapping table for where the source table is located.
  * Third, optional argument is to set a custom destination table. Be sure to schema qualify it if needed.
 
@@ -85,6 +86,7 @@ Functions
 
 *inserter_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00', p_dest_table text DEFAULT NULL)*  
  * Function to automatically setup inserter replication for a table. By default source and destination table will have same schema and table names.  
+ * If destination table already exists, no data will be pulled from the source. You can use the refresh_inserter() 'repull' option to truncate the destination table and grab all the source data. Or you can set the config table's 'last_value' column for your specified table to designate when it should start. Otherwise last_value will default to the destination's max value for the control field or, if null, the time that the maker function was run.
  * Second argument is the column which is used as the control field (a timestamp field that is new for every insert).  
  * Third argument is the data_source_id from the dblink_mapping table for where the source table is located.  
  * Fourth, optional argument is a boundary value to prevent records being missed at the upper boundary of the batch. Set this to a value that will ensure all inserts will have finished for that time period when the replication runs. Default is 10 minutes which means the destination will always be 10 minutes behind the source but that also means that all inserts on the source will have finished by the time 10 minutes has passed.  
@@ -96,6 +98,7 @@ Functions
 
 *updater_maker(p_src_table text, p_control_field text, p_dblink_id int, p_pk_field text[], p_pk_type text[], p_boundary interval DEFAULT '00:10:00', p_dest_table text DEFAULT NULL)*  
  * Function to automatically setup updater replication for a table. By default source and destination table will have same schema and table names.  
+ * If destination table already exists, no data will be pulled from the source. You can use the refresh_updater() 'repull' option to truncate the destination table and grab all the source data. Or you can set the config table's 'last_value' column for your specified table to designate when it should start. Otherwise last_value will default to the destination's max value for the control field or, if null, the time that the maker function was run.
  * Second argument is the column which is used as the control field (a timestamp field that is new for every insert).  
  * Third argument is the data_source_id from the dblink_mapping table for where the source table is located.  
  * Fourth argument is an array of the columns that make up the primary key on the source table.  
@@ -109,6 +112,7 @@ Functions
 
 *dml_maker(p_src_table text, p_dblink_id int, p_pk_field text[], p_pk_type text[], p_dest_table text DEFAULT NULL)*  
  * Function to automatically setup dml replication for a table. See setup instructions above for permissions that are needed on source database. By default source and destination table will have same schema and table names.  
+ * If destination table already exists, no data will be pulled from the source. You can use the refresh_dml() 'repull' option to truncate the destination table and grab all the source data.
  * Second argument is the data_source_id from the dblink_mapping table for where the source table is located.  
  * Third argument is an array of the columns that make up the primary key on the source table.  
  * Fourth argument is an array of the column types that make up the primary key on the source table. Ensure the types are in the same order as the Third argument.  
@@ -120,6 +124,7 @@ Functions
 
 *logdel_maker(p_src_table text, p_dblink_id int, p_pk_field text[], p_pk_type text[], p_dest_table text DEFAULT NULL)*  
  * Function to automatically setup logdel replication for a table. See setup instructions above for permissions that are needed on source database. By default source and destination table will have same schema and table names.  
+ * If destination table already exists, no data will be pulled from the source. You can use the refresh_logdel() 'repull' option to truncate the destination table and grab all the source data.
  * Second argument is the data_source_id from the dblink_mapping table for where the source table is located.  
  * Third argument is an array of the columns that make up the primary key on the source table.  
  * Fourth argument is an array of the column types that make up the primary key on the source table. Ensure the types are in the same order as the Third argument.  
@@ -151,8 +156,9 @@ Tables
     dest_table      - Tablename on destination database. If not public, should be schema qualified
     type            - Type of replication. Enum of one of the following values: snap, inserter, updater, dml, logdel
     dblink          - Foreign key on the data_source_id column from dblink_mapping table
-    last_value      - Timestamp that is one of two values: For incremental, this is the max value of the control field from the last run 
-                      For all other replication types this is just the last time the replication job was run.
+    last_value      - Timestamp that is one of two values: For incremental, this is the max value of the control field from the last run and controls 
+                      the time period of the batch of data pulled from the source table. For all other replication types this is just the last time 
+                      the replication job was run.
     filter          - Currently unused
     condition       - Currently unused
     period          - Interval used for the run_refresh() function to indicate how often this refresh job should be run at a minimum

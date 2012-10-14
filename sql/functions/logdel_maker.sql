@@ -1,11 +1,12 @@
 /*
- *  DML maker function. Optional custom destination table name.
+ *  Logdel maker function.
  */
 CREATE FUNCTION logdel_maker(p_src_table text, p_dblink_id int, p_pk_field text[], p_pk_type text[], p_dest_table text DEFAULT NULL) RETURNS void
     LANGUAGE plpgsql
     AS $$
 DECLARE
 
+v_col_exists                int;
 v_cols                      text[];
 v_cols_csv                  text;
 v_cols_n_types              text[];
@@ -13,15 +14,18 @@ v_cols_n_types_csv          text;
 v_conns                     text[];
 v_create_trig               text;
 v_dblink_schema             text;
+v_dest_check                text;
+v_dest_schema_name          text;
+v_dest_table_name           text;
 v_insert_refresh_config     text;
 v_old_search_path           text;
-v_counter                int := 1;
+v_counter                   int := 1;
 v_pk_field_csv              text := '';
 v_pk_field_type_csv         text := '';
 v_remote_sql                text;
 v_remote_q_index            text;
 v_remote_q_table            text;
-v_table_name                text;
+v_src_table_name            text;
 v_trigger_func              text;
 v_types                     text[];
 
@@ -38,9 +42,13 @@ IF p_dest_table IS NULL THEN
     p_dest_table := p_src_table;
 END IF;
 
--- Split off schema name if it exists
-IF position('.' in p_src_table) > 0 THEN 
-    v_table_name := substring(p_src_table from position('.' in p_src_table)+1);
+IF position('.' in p_src_table) > 0 THEN
+    v_src_table_name := split_part(p_src_table, '.', 2);
+END IF;
+
+IF position('.' in p_dest_table) > 0 THEN
+    v_dest_schema_name := split_part(p_dest_table, '.', 1); 
+    v_dest_table_name := split_part(p_dest_table, '.', 2);
 END IF;
 
 PERFORM dblink_connect('mimeo_logdel', @extschema@.auth(p_dblink_id));
@@ -52,7 +60,7 @@ EXECUTE v_remote_sql INTO v_cols, v_types, v_cols_n_types;
 v_cols_csv := array_to_string(v_cols, ',');
 v_cols_n_types_csv := array_to_string(v_cols_n_types, ',');
 
-v_remote_q_table := 'CREATE TABLE @extschema@.'||v_table_name||'_pgq ('||v_cols_n_types_csv||', mimeo_source_deleted timestamptz, processed boolean)';
+v_remote_q_table := 'CREATE TABLE @extschema@.'||v_src_table_name||'_pgq ('||v_cols_n_types_csv||', mimeo_source_deleted timestamptz, processed boolean)';
 
 v_pk_field_csv := array_to_string(p_pk_field, ',');
 WHILE v_counter <= array_length(p_pk_field,1) LOOP
@@ -63,10 +71,10 @@ WHILE v_counter <= array_length(p_pk_field,1) LOOP
     v_counter := v_counter + 1;
 END LOOP;
 
-v_remote_q_index := 'CREATE INDEX ON @extschema@.'||v_table_name||'_pgq ('||v_pk_field_csv||')';
+v_remote_q_index := 'CREATE INDEX ON @extschema@.'||v_src_table_name||'_pgq ('||v_pk_field_csv||')';
 
 v_counter := 1;
-v_trigger_func := 'CREATE FUNCTION @extschema@.'||v_table_name||'_mimeo_queue() RETURNS trigger LANGUAGE plpgsql AS $_$ DECLARE ';
+v_trigger_func := 'CREATE FUNCTION @extschema@.'||v_src_table_name||'_mimeo_queue() RETURNS trigger LANGUAGE plpgsql AS $_$ DECLARE ';
     WHILE v_counter <= array_length(v_cols,1) LOOP
         v_trigger_func := v_trigger_func||'v_'||v_cols[v_counter]||' '||v_types[v_counter]||'; ';
         v_counter := v_counter + 1;
@@ -92,7 +100,7 @@ v_trigger_func := 'CREATE FUNCTION @extschema@.'||v_table_name||'_mimeo_queue() 
     END LOOP;
     v_trigger_func := v_trigger_func || 'v_del_time := clock_timestamp(); ';
     v_counter := 1;
-    v_trigger_func := v_trigger_func || ' END IF; INSERT INTO @extschema@.'||v_table_name||'_pgq ('||v_cols_csv||', mimeo_source_deleted) ';
+    v_trigger_func := v_trigger_func || ' END IF; INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||v_cols_csv||', mimeo_source_deleted) ';
     v_trigger_func := v_trigger_func || ' VALUES (';
     WHILE v_counter <= array_length(v_cols,1) LOOP
         IF v_counter > 1 THEN
@@ -103,8 +111,8 @@ v_trigger_func := 'CREATE FUNCTION @extschema@.'||v_table_name||'_mimeo_queue() 
     END LOOP;
     v_trigger_func := v_trigger_func ||', v_del_time); RETURN NULL; END $_$;';
 
-v_create_trig := 'CREATE TRIGGER '||v_table_name||'_mimeo_trig AFTER INSERT OR UPDATE OR DELETE ON '||p_src_table||
-    ' FOR EACH ROW EXECUTE PROCEDURE @extschema@.'||v_table_name||'_mimeo_queue()';
+v_create_trig := 'CREATE TRIGGER '||v_src_table_name||'_mimeo_trig AFTER INSERT OR UPDATE OR DELETE ON '||p_src_table||
+    ' FOR EACH ROW EXECUTE PROCEDURE @extschema@.'||v_src_table_name||'_mimeo_queue()';
 
 RAISE NOTICE 'Creating objects on source database (function, trigger & queue table)...';
 PERFORM dblink_exec('mimeo_logdel', v_remote_q_table);
@@ -114,20 +122,32 @@ PERFORM dblink_exec('mimeo_logdel', v_create_trig);
 
 PERFORM dblink_disconnect('mimeo_logdel');
 
-RAISE NOTICE 'Snapshotting source table to pull all current source data...';
--- Snapshot the table after triggers have been created to ensure all new data after setup is replicated
-v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_snap(source_table, dest_table, dblink) VALUES('
-    ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||')';
+-- Only create destination table if it doesn't already exist
+SELECT schemaname||'.'||tablename INTO v_dest_check FROM pg_tables WHERE schemaname = v_dest_schema_name AND tablename = v_dest_table_name;
+IF v_dest_check IS NULL THEN
+    RAISE NOTICE 'Snapshotting source table to pull all current source data...';
+    -- Snapshot the table after triggers have been created to ensure all new data after setup is replicated
+    v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_snap(source_table, dest_table, dblink) VALUES('
+        ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||')';
 
-EXECUTE v_insert_refresh_config;
+    EXECUTE v_insert_refresh_config;
 
-PERFORM @extschema@.refresh_snap(p_dest_table);
-PERFORM @extschema@.snapshot_destroyer(p_dest_table, 'ARCHIVE');
+    PERFORM @extschema@.refresh_snap(p_dest_table);
+    PERFORM @extschema@.snapshot_destroyer(p_dest_table, 'ARCHIVE');
+ELSE
+    RAISE NOTICE 'Destination table % already exists. No data was pulled from source', p_dest_table;
+END IF;
 
-EXECUTE 'ALTER TABLE '||p_dest_table||' ADD COLUMN mimeo_source_deleted timestamptz';
+SELECT count(*) INTO v_col_exists FROM pg_attribute 
+    WHERE attrelid = p_dest_table::regclass AND attname = 'mimeo_source_deleted' AND attisdropped = false;
+IF v_col_exists < 1 THEN
+    EXECUTE 'ALTER TABLE '||p_dest_table||' ADD COLUMN mimeo_source_deleted timestamptz';
+ELSE
+    RAISE WARNING 'Special column (mimeo_source_deleted) already exists on destination table (%)', p_dest_table;
+END IF;
 
 v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_logdel(source_table, dest_table, dblink, control, pk_field, pk_type, last_value) VALUES('
-    ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||', '||quote_literal('@extschema@.'||v_table_name||'_pgq')||', '
+    ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||', '||quote_literal('@extschema@.'||v_src_table_name||'_pgq')||', '
     ||quote_literal(p_pk_field)||', '||quote_literal(p_pk_type)||', '||quote_literal(clock_timestamp())||')';
 RAISE NOTICE 'Inserting data into config table';
 

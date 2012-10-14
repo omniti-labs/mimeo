@@ -1,5 +1,5 @@
 /*
- *  Inserter maker function. Optional custom destination table name.
+ *  Inserter maker function. 
  */
 CREATE FUNCTION inserter_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00', p_dest_table text DEFAULT NULL) RETURNS void
     LANGUAGE plpgsql
@@ -7,6 +7,9 @@ CREATE FUNCTION inserter_maker(p_src_table text, p_control_field text, p_dblink_
 DECLARE
 
 v_data_source               text;
+v_dest_check                text;
+v_dest_schema_name          text;
+v_dest_table_name           text;
 v_dst_active                boolean;
 v_exists                    int;
 v_insert_refresh_config     text;
@@ -25,25 +28,36 @@ IF p_dest_table IS NULL THEN
     p_dest_table := p_src_table;
 END IF;
 
--- Temp snap config
-v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_snap(source_table, dest_table, dblink) VALUES('
-    ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||')';
+IF position('.' in p_dest_table) > 0 THEN
+    v_dest_schema_name := split_part(p_dest_table, '.', 1); 
+    v_dest_table_name := split_part(p_dest_table, '.', 2);
+END IF;
 
-RAISE NOTICE 'Snapshotting source table to pull all current source data...';
-EXECUTE v_insert_refresh_config;	
+-- Only create destination table if it doesn't already exist
+SELECT schemaname||'.'||tablename INTO v_dest_check FROM pg_tables WHERE schemaname = v_dest_schema_name AND tablename = v_dest_table_name;
+IF v_dest_check IS NULL THEN
+    v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_snap(source_table, dest_table, dblink) VALUES('
+        ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||')';
 
-PERFORM @extschema@.refresh_snap(p_dest_table);
+    RAISE NOTICE 'Snapshotting source table to pull all current source data...';
+    EXECUTE v_insert_refresh_config;	
 
-PERFORM @extschema@.snapshot_destroyer(p_dest_table, 'ARCHIVE');
+    PERFORM @extschema@.refresh_snap(p_dest_table);
+    PERFORM @extschema@.snapshot_destroyer(p_dest_table, 'ARCHIVE');
 	
-RAISE NOTICE 'Snapshot complete. Getting the maximum destination timestamp...';
+    RAISE NOTICE 'Snapshot complete.';
+ELSE
+    RAISE NOTICE 'Destination table % already exists. No data was pulled from source', p_dest_table;
+END IF;
+
+RAISE NOTICE 'Getting the maximum destination timestamp...';
 EXECUTE 'SELECT max('||p_control_field||') FROM '||p_dest_table||';' INTO v_max_timestamp;
 
 v_dst_active := @extschema@.dst_utc_check();
 
 v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_inserter(source_table, dest_table, dblink, control, boundary, last_value, dst_active) VALUES('
     ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||', '
-    ||quote_literal(p_control_field)||', '''||p_boundary||'''::interval, '''||v_max_timestamp||'''::timestamptz, '||v_dst_active||');';
+    ||quote_literal(p_control_field)||', '||quote_literal(p_boundary)||', '||quote_literal(COALESCE(v_max_timestamp, CURRENT_TIMESTAMP))||', '||v_dst_active||');';
 
 RAISE NOTICE 'Inserting data into config table';
 EXECUTE v_insert_refresh_config;

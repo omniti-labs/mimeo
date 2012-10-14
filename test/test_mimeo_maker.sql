@@ -80,11 +80,11 @@ EXECUTE 'SELECT inserter_maker(''mimeo_source.inserter_test_source'', ''col3'', 
 EXECUTE 'SELECT updater_maker(''mimeo_source.updater_test_source'', ''col3'', '||v_ds_id||', ''{col1}'', ''{int}'', ''00:00:05''::interval)';
 EXECUTE 'SELECT updater_maker(''mimeo_source.updater_test_source'', ''col3'', '||v_ds_id||', ''{col1}'', ''{int}'', ''00:00:05''::interval, ''mimeo_dest.updater_test_dest'')';
 
-EXECUTE 'SELECT mimeo.dml_maker(''mimeo_source.dml_test_source'', '||v_ds_id||', ''{col1}'', ''{int}'')';
-EXECUTE 'SELECT mimeo.dml_maker(''mimeo_source.dml_test_source2'', '||v_ds_id||', ''{col1}'', ''{int}'', ''mimeo_dest.dml_test_dest'')';
+EXECUTE 'SELECT dml_maker(''mimeo_source.dml_test_source'', '||v_ds_id||', ''{col1}'', ''{int}'')';
+EXECUTE 'SELECT dml_maker(''mimeo_source.dml_test_source2'', '||v_ds_id||', ''{col1}'', ''{int}'', ''mimeo_dest.dml_test_dest'')';
 
-EXECUTE 'SELECT mimeo.logdel_maker(''mimeo_source.logdel_test_source'', '||v_ds_id||', ''{col1}'', ''{int}'')';
-EXECUTE 'SELECT mimeo.logdel_maker(''mimeo_source.logdel_test_source2'', '||v_ds_id||', ''{col1}'', ''{int}'', ''mimeo_dest.logdel_test_dest'')';
+EXECUTE 'SELECT logdel_maker(''mimeo_source.logdel_test_source'', '||v_ds_id||', ''{col1}'', ''{int}'')';
+EXECUTE 'SELECT logdel_maker(''mimeo_source.logdel_test_source2'', '||v_ds_id||', ''{col1}'', ''{int}'', ''mimeo_dest.logdel_test_dest'')';
 
 RAISE NOTICE 'Sleeping for 35 seconds to ensure gap for incremental tests...';
 PERFORM pg_sleep(35);
