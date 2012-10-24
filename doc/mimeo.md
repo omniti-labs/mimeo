@@ -15,6 +15,8 @@ DML replication replays on the destination every insert, update and delete that 
 
 Incremental and DML replication by default have a batch limit of 10000 rows for any newly created job. This can be changed two ways. A permanent change for every run can be done by updating the batch_limit column in the associated refresh_config table. You can also set the p_limit argument when the refresh function is called to change it for that specific run.
 
+Mimeo uses the pg_jobmon extension to provide an audit trail and monitoring capability. If you're having any problems with mimeo working, check the job logs that pg_jobmon creates.
+
 All refresh functions use the advisory lock system to ensure that jobs do not run concurrently. If a job is found to already be running, it will cleanly exit immediately and record that another job was already running in pg_jobmon. run_refresh has its own advisory lock independent of the refresh functions it calls to ensure that it does not run concurrently as well.
 
 The p_debug argument for any function that has it will output more verbose feedback to show what that job is doing. Most of this is also logged with pg_jobmon, but this is a quick way to see detailed info immediately.
@@ -42,101 +44,109 @@ For dml and logdel replication some additional setup is required. The source dat
 Functions
 ---------
 
-*refresh_snap(p_destination text, p_debug boolean DEFAULT false)*  
+*refresh_snap(p_destination text, p_debug boolean DEFAULT false, p_pulldata boolean DEFAULT true)*  
  * Full table replication to the destination table given by p_destination. Automatically creates destination view and tables needed if they do not already exist.  
  * Can be setup with snapshot_maker(...) and removed with snapshot_destroyer(...) functions.  
+ * The final parameter, p_pulldata, does not generally need to be used and in most cases can just be ignored. It is primarily for internal use by the maker functions to allow their p_pulldata parameters to work.
 
 *refresh_inserter(p_destination text, p_limit integer DEFAULT NULL, p_repull boolean DEFAULT false, p_repull_start text DEFAULT NULL, p_repull_end text DEFAULT NULL, p_debug boolean DEFAULT false)*  
  * Replication for tables that have INSERT ONLY data and contain a timestamp column that is incremented with every INSERT.
  * Can be setup with inserter_maker(...) and removed with inserter_destroyer(...) functions.  
- * Second, optional argument can be used to change the limit on how many rows are grabbed from the source with each run of the function.
- * Third optional argument sets a flag to repull data from the source instead of getting new data. If this flag is set without setting the following two arguments, then **ALL local data will be truncated** and the ENTIRE source table will be repulled.
- * The fourth and fifth arguments can set a specific time period to repull source data. This is an EXCLUSIVE time period (< start, > end). If p_repull is not set, then these arguments are ignored.
+ * p_limit, an optional argument, can be used to change the limit on how many rows are grabbed from the source with each run of the function. Internally defaults to 10,000 if not given here or set in configuration table.
+ * p_repull, an optional argument, sets a flag to repull data from the source instead of getting new data. If this flag is set without setting the following two arguments, then **ALL local data will be truncated** and the ENTIRE source table will be repulled.
+ * p_repull_start and p_repull_end, optional arguments, can set a specific time period to repull source data. This is an EXCLUSIVE time period (< start, > end). If p_repull is not set, then these arguments are ignored.
     
 *refresh_updater(p_destination text, p_limit integer DEFAULT NULL, p_repull boolean DEFAULT false, p_repull_start text DEFAULT NULL, p_repull_end text DEFAULT NULL, p_debug boolean DEFAULT false)*  
  * Replication for tables that have INSERT AND/OR UPDATE ONLY data and contain a timestamp column that is incremented with every INSERT AND UPDATE
  * Can be setup with updater_maker(...) and removed with updater_destroyer(...) functions.  
- * Second, optional argument can be used to change the limit on how many rows are grabbed from the source with each run of the function.
- * Third optional argument sets a flag to repull data from the source instead of getting new data. If this flag is set without setting the following two arguments, then **ALL local data will be truncated** and the ENTIRE source table will be repulled.
- * The fourth and fifth arguments can set a specific time period to repull source data. This is an EXCLUSIVE time period (< start, > end). If p_repull is not set, then these arguments are ignored.
+ * p_limit, an optional argument, can be used to change the limit on how many rows are grabbed from the source with each run of the function. Internally defaults to 10,000 if not given here or set in configuration table.
+ * p_repull, an optional argument, sets a flag to repull data from the source instead of getting new data. If this flag is set without setting the following two arguments, then **ALL local data will be truncated** and the ENTIRE source table will be repulled.
+ * p_repull_start and p_repull_end, optional arguments, can set a specific time period to repull source data. This is an EXCLUSIVE time period (< start, > end). If p_repull is not set, then these arguments are ignored.
 
 *refresh_dml(p_destination text, p_limit int default NULL, p_repull boolean DEFAULT false, p_debug boolean DEFAULT false)*  
  * Replicate tables by replaying INSERTS, UPDATES and DELETES in the order they occur on the source table. Useful for tables that are too large for snapshots.  
  * Can be setup with dml_maker(...) and removed with dml_destroyer(...) functions.  
- * Second, optional argument can be used to change the limit on how many rows are grabbed from the source with each run of the function.
- * Third optional argument sets a flag to repull data from the source instead of getting new data. Note that **ALL local data will be truncated** and the ENTIRE source table will be repulled.
+ * p_limit, an optional argument, can be used to change the limit on how many rows are grabbed from the source with each run of the function. Internally defaults to 10,000 if not given here or set in configuration table.
+ * p_repull, an optional argument, sets a flag to repull data from the source instead of getting new data. Note that **ALL local data will be truncated** and the ENTIRE source table will be repulled.
 
 *refresh_logdel(p_destination text, p_limit int default NULL, p_debug boolean DEFAULT false)*  
  * Replicate tables by replaying INSERTS, UPDATES and DELETES in the order they occur on the source table, but DO NOT remove deleted tables from the destination table.
  * Can be setup with logdel_maker(...) and removed with logdel_destroyer(...) functions.  
- * Second, optional argument can be used to change the limit on how many rows are grabbed from the source with each run of the function.
- * Third optional argument sets a flag to repull data from the source instead of getting new data. Note that **ALL local data will be truncated** and the ENTIRE source table will be repulled.
+ * p_limit, an optional argument, can be used to change the limit on how many rows are grabbed from the source with each run of the function. Internally defaults to 10,000 if not given here or set in configuration table.
+ * p_repull, an optional argument, sets a flag to repull data from the source instead of getting new data. Note that **ALL local data will be truncated** and the ENTIRE source table will be repulled.
 
-*snapshot_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL)*  
+*snapshot_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_pulldata boolean DEFAULT true)*  
  * Function to automatically setup snapshot replication for a table. By default source and destination table will have same schema and table names.  
  * Destination table CANNOT exist first due to the way the snapshot system works (view /w two tables).
- * The second argument is the data_source_id from the dblink_mapping table for where the source table is located.
- * Third, optional argument is to set a custom destination table. Be sure to schema qualify it if needed.
+ * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.  
+ * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
 
 *snapshot_destroyer(p_dest_table text, p_archive_option text)*  
  * Function to automatically remove a snapshot replication table from the destination.  
- * Pass 'ARCHIVE' as the second argument to keep a permanent copy of the snapshot table on the destination. Turns what was the view into a real table. 
- * Most recent snap is just renamed to the old view name, so all permissions, indexes, constraints, etc should be kept.  
- * Pass any other value to completely remove everything.
+ * Pass 'ARCHIVE' as p_archive_option to keep a permanent copy of the snapshot table on the destination. Turns what was the view into a real table. 
+  * Most recent snap is just renamed to the old view name, so all permissions, indexes, constraints, etc should be kept.  
+  * Pass any other value to completely remove everything.
 
-*inserter_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00', p_dest_table text DEFAULT NULL)*  
+*inserter_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00', p_dest_table text DEFAULT NULL, p_pulldata boolean DEFAULT true)*  
  * Function to automatically setup inserter replication for a table. By default source and destination table will have same schema and table names.  
  * If destination table already exists, no data will be pulled from the source. You can use the refresh_inserter() 'repull' option to truncate the destination table and grab all the source data. Or you can set the config table's 'last_value' column for your specified table to designate when it should start. Otherwise last_value will default to the destination's max value for the control field or, if null, the time that the maker function was run.
- * Second argument is the column which is used as the control field (a timestamp field that is new for every insert).  
- * Third argument is the data_source_id from the dblink_mapping table for where the source table is located.  
- * Fourth, optional argument is a boundary value to prevent records being missed at the upper boundary of the batch. Set this to a value that will ensure all inserts will have finished for that time period when the replication runs. Default is 10 minutes which means the destination will always be 10 minutes behind the source but that also means that all inserts on the source will have finished by the time 10 minutes has passed.  
- * Fifth, optional argument is to set a custom destination table. Be sure to schema qualify it if needed.
+ * p_control_field is the column which is used as the control field (a timestamp field that is new for every insert).  
+ * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.  
+ * p_boundary, an optional argument, is a boundary value to prevent records being missed at the upper boundary of the batch. Set this to a value that will ensure all inserts will have finished for that time period when the replication runs. Default is 10 minutes which means the destination will always be 10 minutes behind the source but that also means that all inserts on the source will have finished by the time 10 minutes has passed.  
+ * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
+ * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no intial data.
     
 *inserter_destroyer(p_dest_table text, p_archive_option text)*  
  * Function to automatically remove an inserter replication table from the destination.  
- * Pass 'ARCHIVE' as the second argument to leave the destination table intact. Pass any other value to completely remove everything.
+ * Pass 'ARCHIVE' as p_archive_option to leave the destination table intact. Pass any other value to completely remove everything.
 
-*updater_maker(p_src_table text, p_control_field text, p_dblink_id int, p_pk_field text[], p_pk_type text[], p_boundary interval DEFAULT '00:10:00', p_dest_table text DEFAULT NULL)*  
+*updater_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00', p_dest_table text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_pk_field text[] DEFAULT NULL, p_pk_type text[] DEFAULT NULL)*  
  * Function to automatically setup updater replication for a table. By default source and destination table will have same schema and table names.  
+ * Source table must have a primary key or unique index. Either the primary key or a unique index (first in alphabetical order if more than one) on the source table will be obtained automatically. Columns of primary/unique key cannot be arrays nor can they be an expression.  
  * If destination table already exists, no data will be pulled from the source. You can use the refresh_updater() 'repull' option to truncate the destination table and grab all the source data. Or you can set the config table's 'last_value' column for your specified table to designate when it should start. Otherwise last_value will default to the destination's max value for the control field or, if null, the time that the maker function was run.
- * Second argument is the column which is used as the control field (a timestamp field that is new for every insert).  
- * Third argument is the data_source_id from the dblink_mapping table for where the source table is located.  
- * Fourth argument is an array of the columns that make up the primary key on the source table.  
- * Fifth argument is an array of the column types that make up the primary key on the source table. Ensure the types are in the same order as the Fourth argument.  
- * Sixth, optional argument is a boundary value to prevent records being missed at the upper boundary of the batch. Set this to a value that will ensure all inserts/updates will have finished for that time period when the replication runs. Default is 10 minutes which means the destination will always be 10 minutes behind the source but that also means that all inserts/updates on the source will have finished by the time 10 minutes has passed.  
- * Seventh, optional argument is to set a custom destination table. Be sure to schema qualify it if needed.
+ * p_control_field is the column which is used as the control field (a timestamp field that is new for every insert AND update).  
+ * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.  
+ * p_boundary, an optional argument, is a boundary value to prevent records being missed at the upper boundary of the batch. Set this to a value that will ensure all inserts/updates will have finished for that time period when the replication runs. Default is 10 minutes which means the destination will always be 10 minutes behind the source but that also means that all inserts/updates on the source will have finished by the time 10 minutes has passed.  
+ * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
+ * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no intial data.
+ * p_pk_field, an optional argument, is an array of the columns that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source.
+ * p_pk_type, an optional argument, is an array of the column types that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source. Ensure the types are in the same order as p_pk_field.
 
 *updater_destroyer(p_dest_table text, p_archive_option text)*  
  * Function to automatically remove an updater replication table from the destination.  
- * Pass 'ARCHIVE' as the second argument to leave the destination table intact. Pass any other value to completely remove everything.
+ * Pass 'ARCHIVE' as p_archive_option to leave the destination table intact. Pass any other value to completely remove everything.
 
-*dml_maker(p_src_table text, p_dblink_id int, p_pk_field text[], p_pk_type text[], p_dest_table text DEFAULT NULL)*  
+*dml_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_pk_field text[] DEFAULT NULL, p_pk_type text[] DEFAULT NULL)*  
  * Function to automatically setup dml replication for a table. See setup instructions above for permissions that are needed on source database. By default source and destination table will have same schema and table names.  
- * If destination table already exists, no data will be pulled from the source. You can use the refresh_dml() 'repull' option to truncate the destination table and grab all the source data.
- * Second argument is the data_source_id from the dblink_mapping table for where the source table is located.  
- * Third argument is an array of the columns that make up the primary key on the source table.  
- * Fourth argument is an array of the column types that make up the primary key on the source table. Ensure the types are in the same order as the Third argument.  
- * Fifth, optional argument is to set a custom destination table. Be sure to schema qualify it if needed.
+ * Source table must have a primary key or unique index. Either the primary key or a unique index (first in alphabetical order if more than one) on the source table will be obtained automatically. Columns of primary/unique key cannot be arrays nor can they be an expression.  
+ * If destination table already exists, no data will be pulled from the source. You can use the refresh_dml() 'repull' option to truncate the destination table and grab all the source data.  
+ * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.  
+ * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
+ * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no intial data.
+ * p_pk_field, an optional argument, is an array of the columns that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source.
+ * p_pk_type, an optional argument, is an array of the column types that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source. Ensure the types are in the same order as p_pk_field.
 
 *dml_destroyer(p_dest_table text, p_archive_option text)*  
  * Function to automatically remove a dml replication table from the destination. This will also automatically remove the associated objects from the source database if the dml_maker() function was used to create it.  
- * Pass 'ARCHIVE' as the second argument to leave the destination table intact. Pass any other value to completely remove everything.
+ * Pass 'ARCHIVE' as p_archive_option to leave the destination table intact. Pass any other value to completely remove everything.
 
-*logdel_maker(p_src_table text, p_dblink_id int, p_pk_field text[], p_pk_type text[], p_dest_table text DEFAULT NULL)*  
+*logdel_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_pk_field text[] DEFAULT NULL, p_pk_type text[] DEFAULT NULL)*  
  * Function to automatically setup logdel replication for a table. See setup instructions above for permissions that are needed on source database. By default source and destination table will have same schema and table names.  
+ * Source table must have a primary key or unique index. Either the primary key or a unique index (first in alphabetical order if more than one) on the source table will be obtained automatically. Columns of primary/unique key cannot be arrays nor can they be an expression.  
  * If destination table already exists, no data will be pulled from the source. You can use the refresh_logdel() 'repull' option to truncate the destination table and grab all the source data.
- * Second argument is the data_source_id from the dblink_mapping table for where the source table is located.  
- * Third argument is an array of the columns that make up the primary key on the source table.  
- * Fourth argument is an array of the column types that make up the primary key on the source table. Ensure the types are in the same order as the Third argument.  
- * Fifth, optional argument is to set a custom destination table. Be sure to schema qualify it if needed.
+ * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.  
+ * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
+ * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no intial data.
+ * p_pk_field, an optional argument, is an array of the columns that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source.
+ * p_pk_type, an optional argument, is an array of the column types that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source. Ensure the types are in the same order as p_pk_field.
 
 *logdel_destroyer(p_dest_table text, p_archive_option text)*  
  * Function to automatically remove a logdel replication table from the destination. This will also automatically remove the associated objects from the source database if the dml_maker() function was used to create it.  
- * Pass 'ARCHIVE' as the second argument to leave the destination table intact. Pass any other value to completely remove everything.
+ * Pass 'ARCHIVE' as p_archive_option to leave the destination table intact. Pass any other value to completely remove everything.
 
 *run_refresh(p_type text, p_batch int, p_debug boolean DEFAULT false)*  
  * This function will run the refresh function for all tables the tables listed in refresh_config for the type given by p_type. Note that the jobs within a batch are run sequentially, not concurrently (working to try and see if I can get it working concurrently).  
- * The second argument sets how many of each type of refresh job will be kicked off each time run_refresh is called.
+ * p_batch sets how many of each type of refresh job will be kicked off each time run_refresh is called.
 
 Tables
 -----
@@ -189,7 +199,6 @@ Tables
     boundary        - Interval to adjust upper boundary max value of control field. See updater_maker() for more info
     pk_field        - Text array of all the column names that make up the source table primary key
     pk_type         - Text array of all the column types that make up the source table primary key
-                      Ensure these are in the same order as the pk_field column
     dst_active      - Boolean set to true of database is not running on a server in UTC/GMT time. See About for more info
     dst_start       - Integer representation of the time that DST starts. Ex: 00:30 would be 30
     dst_end         - Integer representation of the time that DST starts. Ex: 02:30 would be 230
@@ -201,7 +210,6 @@ Tables
     control         - Schema qualified name of the queue table on the source database for this table
     pk_field        - Text array of all the column names that make up the source table primary key
     pk_type         - Text array of all the column types that make up the source table primary key
-                      Ensure these are in the same order as the pk_field column
  
 *refresh_config_logdel*  
     Child of refresh_config. Contains config info for logdel replication jobs.
@@ -210,4 +218,3 @@ Tables
     control         - Schema qualified name of the queue table on the source database for this table
     pk_field        - Text array of all the column names that make up the source table primary key
     pk_type         - Text array of all the column types that make up the source table primary key
-                      Ensure these are in the same order as the pk_field column

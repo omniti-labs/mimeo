@@ -45,46 +45,63 @@ PERFORM dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.updater_test_source
     col3 timestamptz DEFAULT clock_timestamp())');
 PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.updater_test_source VALUES (generate_series(1,10), ''test''||generate_series(1,10)::text)');
 
--- Must do two separate tables due to queue table needing to be distinct
+-- Must do separate tables due to queue table needing to be distinct
 PERFORM dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.dml_test_source (
     col1 int PRIMARY KEY,
     col2 text,
     col3 timestamptz DEFAULT clock_timestamp())');
 PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source VALUES (generate_series(1,10), ''test''||generate_series(1,10)::text)');
 PERFORM dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.dml_test_source2 (
-    col1 int PRIMARY KEY,
+    col1 int,
     col2 text,
-    col3 timestamptz DEFAULT clock_timestamp())');
+    col3 timestamptz DEFAULT clock_timestamp(),
+    PRIMARY KEY (col1, col2) )');
 PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source2 VALUES (generate_series(1,10), ''test''||generate_series(1,10)::text)');
+PERFORM dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.dml_test_source_nodata (
+    col1 int UNIQUE NOT NULL,
+    col2 text,
+    col3 timestamptz DEFAULT clock_timestamp() )');
+PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source_nodata VALUES (generate_series(1,10), ''test''||generate_series(1,10)::text)');
 
--- Must do two separate tables due to queue table needing to be distinct
+-- Must do separate tables due to queue table needing to be distinct
 PERFORM dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.logdel_test_source (
     col1 int PRIMARY KEY,
     col2 text,
     col3 timestamptz DEFAULT clock_timestamp())');
 PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source VALUES (generate_series(1,10), ''test''||generate_series(1,10)::text)');
 PERFORM dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.logdel_test_source2 (
-    col1 int PRIMARY KEY,
+    col1 int,
     col2 text,
-    col3 timestamptz DEFAULT clock_timestamp())');
+    col3 timestamptz DEFAULT clock_timestamp(),
+    PRIMARY KEY (col1, col2) )');
 PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source2 VALUES (generate_series(1,10), ''test''||generate_series(1,10)::text)');
+PERFORM dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.logdel_test_source_nodata (
+    col1 int UNIQUE NOT NULL,
+    col2 text UNIQUE NOT NULL,
+    col3 timestamptz DEFAULT clock_timestamp() )');
+PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source_nodata VALUES (generate_series(1,10), ''test''||generate_series(1,10)::text)');
 
 -- Run creation tests
 RAISE NOTICE 'Running creation tests';
 EXECUTE 'SELECT snapshot_maker(''mimeo_source.snap_test_source'','||v_ds_id||')';
 EXECUTE 'SELECT snapshot_maker(''mimeo_source.snap_test_source'', '||v_ds_id||', ''mimeo_dest.snap_test_dest'')';
+EXECUTE 'SELECT snapshot_maker(''mimeo_source.snap_test_source'', '||v_ds_id||', ''mimeo_dest.snap_test_dest_nodata'', p_pulldata := false)';
 
 EXECUTE 'SELECT inserter_maker(''mimeo_source.inserter_test_source'', ''col3'', '||v_ds_id||', ''00:00:05''::interval)';
 EXECUTE 'SELECT inserter_maker(''mimeo_source.inserter_test_source'', ''col3'', '||v_ds_id||',''00:00:05''::interval, ''mimeo_dest.inserter_test_dest'')';
+EXECUTE 'SELECT inserter_maker(''mimeo_source.inserter_test_source'', ''col3'', '||v_ds_id||',''00:00:05''::interval, ''mimeo_dest.inserter_test_dest_nodata'', p_pulldata := false)';
 
-EXECUTE 'SELECT updater_maker(''mimeo_source.updater_test_source'', ''col3'', '||v_ds_id||', ''{col1}'', ''{int}'', ''00:00:05''::interval)';
-EXECUTE 'SELECT updater_maker(''mimeo_source.updater_test_source'', ''col3'', '||v_ds_id||', ''{col1}'', ''{int}'', ''00:00:05''::interval, ''mimeo_dest.updater_test_dest'')';
+EXECUTE 'SELECT updater_maker(''mimeo_source.updater_test_source'', ''col3'', '||v_ds_id||', ''00:00:05''::interval)';
+EXECUTE 'SELECT updater_maker(''mimeo_source.updater_test_source'', ''col3'', '||v_ds_id||', ''00:00:05''::interval, ''mimeo_dest.updater_test_dest'')';
+EXECUTE 'SELECT updater_maker(''mimeo_source.updater_test_source'', ''col3'', '||v_ds_id||', ''00:00:05''::interval, ''mimeo_dest.updater_test_dest_nodata'', p_pulldata := false)';
 
-EXECUTE 'SELECT dml_maker(''mimeo_source.dml_test_source'', '||v_ds_id||', ''{col1}'', ''{int}'')';
-EXECUTE 'SELECT dml_maker(''mimeo_source.dml_test_source2'', '||v_ds_id||', ''{col1}'', ''{int}'', ''mimeo_dest.dml_test_dest'')';
+EXECUTE 'SELECT dml_maker(''mimeo_source.dml_test_source'', '||v_ds_id||')';
+EXECUTE 'SELECT dml_maker(''mimeo_source.dml_test_source2'', '||v_ds_id||', ''mimeo_dest.dml_test_dest'')';
+EXECUTE 'SELECT dml_maker(''mimeo_source.dml_test_source_nodata'', '||v_ds_id||', ''mimeo_dest.dml_test_dest_nodata'', p_pulldata := false)';
 
-EXECUTE 'SELECT logdel_maker(''mimeo_source.logdel_test_source'', '||v_ds_id||', ''{col1}'', ''{int}'')';
-EXECUTE 'SELECT logdel_maker(''mimeo_source.logdel_test_source2'', '||v_ds_id||', ''{col1}'', ''{int}'', ''mimeo_dest.logdel_test_dest'')';
+EXECUTE 'SELECT logdel_maker(''mimeo_source.logdel_test_source'', '||v_ds_id||')';
+EXECUTE 'SELECT logdel_maker(''mimeo_source.logdel_test_source2'', '||v_ds_id||', ''mimeo_dest.logdel_test_dest'')';
+EXECUTE 'SELECT logdel_maker(''mimeo_source.logdel_test_source_nodata'', '||v_ds_id||', ''mimeo_dest.logdel_test_dest_nodata'', p_pulldata := false)';
 
 RAISE NOTICE 'Sleeping for 35 seconds to ensure gap for incremental tests...';
 PERFORM pg_sleep(35);
@@ -95,8 +112,10 @@ PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.inserter_test_source
 PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.updater_test_source VALUES (generate_series(11,20), ''test''||generate_series(11,20)::text)');
 PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source VALUES (generate_series(11,20), ''test''||generate_series(11,20)::text)');
 PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source2 VALUES (generate_series(11,20), ''test''||generate_series(11,20)::text)');
+PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source_nodata VALUES (generate_series(11,20), ''test''||generate_series(11,20)::text)');
 PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source VALUES (generate_series(11,20), ''test''||generate_series(11,20)::text)');
 PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source2 VALUES (generate_series(11,20), ''test''||generate_series(11,20)::text)');
+PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source_nodata VALUES (generate_series(11,20), ''test''||generate_series(11,20)::text)');
 
 PERFORM dblink_disconnect('mimeo_test');
 

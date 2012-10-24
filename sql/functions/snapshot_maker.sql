@@ -1,13 +1,15 @@
 /*
  *  Snapshot maker function. Optional custom destination table name.
  */
-CREATE FUNCTION snapshot_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL) RETURNS void
+CREATE FUNCTION snapshot_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_pulldata boolean DEFAULT true) RETURNS void
     LANGUAGE plpgsql
     AS $$
 DECLARE
 
 v_data_source               text;
 v_insert_refresh_config     text;
+
+v_sql text;
 
 BEGIN
 
@@ -29,10 +31,10 @@ EXECUTE v_insert_refresh_config;
 RAISE NOTICE 'Insert successful';	
 
 RAISE NOTICE 'attempting first snapshot';
-PERFORM @extschema@.refresh_snap(p_dest_table);
+EXECUTE 'SELECT @extschema@.refresh_snap('||quote_literal(p_dest_table)||', p_pulldata := '||p_pulldata||')'; 
 
 RAISE NOTICE 'attempting second snapshot';
-PERFORM @extschema@.refresh_snap(p_dest_table);
+EXECUTE 'SELECT @extschema@.refresh_snap('||quote_literal(p_dest_table)||', p_pulldata := '||p_pulldata||')';
 
 RAISE NOTICE 'all done';
 

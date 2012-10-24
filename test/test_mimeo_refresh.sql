@@ -23,12 +23,15 @@ PERFORM refresh_inserter('mimeo_dest.inserter_test_dest', p_debug := true);
 
 PERFORM refresh_updater('mimeo_source.updater_test_source', p_debug := true);
 PERFORM refresh_updater('mimeo_dest.updater_test_dest', p_debug := true);
+PERFORM refresh_updater('mimeo_dest.updater_test_dest_nodata', p_debug := true);
 
 PERFORM refresh_dml('mimeo_source.dml_test_source', p_debug := true);
 PERFORM refresh_dml('mimeo_dest.dml_test_dest', p_debug := true);
+PERFORM refresh_dml('mimeo_dest.dml_test_dest_nodata', p_debug := true);
 
 PERFORM refresh_logdel('mimeo_source.logdel_test_source', p_debug := true);
 PERFORM refresh_logdel('mimeo_dest.logdel_test_dest', p_debug := true);
+PERFORM refresh_logdel('mimeo_dest.logdel_test_dest_nodata', p_debug := true);
 
 --Add tests to check updates and deletes where needed
 

@@ -20,13 +20,13 @@ A 35 second sleep is forced to ensure enough time passes for new data to be pick
 Test all the refresh functions. Should pull the new data inserted at the end of the maker test.
 Currently the test suite does not automatically validate the data (working on it).
 For now, check all the tables/views created in both the mimeo_source and mimeo_dest schemas that were created on the database running the test.
-There should be at minimum 20 rows in all tables if things ran successfully.
+There should be at minimum 20 rows in most tables if things ran successfully. Exception is the _nodata tables. These may not since they didn't pull any data with the maker functions
 You can also check the pg_jobmon logs to ensure everything ran as it should.
 
     db=# \i test_mimeo_destroyer.sql
     db=# select test_mimeo_destroyer('archive option');
 
-Tests all the destroyer functions. Pass 'ARCHIVE' to test and make sure the archive option works (applies to all calls). Pass anything else to have it drop all objects in the test schemas.
+Tests all the destroyer functions. Pass 'ARCHIVE' to test and make sure the archive option works (applies to all calls). Pass anything else, or nothing at all, to have it drop all objects in the test schemas.
 
     db=# \i test_mimeo_cleanup.sql
 

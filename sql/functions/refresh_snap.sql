@@ -1,7 +1,7 @@
 /*
  *  Snap refresh to repull all table data
  */
-CREATE FUNCTION refresh_snap(p_destination text, p_debug boolean DEFAULT false) RETURNS void
+CREATE FUNCTION refresh_snap(p_destination text, p_debug boolean DEFAULT false, p_pulldata boolean DEFAULT true) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
@@ -100,6 +100,11 @@ perform gdb(p_debug,'v_cols: '||v_cols);
 perform gdb(p_debug,'v_cols_n_types: '||v_cols_n_types);
 
 v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table;
+-- Used by p_pull options in maker functions to be able to create a replication job but pull no data
+IF p_pulldata = false THEN
+    v_remote_sql := v_remote_sql || ' LIMIT 0';
+END IF;
+
 v_insert_sql := 'INSERT INTO ' || v_refresh_snap || ' SELECT '||v_cols||' FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_sql)||') t ('||v_cols_n_types||')';
 
 PERFORM update_step(v_step_id, 'OK','Done');

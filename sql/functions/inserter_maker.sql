@@ -1,7 +1,7 @@
 /*
  *  Inserter maker function. 
  */
-CREATE FUNCTION inserter_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00', p_dest_table text DEFAULT NULL) RETURNS void
+CREATE FUNCTION inserter_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00', p_dest_table text DEFAULT NULL, p_pulldata boolean DEFAULT true) RETURNS void
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -42,7 +42,7 @@ IF v_dest_check IS NULL THEN
     RAISE NOTICE 'Snapshotting source table to pull all current source data...';
     EXECUTE v_insert_refresh_config;	
 
-    PERFORM @extschema@.refresh_snap(p_dest_table);
+    EXECUTE 'SELECT @extschema@.refresh_snap('||quote_literal(p_dest_table)||', p_pulldata := '||p_pulldata||')';
     PERFORM @extschema@.snapshot_destroyer(p_dest_table, 'ARCHIVE');
 	
     RAISE NOTICE 'Snapshot complete.';
