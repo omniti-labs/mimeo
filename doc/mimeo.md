@@ -94,7 +94,7 @@ Functions
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.  
  * p_boundary, an optional argument, is a boundary value to prevent records being missed at the upper boundary of the batch. Set this to a value that will ensure all inserts will have finished for that time period when the replication runs. Default is 10 minutes which means the destination will always be 10 minutes behind the source but that also means that all inserts on the source will have finished by the time 10 minutes has passed.  
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
- * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no intial data.
+ * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
     
 *inserter_destroyer(p_dest_table text, p_archive_option text)*  
  * Function to automatically remove an inserter replication table from the destination.  
@@ -108,7 +108,7 @@ Functions
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.  
  * p_boundary, an optional argument, is a boundary value to prevent records being missed at the upper boundary of the batch. Set this to a value that will ensure all inserts/updates will have finished for that time period when the replication runs. Default is 10 minutes which means the destination will always be 10 minutes behind the source but that also means that all inserts/updates on the source will have finished by the time 10 minutes has passed.  
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
- * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no intial data.
+ * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
  * p_pk_field, an optional argument, is an array of the columns that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source.
  * p_pk_type, an optional argument, is an array of the column types that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source. Ensure the types are in the same order as p_pk_field.
 
@@ -122,7 +122,7 @@ Functions
  * If destination table already exists, no data will be pulled from the source. You can use the refresh_dml() 'repull' option to truncate the destination table and grab all the source data.  
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.  
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
- * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no intial data.
+ * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
  * p_pk_field, an optional argument, is an array of the columns that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source.
  * p_pk_type, an optional argument, is an array of the column types that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source. Ensure the types are in the same order as p_pk_field.
 
@@ -136,7 +136,7 @@ Functions
  * If destination table already exists, no data will be pulled from the source. You can use the refresh_logdel() 'repull' option to truncate the destination table and grab all the source data.
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.  
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
- * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no intial data.
+ * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
  * p_pk_field, an optional argument, is an array of the columns that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source.
  * p_pk_type, an optional argument, is an array of the column types that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source. Ensure the types are in the same order as p_pk_field.
 
