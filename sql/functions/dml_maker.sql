@@ -56,9 +56,7 @@ IF v_exists > 0 THEN
     RAISE unique_violation;
 END IF;
 
-IF position('.' in p_src_table) > 0 THEN
-    v_src_table_name := split_part(p_src_table, '.', 2);
-END IF;
+v_src_table_name := replace(p_src_table, '.', '_');
 
 IF position('.' in p_dest_table) > 0 THEN
     v_dest_schema_name := split_part(p_dest_table, '.', 1); 

@@ -1,3 +1,7 @@
+0.6.1
+-- Fixed dml & logdel queue objects on source to include the schema name as part of the queue table, queue function and queue trigger name. Fixes issues with tables of the same name in different schemas on source database not working for these types of replication due to name conflicts.
+-- NOTE: Existing jobs shouldn't be affected by this and you don't have to remake any of your jobs unless you run into this issue. All newly created jobs after this update are installed with the new queue naming format.
+
 0.6.0
 -- IMPORTANT NOTE: Before installation check permissions on the following functions that were dropped. They've got a new signature so will need to be granted the previous versions' permissions.
 -- updater, dml, and logdel maker functions can now automatically obtain the primary key or unique index from the source table. Parameters to manually set the key columns are still part of the maker functions if needed, but are now optional.
