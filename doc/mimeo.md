@@ -86,7 +86,7 @@ Functions
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication.
- * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in '**About** section above.
+ * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
  * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
 
 *snapshot_destroyer(p_dest_table text, p_archive_option text)*  
@@ -103,7 +103,7 @@ Functions
  * p_boundary, an optional argument, is a boundary value to prevent records being missed at the upper boundary of the batch. Set this to a value that will ensure all inserts will have finished for that time period when the replication runs. Default is 10 minutes which means the destination will always be 10 minutes behind the source but that also means that all inserts on the source will have finished by the time 10 minutes has passed.  
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication.
- * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in '**About** section above.
+ * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
  * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
     
 *inserter_destroyer(p_dest_table text, p_archive_option text)*  
@@ -119,7 +119,7 @@ Functions
  * p_boundary, an optional argument, is a boundary value to prevent records being missed at the upper boundary of the batch. Set this to a value that will ensure all inserts/updates will have finished for that time period when the replication runs. Default is 10 minutes which means the destination will always be 10 minutes behind the source but that also means that all inserts/updates on the source will have finished by the time 10 minutes has passed.  
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication.
- * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in '**About** section above.
+ * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
  * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
  * p_pk_field, an optional argument, is an array of the columns that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source.
  * p_pk_type, an optional argument, is an array of the column types that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source. Ensure the types are in the same order as p_pk_field.
@@ -136,7 +136,7 @@ Functions
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication.
   * Source table trigger will only fire on UPDATES of the given columns (uses UPDATE OF col1 [, col2...]).
- * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in '**About** section above.
+ * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
  * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
  * p_pk_field, an optional argument, is an array of the columns that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source.
  * p_pk_type, an optional argument, is an array of the column types that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source. Ensure the types are in the same order as p_pk_field.
@@ -154,7 +154,7 @@ Functions
  * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
  * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication.
   * Source table trigger will only fire on UPDATES of the given columns (uses UPDATE OF col1 [, col2...]).
- * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in '**About** section above.
+ * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
  * p_pk_field, an optional argument, is an array of the columns that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source.
  * p_pk_type, an optional argument, is an array of the column types that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source. Ensure the types are in the same order as p_pk_field.
 
@@ -188,7 +188,7 @@ Tables
                       the time period of the batch of data pulled from the source table. For all other replication types this is just the last time 
                       the replication job was run.
     filter          - Array containing specific column names that should be used in replication.
-    condition       - Used to set criteria for specific rows that should be replicated. See additional notes in '**About** section above.
+    condition       - Used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
     period          - Interval used for the run_refresh() function to indicate how often this refresh job should be run at a minimum
     batch_limit     - Number of rows to be processed for each run of the refresh job. Defaults to 10000
 
