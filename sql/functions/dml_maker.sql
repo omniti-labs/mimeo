@@ -1,7 +1,7 @@
 /*
  *  DML maker function.
  */
-CREATE FUNCTION dml_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_pk_field text[] DEFAULT NULL, p_pk_type text[] DEFAULT NULL) RETURNS void
+CREATE FUNCTION dml_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_pk_field text[] DEFAULT NULL, p_pk_type text[] DEFAULT NULL) RETURNS void
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -27,7 +27,6 @@ v_remote_q_table            text;
 v_src_table_name            text;
 v_trigger_func              text;
 
-
 BEGIN
 
 SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
@@ -42,10 +41,6 @@ SELECT data_source INTO v_data_source FROM @extschema@.dblink_mapping WHERE data
 IF NOT FOUND THEN
 	RAISE EXCEPTION 'ERROR: database link ID is incorrect %', p_dblink_id; 
 END IF;
-
--- Set custom search path to allow easier calls to other functions
-SELECT current_setting('search_path') INTO v_old_search_path;
-EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_dblink_schema||',public'',''false'')';
 
 IF p_dest_table IS NULL THEN
     p_dest_table := p_src_table;
@@ -137,8 +132,11 @@ v_trigger_func := 'CREATE FUNCTION @extschema@.'||v_src_table_name||'_mimeo_queu
     END LOOP;
     v_trigger_func := v_trigger_func || '); RETURN NULL; END $_$;';
 
-v_create_trig := 'CREATE TRIGGER '||v_src_table_name||'_mimeo_trig AFTER INSERT OR UPDATE OR DELETE ON '||p_src_table||
-    ' FOR EACH ROW EXECUTE PROCEDURE @extschema@.'||v_src_table_name||'_mimeo_queue()';
+v_create_trig := 'CREATE TRIGGER '||v_src_table_name||'_mimeo_trig AFTER INSERT OR DELETE OR UPDATE';
+IF p_filter IS NOT NULL THEN
+    v_create_trig := v_create_trig || ' OF '||array_to_string(p_filter, ',');
+END IF;
+v_create_trig := v_create_trig || ' ON '||p_src_table||' FOR EACH ROW EXECUTE PROCEDURE @extschema@.'||v_src_table_name||'_mimeo_queue()';
 
 RAISE NOTICE 'Creating objects on source database (function, trigger & queue table)...';
 
@@ -154,8 +152,9 @@ SELECT schemaname||'.'||tablename INTO v_dest_check FROM pg_tables WHERE scheman
 IF v_dest_check IS NULL THEN
     RAISE NOTICE 'Snapshotting source table to pull all current source data...';
     -- Snapshot the table after triggers have been created to ensure all new data after setup is replicated
-    v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_snap(source_table, dest_table, dblink) VALUES('
-        ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||')';
+    v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_snap(source_table, dest_table, dblink, filter, condition) VALUES('
+        ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||','
+        ||COALESCE(quote_literal(p_filter), 'NULL')||','||COALESCE(quote_literal(p_condition), 'NULL')||')';
     EXECUTE v_insert_refresh_config;
 
     EXECUTE 'SELECT @extschema@.refresh_snap('||quote_literal(p_dest_table)||', p_pulldata := '||p_pulldata||')';
@@ -164,9 +163,10 @@ ELSE
     RAISE NOTICE 'Destination table % already exists. No data was pulled from source', p_dest_table;
 END IF;
 
-v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_dml(source_table, dest_table, dblink, control, pk_field, pk_type, last_value) VALUES('
+v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_dml(source_table, dest_table, dblink, control, pk_field, pk_type, last_value, filter, condition) VALUES('
     ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||', '||quote_literal('@extschema@.'||v_src_table_name||'_pgq')||', '
-    ||quote_literal(v_pk_field)||', '||quote_literal(v_pk_type)||', '||quote_literal(clock_timestamp())||')';
+    ||quote_literal(v_pk_field)||', '||quote_literal(v_pk_type)||', '||quote_literal(clock_timestamp())||','||COALESCE(quote_literal(p_filter), 'NULL')||','
+    ||COALESCE(quote_literal(p_condition), 'NULL')||')';
 RAISE NOTICE 'Inserting data into config table';
 EXECUTE v_insert_refresh_config;
 

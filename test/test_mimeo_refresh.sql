@@ -17,21 +17,33 @@ EXECUTE 'SELECT set_config(''search_path'','''||v_mimeo_schema||','||v_dblink_sc
 -- Run refresh tests
 PERFORM refresh_snap('mimeo_source.snap_test_source', p_debug := true);
 PERFORM refresh_snap('mimeo_dest.snap_test_dest', p_debug := true);
+PERFORM refresh_snap('mimeo_dest.snap_test_dest_nodata', p_debug := true);
+PERFORM refresh_snap('mimeo_dest.snap_test_dest_filter', p_debug := true);
+PERFORM refresh_snap('mimeo_dest.snap_test_dest_condition', p_debug := true);
 
 PERFORM refresh_inserter('mimeo_source.inserter_test_source', p_debug := true);
 PERFORM refresh_inserter('mimeo_dest.inserter_test_dest', p_debug := true);
+PERFORM refresh_inserter('mimeo_dest.inserter_test_dest_nodata', p_debug := true);
+PERFORM refresh_inserter('mimeo_dest.inserter_test_dest_filter', p_debug := true);
+PERFORM refresh_inserter('mimeo_dest.inserter_test_dest_condition', p_debug := true);
 
 PERFORM refresh_updater('mimeo_source.updater_test_source', p_debug := true);
 PERFORM refresh_updater('mimeo_dest.updater_test_dest', p_debug := true);
 PERFORM refresh_updater('mimeo_dest.updater_test_dest_nodata', p_debug := true);
+PERFORM refresh_updater('mimeo_dest.updater_test_dest_filter', p_debug := true);
+PERFORM refresh_updater('mimeo_dest.updater_test_dest_condition', p_debug := true);
 
 PERFORM refresh_dml('mimeo_source.dml_test_source', p_debug := true);
 PERFORM refresh_dml('mimeo_dest.dml_test_dest', p_debug := true);
 PERFORM refresh_dml('mimeo_dest.dml_test_dest_nodata', p_debug := true);
+PERFORM refresh_dml('mimeo_dest.dml_test_dest_filter', p_debug := true);
+PERFORM refresh_dml('mimeo_dest.dml_test_dest_condition', p_debug := true);
 
 PERFORM refresh_logdel('mimeo_source.logdel_test_source', p_debug := true);
 PERFORM refresh_logdel('mimeo_dest.logdel_test_dest', p_debug := true);
 PERFORM refresh_logdel('mimeo_dest.logdel_test_dest_nodata', p_debug := true);
+PERFORM refresh_logdel('mimeo_dest.logdel_test_dest_filter', p_debug := true);
+PERFORM refresh_logdel('mimeo_dest.logdel_test_dest_condition', p_debug := true);
 
 --Add tests to check updates and deletes where needed
 

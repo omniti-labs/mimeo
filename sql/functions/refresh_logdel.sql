@@ -10,6 +10,7 @@ DECLARE
 v_adv_lock              boolean;
 v_cols_n_types          text;
 v_cols                  text;
+v_condition             text;
 v_control               text;
 v_create_d_sql          text;
 v_create_f_sql          text;
@@ -69,12 +70,22 @@ SELECT source_table
     , pk_field
     , pk_type
     , filter
+    , condition
     , batch_limit 
 FROM refresh_config_logdel 
-WHERE dest_table = p_destination INTO v_source_table, v_dest_table, v_tmp_table, 
-    v_dblink, v_control, v_pk_field, v_pk_type, v_filter, v_limit; 
+WHERE dest_table = p_destination INTO 
+    v_source_table
+    , v_dest_table
+    , v_tmp_table
+    , v_dblink
+    , v_control
+    , v_pk_field
+    , v_pk_type
+    , v_filter
+    , v_condition
+    , v_limit; 
 IF NOT FOUND THEN
-   RAISE EXCEPTION 'ERROR: no mapping found for %',v_job_name; 
+   RAISE EXCEPTION 'ERROR: no configuration found for %',v_job_name; 
 END IF;
 
 v_job_id := add_job(v_job_name);
@@ -99,8 +110,9 @@ END IF;
 
 -- determine column list, column type list
 IF v_filter IS NULL THEN 
-    SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||atttypid::regtype::text),',') FROM 
-        pg_attribute WHERE attnum > 0 AND attisdropped is false AND attrelid = p_destination::regclass AND attname != 'mimeo_source_deleted' INTO v_cols, v_cols_n_types;
+    SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||atttypid::regtype::text),',')
+        INTO v_cols, v_cols_n_types
+        FROM pg_attribute WHERE attnum > 0 AND attisdropped is false AND attrelid = p_destination::regclass AND attname != 'mimeo_source_deleted';
 ELSE
     -- ensure all primary key columns are included in any column filters
     FOREACH v_field IN ARRAY v_pk_field LOOP
@@ -110,9 +122,9 @@ ELSE
             RAISE EXCEPTION 'ERROR: filter list did not contain all columns that compose primary key for %',v_job_name; 
         END IF;
     END LOOP;
-    SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||atttypid::regtype::text),',') FROM 
-        (SELECT unnest(filter) FROM refresh_config_logdel WHERE dest_table = p_destination) x 
-         JOIN pg_attribute ON (unnest=attname::text AND attrelid=p_destination::regclass) WHERE attname != 'mimeo_source_deleted' INTO v_cols, v_cols_n_types;
+    SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||atttypid::regtype::text),',') 
+        INTO v_cols, v_cols_n_types
+        FROM pg_attribute WHERE attrelid = p_destination::regclass AND ARRAY[attname::text] <@ v_filter AND attnum > 0 AND attisdropped is false AND attname != 'mimeo_source_deleted' ;
 END IF;    
 
 -- init sql statements 
@@ -142,10 +154,11 @@ v_remote_q_sql := 'SELECT DISTINCT '||v_pk_field_csv||' FROM '||v_control||' WHE
 RAISE NOTICE 'v_remote_q_sql: %', v_remote_q_sql;
 
 v_remote_f_sql := 'SELECT '||v_cols||' FROM '||v_source_table||' JOIN ('||v_remote_q_sql||') x USING ('||v_pk_field_csv||')';
-RAISE NOTICE 'v_remote_f_sql: %', v_remote_f_sql;
+IF v_condition IS NOT NULL THEN
+    v_remote_f_sql := v_remote_f_sql || ' ' || v_condition;
+END IF;
 v_create_f_sql := 'CREATE TEMP TABLE '||v_tmp_table||'_full AS SELECT '||v_cols||' 
     FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_f_sql)||') t ('||v_cols_n_types||')';
-RAISE NOTICE 'v_remote_f_sql: %', v_remote_f_sql;
 
 v_remote_d_sql = 'SELECT '||v_cols||', mimeo_source_deleted FROM '||v_control||' WHERE processed = true and mimeo_source_deleted IS NOT NULL';
 v_create_d_sql = 'CREATE TEMP TABLE '||v_tmp_table||'_deleted AS SELECT '||v_cols||', mimeo_source_deleted
@@ -259,11 +272,15 @@ PERFORM pg_advisory_unlock(hashtext('refresh_logdel'), hashtext(v_job_name));
 
 EXCEPTION
     WHEN QUERY_CANCELED THEN
-        PERFORM pg_advisory_unlock(hashtext('refresh_inserter'), hashtext(v_job_name));
+        PERFORM pg_advisory_unlock(hashtext('refresh_logdel'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;  
     WHEN OTHERS THEN
         -- Exception block resets path, so have to reset it again
         EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
+        IF v_job_id IS NULL THEN
+                v_job_id := add_job('Refresh Log Del: '||p_destination);
+                v_step_id := add_step(v_job_id, 'EXCEPTION before job logging started');
+        END IF;
         IF v_step_id IS NULL THEN
             v_step_id := jobmon.add_step(v_job_id, 'EXCEPTION before first step logged');
         END IF;

@@ -1,15 +1,13 @@
 /*
  *  Snapshot maker function. Optional custom destination table name.
  */
-CREATE FUNCTION snapshot_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_pulldata boolean DEFAULT true) RETURNS void
+CREATE FUNCTION snapshot_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true) RETURNS void
     LANGUAGE plpgsql
     AS $$
 DECLARE
 
 v_data_source               text;
 v_insert_refresh_config     text;
-
-v_sql text;
 
 BEGIN
 
@@ -22,9 +20,7 @@ IF p_dest_table IS NULL THEN
     p_dest_table := p_src_table;
 END IF;
 
-v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_snap(source_table, dest_table, dblink) VALUES('
-    ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||');';
-
+v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_snap(source_table, dest_table, dblink, filter, condition) VALUES('||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||','||p_dblink_id||','||COALESCE(quote_literal(p_filter), 'NULL')||','||COALESCE(quote_literal(p_condition), 'NULL')||')';
 
 RAISE NOTICE 'Inserting record in @extschema@.refresh_config';
 EXECUTE v_insert_refresh_config;	

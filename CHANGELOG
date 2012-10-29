@@ -1,3 +1,16 @@
+0.7.0
+-- IMPORTANT NOTE: ALL maker functions were dropped and replaced with a new signature in this update. Please check permissions and function calls before and after update.
+-- Added support for an array list filter that can be used to designate only specific columns that should be used for replication.
+    -- Source table trigger for dml/logdel types will only fire on UPDATES of the given columns (uses UPDATE OF col1 [, col2...]).
+-- Added support for conditional WHERE statement when pulling data. 
+    -- All conditional statements MUST either start with the 'WHERE' keyword or a comma separated list of tables that will be used in conditionals (must begin with a comma before first table in this case). 
+    -- Examples: (..., p_condition := 'WHERE col1 > 4 AND col2 < ''test'''), (..., p_condition := ', table2, table3 WHERE table1.col1 = table2.col1 AND table1.col3 = table3.col3')
+    -- JOINS are NOT guarenteed to work in all cases at this time (mostly for incremental. may work in snap & dml).
+    -- For logdel, DOES NOT apply the condition to rows that are deleted from the source table. Ensures all deleted rows on source are logged for warehousing.
+-- Fixed inserter & updater refresh to allow either p_repull_start or p_repull_end arguements and not require both. Allows to repull everything greater than p_repull_start or everything less than p_repull_end.
+-- Refresh functions will now handle job logging properly and give a clearer error message if the run fails before the job_id is actually created.
+-- Updated docs
+
 0.6.1
 -- Fixed dml & logdel queue objects on source to include the schema name as part of the queue table, queue function and queue trigger name. Fixes issues with tables of the same name in different schemas on source database not working for these types of replication due to name conflicts.
 -- NOTE: Existing jobs shouldn't be affected by this and you don't have to remake any of your jobs unless you run into this issue. All newly created jobs after this update are installed with the new queue naming format.

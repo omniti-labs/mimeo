@@ -1,7 +1,7 @@
 /*
  *  Inserter maker function. 
  */
-CREATE FUNCTION inserter_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00', p_dest_table text DEFAULT NULL, p_pulldata boolean DEFAULT true) RETURNS void
+CREATE FUNCTION inserter_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00', p_dest_table text DEFAULT NULL, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true) RETURNS void
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -36,8 +36,10 @@ END IF;
 -- Only create destination table if it doesn't already exist
 SELECT schemaname||'.'||tablename INTO v_dest_check FROM pg_tables WHERE schemaname = v_dest_schema_name AND tablename = v_dest_table_name;
 IF v_dest_check IS NULL THEN
-    v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_snap(source_table, dest_table, dblink) VALUES('
-        ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||')';
+
+    v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_snap(source_table, dest_table, dblink, filter, condition) VALUES('
+        ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '||p_dblink_id||','
+        ||COALESCE(quote_literal(p_filter), 'NULL')||','||COALESCE(quote_literal(p_condition), 'NULL')||')';
 
     RAISE NOTICE 'Snapshotting source table to pull all current source data...';
     EXECUTE v_insert_refresh_config;	
@@ -47,6 +49,9 @@ IF v_dest_check IS NULL THEN
 	
     RAISE NOTICE 'Snapshot complete.';
 ELSE
+    IF p_filter IS NOT NULL THEN
+        RAISE EXCEPTION 'Cannot use filter option when destination table already exists';
+    END IF;
     RAISE NOTICE 'Destination table % already exists. No data was pulled from source', p_dest_table;
 END IF;
 
@@ -55,9 +60,10 @@ EXECUTE 'SELECT max('||p_control_field||') FROM '||p_dest_table||';' INTO v_max_
 
 v_dst_active := @extschema@.dst_utc_check();
 
-v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_inserter(source_table, dest_table, dblink, control, boundary, last_value, dst_active) VALUES('
-    ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||', '
-    ||quote_literal(p_control_field)||', '||quote_literal(p_boundary)||', '||quote_literal(COALESCE(v_max_timestamp, CURRENT_TIMESTAMP))||', '||v_dst_active||');';
+v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_inserter(source_table, dest_table, dblink, control, boundary, last_value, dst_active, filter, condition) VALUES('
+    ||quote_literal(p_src_table)||','||quote_literal(p_dest_table)||','|| p_dblink_id||','
+    ||quote_literal(p_control_field)||','||quote_literal(p_boundary)||','||quote_literal(COALESCE(v_max_timestamp, CURRENT_TIMESTAMP))||','
+    ||v_dst_active||','||COALESCE(quote_literal(p_filter), 'NULL')||','||COALESCE(quote_literal(p_condition), 'NULL')||');';
 
 RAISE NOTICE 'Inserting data into config table';
 EXECUTE v_insert_refresh_config;

@@ -10,6 +10,7 @@ v_adv_lock          boolean;
 v_boundary          timestamptz;
 v_cols_n_types      text;
 v_cols              text;
+v_condition         text;
 v_control           text;
 v_create_sql        text;
 v_dblink_schema     text;
@@ -76,15 +77,27 @@ SELECT source_table
     , last_value
     , now() - boundary::interval
     , filter
+    , condition
     , dst_active
     , dst_start
     , dst_end
     , batch_limit 
 FROM refresh_config_inserter WHERE dest_table = p_destination 
-INTO v_source_table, v_dest_table, v_tmp_table, v_dblink, v_control
-    , v_last_value, v_boundary, v_filter, v_dst_active, v_dst_start, v_dst_end, v_limit; 
+INTO v_source_table
+    , v_dest_table
+    , v_tmp_table
+    , v_dblink
+    , v_control
+    , v_last_value
+    , v_boundary
+    , v_filter
+    , v_condition
+    , v_dst_active
+    , v_dst_start
+    , v_dst_end
+    , v_limit; 
 IF NOT FOUND THEN
-   RAISE EXCEPTION 'ERROR: no mapping found for %',v_job_name; 
+   RAISE EXCEPTION 'ERROR: no configuration found for %',v_job_name; 
 END IF;  
 
 -- Do not allow this function to run during DST time change if config option is true. Otherwise will miss data from source
@@ -106,15 +119,14 @@ END IF;
 v_step_id := add_step(v_job_id,'Building SQL');
 
 IF v_filter IS NULL THEN 
-    SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||atttypid::regtype::text),',') FROM 
-    pg_attribute WHERE attnum > 0 AND attisdropped is false AND attrelid = p_destination::regclass INTO v_cols, v_cols_n_types;
+    SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||atttypid::regtype::text),',') 
+        INTO v_cols, v_cols_n_types
+        FROM pg_attribute WHERE attrelid = p_destination::regclass AND attnum > 0 AND attisdropped is false;
 ELSE
-    SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||atttypid::regtype::text),',') FROM 
-        (SELECT unnest(filter) FROM @extschema@.refresh_config_inserter WHERE dest_table = p_destination) x 
-         JOIN pg_attribute ON (unnest=attname::text AND attrelid=p_destination::regclass) INTO v_cols, v_cols_n_types;
-END IF;    
-
--- init sql statements 
+    SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||atttypid::regtype::text),',') 
+        INTO v_cols, v_cols_n_types
+        FROM pg_attribute WHERE attrelid = p_destination::regclass AND ARRAY[attname::text] <@ v_filter AND attnum > 0 AND attisdropped is false;
+END IF;
 
 v_last_value_sql := 'SELECT max('||v_control||') FROM '||v_tmp_table;
 v_limit = COALESCE(p_limit, v_limit, 10000);
@@ -127,14 +139,25 @@ IF p_repull THEN
         PERFORM update_step(v_step_id, 'OK','Request to repull ALL data from source. This could take a while...');
         v_full_refresh := true;
         v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table;
+        IF v_condition IS NOT NULL THEN
+            v_remote_sql := v_remote_sql || ' ' || v_condition;
+        END IF;
     ELSE
-        PERFORM update_step(v_step_id, 'OK','Request to repull data from '||p_repull_start||' to '||p_repull_end);
-        PERFORM gdb(p_debug,'Request to repull data from '||p_repull_start||' to '||p_repull_end);
-        v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table||' WHERE '||v_control||' > '||quote_literal(p_repull_start)||' AND '||v_control||' < '||quote_literal(p_repull_end);
+        PERFORM update_step(v_step_id, 'OK','Request to repull data from '||COALESCE(p_repull_start, '-infinity')||' to '||COALESCE(p_repull_end, 'infinity'));
+        PERFORM gdb(p_debug,'Request to repull data from '||COALESCE(p_repull_start, '-infinity')||' to '||COALESCE(p_repull_end, 'infinity'));
+        v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table;
+        IF v_condition IS NOT NULL THEN
+            v_remote_sql := v_remote_sql || ' ' || v_condition || ' AND ';
+        ELSE
+            v_remote_sql := v_remote_sql || ' WHERE ';
+        END IF;
+        v_remote_sql := v_remote_sql ||v_control||' > '||quote_literal(COALESCE(p_repull_start, '-infinity'))||' AND '
+            ||v_control||' < '||quote_literal(COALESCE(p_repull_end, 'infinity'));
         -- Delete the old local data
-        v_delete_sql := 'DELETE FROM '||v_dest_table||' WHERE '||v_control||' > '||quote_literal(p_repull_start)||' AND '||v_control||' < '||quote_literal(p_repull_end);
+        v_delete_sql := 'DELETE FROM '||v_dest_table||' WHERE '||v_control||' > '||quote_literal(COALESCE(p_repull_start, '-infinity'))||' AND '
+            ||v_control||' < '||quote_literal(COALESCE(p_repull_end, 'infinity'));
         v_step_id := add_step(v_job_id, 'Deleting current, local data');
-        PERFORM gdb(p_debug,'Deleting current, local data');
+        PERFORM gdb(p_debug,'Deleting current, local data: '||v_delete_sql);
         EXECUTE v_delete_sql;
         PERFORM update_step(v_step_id, 'OK','Done');
         -- Set last_value equal to local, real table max instead of temp table (just in case)
@@ -144,7 +167,13 @@ ELSE
 
     -- does < for upper boundary to keep missing data from happening on rare edge case where a newly inserted row outside the transaction batch
     -- has the exact same timestamp as the previous batch's max timestamp
-    v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table||' WHERE '||v_control||' > '||quote_literal(v_last_value)||' AND '||v_control||' < '||quote_literal(v_boundary)||' ORDER BY '||v_control||' ASC LIMIT '|| v_limit;
+    v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table;
+    IF v_condition IS NOT NULL THEN
+        v_remote_sql := v_remote_sql || ' ' || v_condition || ' AND ';
+    ELSE
+        v_remote_sql := v_remote_sql || ' WHERE ';
+    END IF;
+    v_remote_sql := v_remote_sql ||v_control||' > '||quote_literal(v_last_value)||' AND '||v_control||' < '||quote_literal(v_boundary)||' ORDER BY '||v_control||' ASC LIMIT '|| v_limit;
 
     PERFORM update_step(v_step_id, 'OK','Grabbing rows from '||v_last_value::text||' to '||v_boundary::text);
     PERFORM gdb(p_debug,'Grabbing rows from '||v_last_value::text||' to '||v_boundary::text);
@@ -234,6 +263,10 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;    
     WHEN OTHERS THEN
         EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
+        IF v_job_id IS NULL THEN
+                v_job_id := add_job('Refresh Inserter: '||p_destination);
+                v_step_id := add_step(v_job_id, 'EXCEPTION before job logging started');
+        END IF;
         IF v_step_id IS NULL THEN
             v_step_id := jobmon.add_step(v_job_id, 'EXCEPTION before first step logged');
         END IF;

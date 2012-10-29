@@ -9,11 +9,13 @@ DECLARE
 v_adv_lock          boolean; 
 v_cols_n_types      text;
 v_cols              text;
+v_condition         text;
 v_create_sql        text;
 v_dblink_schema     text;
 v_dblink            text;
 v_dest_table        text;
 v_exists            int;
+v_filter            text[];
 v_insert_sql        text;
 v_job_id            int;
 v_jobmon_schema     text;
@@ -67,7 +69,19 @@ END IF;
 
 v_step_id := add_step(v_job_id,'Grabbing Mapping, Building SQL');
 
-SELECT source_table, dest_table, dblink, post_script INTO v_source_table, v_dest_table, v_dblink, v_post_script FROM refresh_config_snap
+SELECT source_table
+    , dest_table
+    , dblink
+    , filter
+    , condition
+    , post_script 
+INTO v_source_table
+    , v_dest_table
+    , v_dblink
+    , v_filter
+    , v_condition
+    , v_post_script 
+FROM refresh_config_snap
 WHERE dest_table = p_destination; 
 IF NOT FOUND THEN
    RAISE EXCEPTION 'ERROR: This table is not set up for snapshot replication: %',v_job_name; 
@@ -90,9 +104,12 @@ v_refresh_snap := v_dest_table||v_snap;
 
 PERFORM gdb(p_debug,'v_refresh_snap: '||v_refresh_snap::text);
 
--- init sql statements 
+v_remote_sql := 'SELECT array_to_string(array_agg(attname),'','') as cols, array_to_string(array_agg(attname||'' ''||atttypid::regtype::text),'','') as cols_n_types FROM pg_attribute WHERE attrelid = '||quote_literal(v_source_table)||'::regclass AND attnum > 0 AND attisdropped is false';
+-- Apply column filters if used
+IF v_filter IS NOT NULL THEN
+    v_remote_sql := v_remote_sql || ' AND ARRAY[attname::text] <@ '||quote_literal(v_filter);
+END IF;
 
-v_remote_sql := 'SELECT array_to_string(array_agg(attname),'','') as cols, array_to_string(array_agg(attname||'' ''||atttypid::regtype::text),'','') as cols_n_types FROM pg_attribute WHERE attnum > 0 AND attisdropped is false AND attrelid = ' || quote_literal(v_source_table) || '::regclass';
 v_remote_sql := 'SELECT cols, cols_n_types FROM dblink(auth(' || v_dblink || '), ' || quote_literal(v_remote_sql) || ') t (cols text, cols_n_types text)';
 perform gdb(p_debug,'v_remote_sql: '||v_remote_sql);
 EXECUTE v_remote_sql INTO v_cols, v_cols_n_types;  
@@ -100,9 +117,11 @@ perform gdb(p_debug,'v_cols: '||v_cols);
 perform gdb(p_debug,'v_cols_n_types: '||v_cols_n_types);
 
 v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table;
--- Used by p_pull options in maker functions to be able to create a replication job but pull no data
+-- Used by p_pull options in all maker functions to be able to create a replication job but pull no data
 IF p_pulldata = false THEN
     v_remote_sql := v_remote_sql || ' LIMIT 0';
+ELSIF v_condition IS NOT NULL THEN
+    v_remote_sql := v_remote_sql || ' ' || v_condition;
 END IF;
 
 v_insert_sql := 'INSERT INTO ' || v_refresh_snap || ' SELECT '||v_cols||' FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_sql)||') t ('||v_cols_n_types||')';
@@ -204,10 +223,14 @@ PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
 EXCEPTION
 
     WHEN QUERY_CANCELED THEN
-        PERFORM pg_advisory_unlock(hashtext('refresh_inserter'), hashtext(v_job_name));
+        PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;   
     WHEN OTHERS THEN
         EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
+        IF v_job_id IS NULL THEN
+                v_job_id := add_job('Refresh Snap: '||p_destination);
+                v_step_id := add_step(v_job_id, 'EXCEPTION before job logging started');
+        END IF;
         IF v_step_id IS NULL THEN
             v_step_id := jobmon.add_step(v_job_id, 'EXCEPTION before first step logged');
         END IF;

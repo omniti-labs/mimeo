@@ -1,7 +1,7 @@
 /*
  *  Logdel maker function.
  */
-CREATE FUNCTION logdel_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_pk_field text[] DEFAULT NULL, p_pk_type text[] DEFAULT NULL) RETURNS void
+CREATE FUNCTION logdel_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_pk_field text[] DEFAULT NULL, p_pk_type text[] DEFAULT NULL) RETURNS void
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -32,8 +32,6 @@ v_remote_q_table            text;
 v_src_table_name            text;
 v_trigger_func              text;
 v_types                     text[];
-
-v_sql                   text;
 
 BEGIN
 
@@ -68,7 +66,11 @@ END IF;
 
 PERFORM dblink_connect('mimeo_logdel', @extschema@.auth(p_dblink_id));
 
-v_remote_sql := 'SELECT array_agg(attname) as cols, array_agg(atttypid::regtype::text) as types, array_agg(attname||'' ''||atttypid::regtype::text) as cols_n_types FROM pg_attribute WHERE attnum > 0 AND attisdropped is false AND attrelid = ' || quote_literal(p_src_table) || '::regclass';
+v_remote_sql := 'SELECT array_agg(attname) as cols, array_agg(atttypid::regtype::text) as types, array_agg(attname||'' ''||atttypid::regtype::text) as cols_n_types FROM pg_attribute WHERE attrelid = ' || quote_literal(p_src_table) || '::regclass AND attnum > 0 AND attisdropped is false';
+-- Apply column filters if used
+IF p_filter IS NOT NULL THEN
+    v_remote_sql := v_remote_sql || ' AND ARRAY[attname::text] <@ '||quote_literal(p_filter);
+END IF;
 v_remote_sql := 'SELECT cols, types, cols_n_types FROM dblink(''mimeo_logdel'', ' || quote_literal(v_remote_sql) || ') t (cols text[], types text[], cols_n_types text[])';
 EXECUTE v_remote_sql INTO v_cols, v_types, v_cols_n_types;
 
@@ -153,8 +155,11 @@ v_trigger_func := 'CREATE FUNCTION @extschema@.'||v_src_table_name||'_mimeo_queu
     END LOOP;
     v_trigger_func := v_trigger_func ||', v_del_time); RETURN NULL; END $_$;';
 
-v_create_trig := 'CREATE TRIGGER '||v_src_table_name||'_mimeo_trig AFTER INSERT OR UPDATE OR DELETE ON '||p_src_table||
-    ' FOR EACH ROW EXECUTE PROCEDURE @extschema@.'||v_src_table_name||'_mimeo_queue()';
+v_create_trig := 'CREATE TRIGGER '||v_src_table_name||'_mimeo_trig AFTER INSERT OR DELETE OR UPDATE';
+IF p_filter IS NOT NULL THEN
+    v_create_trig := v_create_trig || ' OF '||array_to_string(p_filter, ',');
+END IF;
+v_create_trig := v_create_trig || ' ON '||p_src_table||' FOR EACH ROW EXECUTE PROCEDURE @extschema@.'||v_src_table_name||'_mimeo_queue()';
 
 RAISE NOTICE 'Creating objects on source database (function, trigger & queue table)...';
 PERFORM dblink_exec('mimeo_logdel', v_remote_q_table);
@@ -169,8 +174,9 @@ SELECT schemaname||'.'||tablename INTO v_dest_check FROM pg_tables WHERE scheman
 IF v_dest_check IS NULL THEN
     RAISE NOTICE 'Snapshotting source table to pull all current source data...';
     -- Snapshot the table after triggers have been created to ensure all new data after setup is replicated
-    v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_snap(source_table, dest_table, dblink) VALUES('
-        ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||')';
+    v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_snap(source_table, dest_table, dblink, filter, condition) VALUES('
+        ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||','
+        ||COALESCE(quote_literal(p_filter), 'NULL')||','||COALESCE(quote_literal(p_condition), 'NULL')||')';
 
     EXECUTE v_insert_refresh_config;
 
@@ -188,9 +194,10 @@ ELSE
     RAISE WARNING 'Special column (mimeo_source_deleted) already exists on destination table (%)', p_dest_table;
 END IF;
 
-v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_logdel(source_table, dest_table, dblink, control, pk_field, pk_type, last_value) VALUES('
+v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_logdel(source_table, dest_table, dblink, control, pk_field, pk_type, last_value, filter, condition) VALUES('
     ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||', '||quote_literal('@extschema@.'||v_src_table_name||'_pgq')||', '
-    ||quote_literal(v_pk_field)||', '||quote_literal(v_pk_type)||', '||quote_literal(clock_timestamp())||')';
+    ||quote_literal(v_pk_field)||', '||quote_literal(v_pk_type)||', '||quote_literal(clock_timestamp())||','||COALESCE(quote_literal(p_filter), 'NULL')||','
+    ||COALESCE(quote_literal(p_condition), 'NULL')||')';
 RAISE NOTICE 'Inserting data into config table';
 
 EXECUTE v_insert_refresh_config;
