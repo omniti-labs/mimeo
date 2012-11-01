@@ -59,7 +59,7 @@ IF p_pk_field IS NULL AND p_pk_type IS NULL THEN
                         WHEN i.indisunique IS true THEN ''unique''
                     END AS key_type,
                     array_agg( a.attname ) AS indkey_names,
-                    array_agg( a.atttypid::regtype) AS indkey_types
+                    array_agg(format_type(a.atttypid, a.atttypmod)::text) AS indkey_types
                 FROM
                     pg_index i
                     JOIN pg_attribute a ON i.indrelid = a.attrelid AND a.attnum = any( i.indkey )

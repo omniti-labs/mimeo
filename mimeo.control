@@ -1,4 +1,4 @@
-default_version = '0.7.0'
+default_version = '0.7.1'
 comment = 'Extension for specialized replication between PostgreSQL instances'
 requires = 'dblink, pg_jobmon'
 relocatable = false

@@ -66,7 +66,7 @@ END IF;
 
 PERFORM dblink_connect('mimeo_logdel', @extschema@.auth(p_dblink_id));
 
-v_remote_sql := 'SELECT array_agg(attname) as cols, array_agg(atttypid::regtype::text) as types, array_agg(attname||'' ''||atttypid::regtype::text) as cols_n_types FROM pg_attribute WHERE attrelid = ' || quote_literal(p_src_table) || '::regclass AND attnum > 0 AND attisdropped is false';
+v_remote_sql := 'SELECT array_agg(attname) as cols, array_agg(format_type(atttypid, atttypmod)::text) as types, array_agg(attname||'' ''||format_type(atttypid, atttypmod)::text) as cols_n_types FROM pg_attribute WHERE attrelid = ' || quote_literal(p_src_table) || '::regclass AND attnum > 0 AND attisdropped is false';
 -- Apply column filters if used
 IF p_filter IS NOT NULL THEN
     v_remote_sql := v_remote_sql || ' AND ARRAY[attname::text] <@ '||quote_literal(p_filter);
@@ -87,7 +87,7 @@ IF p_pk_field IS NULL AND p_pk_type IS NULL THEN
                         WHEN i.indisunique IS true THEN ''unique''
                     END AS key_type,
                     array_agg( a.attname ) AS indkey_names,
-                    array_agg( a.atttypid::regtype) AS indkey_types
+                    array_agg(format_type(a.atttypid, a.atttypmod)::text) AS indkey_types
                 FROM
                     pg_index i
                     JOIN pg_attribute a ON i.indrelid = a.attrelid AND a.attnum = any( i.indkey )

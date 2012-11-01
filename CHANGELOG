@@ -1,3 +1,7 @@
+0.7.1
+-- Fixed issue where columns with a fixed length would not migrate over properly (Ex: bit(7) would come over as bit(1))
+
+
 0.7.0
 -- IMPORTANT NOTE: ALL maker functions were dropped and replaced with a new signature in this update. Please check permissions and function calls before and after update.
 -- Added support for an array list filter that can be used to designate only specific columns that should be used for replication.
@@ -11,9 +15,11 @@
 -- Refresh functions will now handle job logging properly and give a clearer error message if the run fails before the job_id is actually created.
 -- Updated docs
 
+
 0.6.1
 -- Fixed dml & logdel queue objects on source to include the schema name as part of the queue table, queue function and queue trigger name. Fixes issues with tables of the same name in different schemas on source database not working for these types of replication due to name conflicts.
 -- NOTE: Existing jobs shouldn't be affected by this and you don't have to remake any of your jobs unless you run into this issue. All newly created jobs after this update are installed with the new queue naming format.
+
 
 0.6.0
 -- IMPORTANT NOTE: Before installation check permissions on the following functions that were dropped. They've got a new signature so will need to be granted the previous versions' permissions.
@@ -24,17 +30,21 @@
 -- New p_pulldata option for all maker functions to allow not pulling data from source if desired. It is set to TRUE by default.
 -- Documentation updates
 
+
 0.5.3
 -- Allow inserter, updater, dml & logdel maker functions to handle the destination table already existing. In that case, the destination table will not be touched and no data will be pulled from the source. For inserter & updater, the last_value function will either be given the max value of the current destination data or the timestamp at the time the maker function runs.
 -- Updated documentation
 -- Some code cleanup for simplification & clarity
 
+
 0.5.2
 -- Fixed all temp tables not getting removed in refresh_dml(). Caused errors if there were no new rows for consecutive runs in the same session. 
+
 
 0.5.1
 -- Fixed table definition for refresh_config table to not use hardcoded schema name for type column
 -- Added public schema to functions that change the search_path for their run. Fixes issues with finding certain objects located in public schema
+
 
 0.5.0
 -- Restructured SQL source files in /sql folder. Run 'make' to create the single file needed for extension installation or just cat all the files in /sql/tables and sql/functions together in the properly formatted filename.
@@ -46,19 +56,23 @@
 -- Simplify maker functions to only have one version and more efficiently create the local table using the now better snapshot_destroyer. Custom destination table name is an optional argument. Default is NULL and maker will create destination table with same schema and tablename as the source unless this parameter is set.
 -- Update auth() function to support passwordless authentication string.
 
+
 0.4.6
 -- Fixed bug in refresh_snap that was causing the post_scripts not to run when a change on source schema happened
 -- Removed unused mviews table
+
 
 0.4.5
 -- Added run_refresh function to allow easier scheduling of running batch jobs. Uses new period column in config tables to determine how often a job should run
 -- Added batch_limit column in parent config table. This will be used by default for refresh jobs that use it, but p_limit parameter to the function can override it. Needed to do this so run_refresh can set limits and put in parent table just to make things easier since snap is the only thing that doesn't use it.
 -- Handle QUERY_CANCELED exception. Only releases advisory lock to prevent a manual run/cancel locking out all other jobs. REMINDER that a mimeo replication job should be handled with the jobmon.cancel_job() function to properly log the cancellation.
 
+
 0.4.4
 -- IMPORTANT UPDATE NOTE: Old versions of functions were dropped. Check function permissions before and after this update to ensure they're reset properly.
 -- Allow refresh inserter/updater to repull either all data or a specified time period of data from the source. refresh dml can do a full refresh of data from source. Did NOT set this up for refresh logdel at this time.
 -- Make debug parameter optional. Default false. Can be turned on by using named parameter option with functions that have multiple defaults. Batch limit should now be called as named parameter option as well to ensure future compatibility.
+
 
 0.4.3
 -- Handle edge case when refresh inserter/updater batch is equal to the limit and the limit cuts off timestamps of equal value past the batch limit. In this case, the rows with the upper boundary timestamp will be removed from the batch. If the batch is equal to the limit and all rows contain exactly the same timestamp value, this will cause a job failure. The batch limit must be increased to handle it. 
@@ -67,8 +81,10 @@
 -- Fixed resetting search path in advisory lock attempt.
 -- Fixed spelling of boundary (boundry) in refresh_updater. Mispelled variables make debugging a pita.
 
+
 0.4.2
 -- Fix exceptions in remaining functions to handle an exception being thrown before first logged step. inserter/updater were fixed in 0.4.1
+
 
 0.4.1
 -- Fix inserter/updater timestamp based refresh to be able to handle DST for servers not running in GMT/UTC
@@ -76,6 +92,7 @@
 --      BE SURE TO CHECK YOUR CONFIGURATION SO IT IS SET ACCORDINGLY! I set it to true to ensure data isn't missed by accident for existing jobs.
 --      But this will cause replication to stop during DST time changes. Please plan accordinly.
 --      Any new jobs created using the inserter/updater maker functions will set the dst_active option based on the result of the dst_utc_check() function.
+
 
 0.4.0
 -- Restructured config table. Made a child table for each refresh type inheriting from a generic parent. Allows tighter control of data and easier extension maintenance
@@ -85,11 +102,14 @@
 -- Cleaned up unused variables in functions
 -- More consistent code formatting of functions
 
+
 0.3.3
 -- Added new updater_maker and updater_destroyer functions. Also added support for composite keys in refresh_updater function.
 
+
 0.3.2
 -- Added new inserter_maker and inserter_destroyer functions
+
 
 0.3.1
 -- Made dblink_mapping.data_source_id column a real serial column (default is the next sequence ID) to make setup easier
@@ -97,17 +117,22 @@
 -- Made snapshot_destroyer parameter name clearer in what its use is. Required dropping function so please re-check your function permissions.
 -- Documentation update.
 
+
 0.3.0
 -- Added new snapshot_maker and snapshot_destroyer functions
+
 
 0.2.3
 -- Added ORDER BY to remote select query to fix missing data on destination when the limit is actually used
 
+
 0.2.2
 -- Changed to using pg_try_advisory_lock and failing gracefully when concurrent jobs are running. Logs that job didn't run and why
 
+
 0.2.1
 -- Actually fix the dupe issue with inserter function
+
 
 0.2.0
 -- Renamed refresh_incremental to refresh_inserter

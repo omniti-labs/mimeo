@@ -104,7 +104,8 @@ v_refresh_snap := v_dest_table||v_snap;
 
 PERFORM gdb(p_debug,'v_refresh_snap: '||v_refresh_snap::text);
 
-v_remote_sql := 'SELECT array_to_string(array_agg(attname),'','') as cols, array_to_string(array_agg(attname||'' ''||atttypid::regtype::text),'','') as cols_n_types FROM pg_attribute WHERE attrelid = '||quote_literal(v_source_table)||'::regclass AND attnum > 0 AND attisdropped is false';
+v_remote_sql := 'SELECT array_to_string(array_agg(attname),'','') as cols, array_to_string(array_agg(attname||'' ''||format_type(atttypid, atttypmod)::text),'','') as cols_n_types FROM pg_attribute WHERE attrelid = '||quote_literal(v_source_table)||'::regclass AND attnum > 0 AND attisdropped is false';
+
 -- Apply column filters if used
 IF v_filter IS NOT NULL THEN
     v_remote_sql := v_remote_sql || ' AND ARRAY[attname::text] <@ '||quote_literal(v_filter);
@@ -146,7 +147,7 @@ ELSE
 
 /* Check local column definitions against remote and recreate table if different. Allows automatic recreation of
         snap tables if columns change (add, drop type change)  */  
-    v_local_sql := 'SELECT array_agg(attname||'' ''||atttypid::regtype::text) as cols_n_types FROM pg_attribute WHERE attnum > 0 AND attisdropped is false AND attrelid = ' || quote_literal(v_refresh_snap) || '::regclass'; 
+    v_local_sql := 'SELECT array_agg(attname||'' ''||format_type(atttypid, atttypmod)::text) as cols_n_types FROM pg_attribute WHERE attnum > 0 AND attisdropped is false AND attrelid = ' || quote_literal(v_refresh_snap) || '::regclass'; 
         
     PERFORM gdb(p_debug,'v_local_sql: '||v_local_sql::text);
 
@@ -244,3 +245,4 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
+
