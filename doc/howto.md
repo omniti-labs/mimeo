@@ -57,7 +57,7 @@ Every source database needs to have its connection information stored in mimeo's
     INSERT INTO mimeo.dblink_mapping (data_source, username, pwd) 
     VALUES ('host=remote.host port=5432 dbname=sourcedb', 'mimeo', 'password');
 
-You will also have to grant, at a minimum, SELECT privileges on all tables that will be replicated with mimeo for all replication types. For DML replication types, it is required to create a schema on the source database with the exact same name as the schema where mimeo was installed on the destination. Also grant ownership of the schema to the source database mimeo user. For each table that will be a source for DML replication, TRIGGER privileges will have to be given to the the source database mimeo user. For example, the below commands are all run on the **source** database.
+You will also have to grant, at a minimum, SELECT privileges on all tables that will be replicated with mimeo for all replication types. For DML replication types, it is required to create a schema on the source database with the exact same name as the schema where mimeo was installed on the destination. Also grant ownership of the schema to the source database mimeo role. For each table that will be a source for DML replication, TRIGGER privileges will have to be given to the the source database mimeo role. For example, the below commands are all run on the **source** database.
 
     CREATE SCHEMA mimeo;
     ALTER SCHEMA mimeo OWNER TO mimeo;
@@ -172,7 +172,7 @@ PostgreSQL has no internal scheduler (something that I hope someday is fixed), s
 
 This will cause the replication job to run daily at the time listed for *last_run*. You can manually change the *last_run* value to whatever you wish if you need to reschedule the job to start running at a certain time.
 
-You can now use the **refresh_run()** function to run your refresh jobs. The first argument, which is required, is the type of replication jobs to run (snap, inserter, updater, dml, or logdel). The second argument is optional and tells the scheduler how many of that job type to grab for that run. They are run sequentially in the order of the job's last_run value, not in parallel. If this argument is not given, the default is 4. An example crontab running all replication types is below.
+You can now use the **run_refresh()** function to run your refresh jobs. The first argument, which is required, is the type of replication jobs to run (snap, inserter, updater, dml, or logdel). The second argument is optional and tells the scheduler how many of that job type to grab for that run. They are run sequentially in the order of the job's last_run value, not in parallel. If this argument is not given, the default is 4. An example crontab running all replication types is below.
 
     00,10,20,30,40,50 * * * *  psql -c "select mimeo.run_refresh('snap');" >/dev/null
     01,11,21,31,41,51 * * * *  psql -c "select mimeo.run_refresh('inserter', 10);" >/dev/null
