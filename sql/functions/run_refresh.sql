@@ -1,7 +1,7 @@
 /*
  * Function to run batches of refresh jobs.
  */
-CREATE FUNCTION run_refresh(p_type text, p_batch int, p_debug boolean DEFAULT false) RETURNS void
+CREATE FUNCTION run_refresh(p_type text, p_batch int DEFAULT 4, p_debug boolean DEFAULT false) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
@@ -22,8 +22,8 @@ FOR v_row IN
     SELECT dest_table, batch_limit FROM @extschema@.refresh_config 
     WHERE type = p_type::@extschema@.refresh_type 
     AND period IS NOT NULL 
-    AND (now() - last_value)::interval > period 
-    ORDER BY last_value ASC        
+    AND (CURRENT_TIMESTAMP - last_run)::interval > period 
+    ORDER BY last_run ASC        
     LIMIT p_batch
 LOOP
 

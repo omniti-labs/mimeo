@@ -60,10 +60,10 @@ EXECUTE 'SELECT max('||p_control_field||') FROM '||p_dest_table||';' INTO v_max_
 
 v_dst_active := @extschema@.dst_utc_check();
 
-v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_inserter(source_table, dest_table, dblink, control, boundary, last_value, dst_active, filter, condition) VALUES('
+v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_inserter(source_table, dest_table, dblink, control, boundary, last_value, last_run, dst_active, filter, condition) VALUES('
     ||quote_literal(p_src_table)||','||quote_literal(p_dest_table)||','|| p_dblink_id||','
     ||quote_literal(p_control_field)||','||quote_literal(p_boundary)||','||quote_literal(COALESCE(v_max_timestamp, CURRENT_TIMESTAMP))||','
-    ||v_dst_active||','||COALESCE(quote_literal(p_filter), 'NULL')||','||COALESCE(quote_literal(p_condition), 'NULL')||');';
+    ||quote_literal(CURRENT_TIMESTAMP)||','||v_dst_active||','||COALESCE(quote_literal(p_filter), 'NULL')||','||COALESCE(quote_literal(p_condition), 'NULL')||');';
 
 RAISE NOTICE 'Inserting data into config table';
 EXECUTE v_insert_refresh_config;

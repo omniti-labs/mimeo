@@ -21,7 +21,7 @@ CREATE TABLE refresh_config (
     dest_table text NOT NULL,
     type @extschema@.refresh_type NOT NULL,
     dblink integer NOT NULL,
-    last_value timestamp with time zone,
+    last_run timestamp with time zone,
     filter text[],
     condition text,
     period interval,
@@ -46,6 +46,7 @@ ALTER TABLE @extschema@.refresh_config_inserter ADD CONSTRAINT refresh_config_in
 ALTER TABLE @extschema@.refresh_config_inserter ADD COLUMN source_table text NOT NULL; 
 ALTER TABLE @extschema@.refresh_config_inserter ADD COLUMN control text NOT NULL;   
 ALTER TABLE @extschema@.refresh_config_inserter ADD COLUMN boundary interval;
+ALTER TABLE @extschema@.refresh_config_inserter ADD COLUMN last_value timestamptz NOT NULL;
 ALTER TABLE @extschema@.refresh_config_inserter ADD COLUMN dst_active boolean NOT NULL DEFAULT true;
 ALTER TABLE @extschema@.refresh_config_inserter ADD COLUMN dst_start int NOT NULL DEFAULT 30;
 ALTER TABLE @extschema@.refresh_config_inserter ADD COLUMN dst_end int NOT NULL DEFAULT 230;
@@ -59,6 +60,7 @@ ALTER TABLE @extschema@.refresh_config_updater ADD CONSTRAINT refresh_config_upd
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN source_table text NOT NULL;
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN control text NOT NULL;  
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN boundary interval;
+ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN last_value timestamptz NOT NULL;
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN pk_field text[] NOT NULL; 
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN pk_type text[] NOT NULL;
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN dst_active boolean NOT NULL DEFAULT true;

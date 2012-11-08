@@ -20,7 +20,7 @@ The **p_condition** option in the maker functions (and the **condition** column 
     SELECT mimeo.snapshot_maker(..., p_condition := 'WHERE col1 > 4 AND col2 < ''test''');
     SELECT mimeo.dml_maker (..., p_condition := ', table2, table3 WHERE source_table.col1 = table2.col1 AND table1.col3 = table3.col3');
 
-Mimeo uses the **pg_jobmon** extension to provide an audit trail and monitoring capability. If you're having any problems with mimeo working, check the job logs that pg_jobmon creates.
+Mimeo uses the **pg_jobmon** extension to provide an audit trail and monitoring capability. If you're having any problems with mimeo working, check the job logs that pg_jobmon creates. https://github.com/omniti-labs/pg_jobmon
 
 All refresh functions use the advisory lock system to ensure that jobs do not run concurrently. If a job is found to already be running, it will cleanly exit immediately and record that another job was already running in pg_jobmon. run_refresh has its own advisory lock independent of the refresh functions it calls to ensure that it does not run concurrently as well.
 
@@ -162,7 +162,7 @@ Functions
  * Function to automatically remove a logdel replication table from the destination. This will also automatically remove the associated objects from the source database if the dml_maker() function was used to create it.  
  * Pass 'ARCHIVE' as p_archive_option to leave the destination table intact. Pass any other value to completely remove everything.
 
-*run_refresh(p_type text, p_batch int, p_debug boolean DEFAULT false)*  
+*run_refresh(p_type text, p_batch int DEFAULT 4, p_debug boolean DEFAULT false)*  
  * This function will run the refresh function for all tables the tables listed in refresh_config for the type given by p_type. Note that the jobs within a batch are run sequentially, not concurrently (working to try and see if I can get it working concurrently).  
  * p_batch sets how many of each type of refresh job will be kicked off each time run_refresh is called.
 
@@ -184,9 +184,7 @@ Tables
     dest_table      - Tablename on destination database. If not public, should be schema qualified
     type            - Type of replication. Enum of one of the following values: snap, inserter, updater, dml, logdel
     dblink          - Foreign key on the data_source_id column from dblink_mapping table
-    last_value      - Timestamp that is one of two values: For incremental, this is the max value of the control field from the last run and controls 
-                      the time period of the batch of data pulled from the source table. For all other replication types this is just the last time 
-                      the replication job was run.
+    last_run        - Timestamp of the last run of the job. Used by run_refresh() to know when to do the next run of a job.
     filter          - Array containing specific column names that should be used in replication.
     condition       - Used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
     period          - Interval used for the run_refresh() function to indicate how often this refresh job should be run at a minimum
@@ -205,6 +203,7 @@ Tables
     source_table    - Table name from source database. If not public, should be schema qualified
     control         - Column name that contains the timestamp that is updated on every insert
     boundary        - Interval to adjust upper boundary max value of control field. See inserter_maker() for more info
+    last_value      - This is the max value of the control field from the last run and controls the time period of the batch of data pulled from the source table. 
     dst_active      - Boolean set to true of database is not running on a server in UTC/GMT time. See About for more info
     dst_start       - Integer representation of the time that DST starts. Ex: 00:30 would be 30
     dst_end         - Integer representation of the time that DST starts. Ex: 02:30 would be 230
@@ -215,6 +214,7 @@ Tables
     source_table    - Table name from source database. If not public, should be schema qualified
     control         - Column name that contains the timestamp that is updated on every insert AND update
     boundary        - Interval to adjust upper boundary max value of control field. See updater_maker() for more info
+    last_value      - This is the max value of the control field from the last run and controls the time period of the batch of data pulled from the source table. 
     pk_field        - Text array of all the column names that make up the source table primary key
     pk_type         - Text array of all the column types that make up the source table primary key
     dst_active      - Boolean set to true of database is not running on a server in UTC/GMT time. See About for more info

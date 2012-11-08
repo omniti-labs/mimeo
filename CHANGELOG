@@ -1,3 +1,11 @@
+0.7.2
+-- IMPORTANT: To keep this update from interfering the least with current jobs, unschedule any running jobs. During this update, all jobs that try to run will be held until it is complete.
+-- Created new parent table column timestamptz 'last_run' that is used by run_refresh() to track when the job last ran.
+-- Changed last_value to only be a child table column in inserter & updater child config tables.
+-- Set run_refresh() to default to a batch number of 4 if no argument given.
+-- Created howto.md file in /doc folder to give more detailed setup and usage instructions for first time users
+
+
 0.7.1
 -- Fixed issue where columns with a fixed length would not migrate over properly (Ex: bit(7) would come over as bit(1))
 

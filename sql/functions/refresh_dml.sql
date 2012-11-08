@@ -23,7 +23,6 @@ v_insert_sql        text;
 v_job_id            int;
 v_jobmon_schema     text;
 v_job_name          text;
-v_last_value_sql    text;
 v_limit             int; 
 v_old_search_path   text;
 v_pk_counter        int;
@@ -187,63 +186,55 @@ v_trigger_delete := 'SELECT dblink_exec(auth('||v_dblink||'),'||quote_literal('D
 
 -- update remote entries
 v_step_id := add_step(v_job_id,'Updating remote trigger table');
-    PERFORM gdb(p_debug,v_trigger_update);
-    EXECUTE v_trigger_update INTO v_exec_status;    
+PERFORM gdb(p_debug,v_trigger_update);
+EXECUTE v_trigger_update INTO v_exec_status;    
 PERFORM update_step(v_step_id, 'OK','Result was '||v_exec_status);
 
 -- create temp tables 
 v_step_id := add_step(v_job_id,'Creating temp tables');
-    -- Full table with all insert/update data    
-    PERFORM gdb(p_debug,v_create_f_sql);
-    EXECUTE v_create_f_sql;
-    GET DIAGNOSTICS v_rowcount = ROW_COUNT;
-    PERFORM gdb(p_debug,'Temp table row count '||v_rowcount::text);
-    IF v_rowcount < 1 THEN 
-        PERFORM update_step(v_step_id, 'OK','No new rows found');
-        EXECUTE 'DROP TABLE IF EXISTS '||v_tmp_table||'_full';
-        PERFORM close_job(v_job_id);
-        -- Ensure old search path is reset for the current session
-        EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
-        PERFORM pg_advisory_unlock(hashtext('refresh_dml'), hashtext(v_job_name));
-        RETURN;
-    END IF;
-PERFORM update_step(v_step_id, 'OK','Number of rows to process: '||v_rowcount);
-
--- remove records from local table 
-IF p_repull THEN
-    v_step_id := add_step(v_job_id,'Truncating local table');
-    PERFORM gdb(p_debug,'Truncating local table');
-    EXECUTE 'TRUNCATE '||v_dest_table;
-    PERFORM update_step(v_step_id, 'OK','Done');
-ELSE
-    v_step_id := add_step(v_job_id,'Deleting records from local table');
+-- Full table with all insert/update data    
+PERFORM gdb(p_debug,v_create_f_sql);
+EXECUTE v_create_f_sql;
+GET DIAGNOSTICS v_rowcount = ROW_COUNT;
+PERFORM gdb(p_debug,'Temp table row count '||v_rowcount::text);
+IF v_rowcount < 1 THEN 
+    PERFORM update_step(v_step_id, 'OK','No new rows found');
+ELSE 
+    PERFORM update_step(v_step_id, 'OK','Number of rows to process: '||v_rowcount);
+    -- remove records from local table 
+    IF p_repull THEN
+        v_step_id := add_step(v_job_id,'Truncating local table');
+        PERFORM gdb(p_debug,'Truncating local table');
+        EXECUTE 'TRUNCATE '||v_dest_table;
+        PERFORM update_step(v_step_id, 'OK','Done');
+    ELSE
+        v_step_id := add_step(v_job_id,'Deleting records from local table');
         PERFORM gdb(p_debug,v_delete_sql);
         EXECUTE v_delete_sql; 
         GET DIAGNOSTICS v_rowcount = ROW_COUNT;
         PERFORM gdb(p_debug,'Rows removed from local table before applying changes: '||v_rowcount::text);
         PERFORM update_step(v_step_id, 'OK','Removed '||v_rowcount||' records');
-END IF;
+    END IF;
 
--- insert records to local table
-v_step_id := add_step(v_job_id,'Inserting new records into local table');
+    -- insert records to local table
+    v_step_id := add_step(v_job_id,'Inserting new records into local table');
     PERFORM gdb(p_debug,v_insert_sql);
     EXECUTE v_insert_sql;
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
     PERFORM gdb(p_debug,'Rows inserted: '||v_rowcount::text);
-PERFORM update_step(v_step_id, 'OK','Inserted '||v_rowcount||' records');
+    PERFORM update_step(v_step_id, 'OK','Inserted '||v_rowcount||' records');
 
--- clean out rows from txn table
-v_step_id := add_step(v_job_id,'Cleaning out rows from txn table');
+    -- clean out rows from txn table
+    v_step_id := add_step(v_job_id,'Cleaning out rows from txn table');
     PERFORM gdb(p_debug,v_trigger_delete);
     EXECUTE v_trigger_delete INTO v_exec_status;
-PERFORM update_step(v_step_id, 'OK','Result was '||v_exec_status);
+    PERFORM update_step(v_step_id, 'OK','Result was '||v_exec_status);
+END IF;
 
 -- update activity status
-v_step_id := add_step(v_job_id,'Updating last_value in config table');
-    v_last_value_sql := 'UPDATE refresh_config_dml SET last_value = '|| quote_literal(current_timestamp::timestamp) ||' WHERE dest_table = ' ||quote_literal(p_destination); 
-    PERFORM gdb(p_debug,v_last_value_sql);
-    EXECUTE v_last_value_sql; 
-PERFORM update_step(v_step_id, 'OK','Last Value was '||current_timestamp);
+v_step_id := add_step(v_job_id,'Updating last_run in config table');
+UPDATE refresh_config_dml SET last_run = CURRENT_TIMESTAMP WHERE dest_table = p_destination; 
+PERFORM update_step(v_step_id, 'OK','Last run was '||CURRENT_TIMESTAMP);
 
 PERFORM close_job(v_job_id);
 

@@ -183,15 +183,15 @@ PERFORM update_step(v_step_id, 'OK','Done');
 END IF;
 -- populating snap table
 v_step_id := add_step(v_job_id,'Inserting records into local table');
-    PERFORM gdb(p_debug,'Inserting rows... '||v_insert_sql);
-    EXECUTE v_insert_sql; 
-    GET DIAGNOSTICS v_rowcount = ROW_COUNT;
+PERFORM gdb(p_debug,'Inserting rows... '||v_insert_sql);
+EXECUTE v_insert_sql; 
+GET DIAGNOSTICS v_rowcount = ROW_COUNT;
 PERFORM update_step(v_step_id, 'OK','Inserted '||v_rowcount||' records');
 
 IF v_rowcount IS NOT NULL THEN
      EXECUTE 'ANALYZE ' ||v_refresh_snap;
 
-    SET statement_timeout='30 min';
+    --SET statement_timeout='30 min';  
     
     -- swap view
     v_step_id := add_step(v_job_id,'Swap view to '||v_refresh_snap);
@@ -200,8 +200,7 @@ IF v_rowcount IS NOT NULL THEN
     PERFORM update_step(v_step_id, 'OK','View Swapped');
 
     v_step_id := add_step(v_job_id,'Updating last value');
-    UPDATE refresh_config_snap set last_value = now() WHERE dest_table = p_destination;  
-
+    UPDATE refresh_config_snap set last_run = CURRENT_TIMESTAMP WHERE dest_table = p_destination;  
     PERFORM update_step(v_step_id, 'OK','Done');
 
     -- Runs special sql to fix indexes, permissions, etc on recreated objects
@@ -229,8 +228,8 @@ EXCEPTION
     WHEN OTHERS THEN
         EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
         IF v_job_id IS NULL THEN
-                v_job_id := add_job('Refresh Snap: '||p_destination);
-                v_step_id := add_step(v_job_id, 'EXCEPTION before job logging started');
+            v_job_id := add_job('Refresh Snap: '||p_destination);
+            v_step_id := add_step(v_job_id, 'EXCEPTION before job logging started');
         END IF;
         IF v_step_id IS NULL THEN
             v_step_id := jobmon.add_step(v_job_id, 'EXCEPTION before first step logged');
@@ -245,4 +244,3 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
-

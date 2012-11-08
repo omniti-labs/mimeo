@@ -164,9 +164,9 @@ ELSE
     RAISE NOTICE 'Destination table % already exists. No data was pulled from source', p_dest_table;
 END IF;
 
-v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_dml(source_table, dest_table, dblink, control, pk_field, pk_type, last_value, filter, condition) VALUES('
+v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_dml(source_table, dest_table, dblink, control, pk_field, pk_type, last_run, filter, condition) VALUES('
     ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||', '||quote_literal('@extschema@.'||v_src_table_name||'_pgq')||', '
-    ||quote_literal(v_pk_field)||', '||quote_literal(v_pk_type)||', '||quote_literal(clock_timestamp())||','||COALESCE(quote_literal(p_filter), 'NULL')||','
+    ||quote_literal(v_pk_field)||', '||quote_literal(v_pk_type)||', '||quote_literal(CURRENT_TIMESTAMP)||','||COALESCE(quote_literal(p_filter), 'NULL')||','
     ||COALESCE(quote_literal(p_condition), 'NULL')||')';
 RAISE NOTICE 'Inserting data into config table';
 EXECUTE v_insert_refresh_config;

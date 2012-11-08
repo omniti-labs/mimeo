@@ -119,6 +119,7 @@ IF v_dst_active THEN
         IF to_number(to_char(v_now, 'HH24MM'), '0000') > v_dst_start AND to_number(to_char(v_now, 'HH24MM'), '0000') < v_dst_end THEN
             v_step_id := jobmon.add_step( v_job_id, 'DST Check');
             PERFORM jobmon.update_step(v_step_id, 'OK', 'Job CANCELLED - Does not run during DST time change');
+            UPDATE refresh_config_updater SET last_run = CURRENT_TIMESTAMP WHERE dest_table = p_destination;  
             PERFORM jobmon.close_job(v_job_id);
             PERFORM gdb(p_debug, 'Cannot run during DST time change');
             EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
@@ -195,12 +196,9 @@ ELSE
 
     PERFORM update_step(v_step_id, 'OK','Grabbing rows from '||v_last_value::text||' to '||v_boundary::text);
     PERFORM gdb(p_debug,'Grabbing rows from '||v_last_value::text||' to '||v_boundary::text);
-
 END IF;
 
-
 v_create_sql := 'CREATE TEMP TABLE '||v_tmp_table||' AS SELECT '||v_cols||' FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_sql)||') t ('||v_cols_n_types||')';
-
 
 IF array_length(v_pk_field, 1) > 1 THEN
     v_pk_where := '';
@@ -224,6 +222,7 @@ v_step_id := add_step(v_job_id,'Creating temp table ('||v_tmp_table||') from rem
     IF v_rowcount < 1 THEN 
         PERFORM update_step(v_step_id, 'OK','No new rows found');
         EXECUTE 'DROP TABLE IF EXISTS ' || v_tmp_table;
+        UPDATE refresh_config_updater SET last_run = CURRENT_TIMESTAMP WHERE dest_table = p_destination;  
         PERFORM close_job(v_job_id);
         PERFORM gdb(p_debug, 'No new rows found');
         -- Ensure old search path is reset for the current session
@@ -244,6 +243,7 @@ v_step_id := add_step(v_job_id,'Creating temp table ('||v_tmp_table||') from rem
             v_step_id := add_step(v_job_id, 'Reached inconsistent state');
             PERFORM update_step(v_step_id, 'CRITICAL', 'Batch contained max rows ('||v_limit||') and all contained the same timestamp value. Unable to guarentee rows will ever be replicated consistently. Increase row limit parameter to allow a consistent batch.');
             PERFORM gdb(p_debug, 'Batch contained max rows desired ('||v_limit||') and all contained the same timestamp value. Unable to guarentee rows will be replicated consistently. Increase row limit parameter to allow a consistent batch.');
+            UPDATE refresh_config_updater SET last_run = CURRENT_TIMESTAMP WHERE dest_table = p_destination;  
             PERFORM fail_job(v_job_id);
             EXECUTE 'DROP TABLE IF EXISTS ' || v_tmp_table;
             EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
@@ -260,29 +260,29 @@ IF v_full_refresh THEN
 ELSE
     -- delete records to be updated. This step not needed during full refresh
     v_step_id := add_step(v_job_id,'Deleting records marked for update in local table');
-        perform gdb(p_debug,v_delete_sql);
-        execute v_delete_sql; 
-        GET DIAGNOSTICS v_rowcount = ROW_COUNT;
+    perform gdb(p_debug,v_delete_sql);
+    execute v_delete_sql; 
+    GET DIAGNOSTICS v_rowcount = ROW_COUNT;
     PERFORM update_step(v_step_id, 'OK','Deleted '||v_rowcount||' records');
 END IF;
 
 -- insert
 v_step_id := add_step(v_job_id,'Inserting new records into local table');
-    perform gdb(p_debug,v_insert_sql);
-    execute v_insert_sql; 
-    GET DIAGNOSTICS v_rowcount = ROW_COUNT;
+perform gdb(p_debug,v_insert_sql);
+execute v_insert_sql; 
+GET DIAGNOSTICS v_rowcount = ROW_COUNT;
 PERFORM update_step(v_step_id, 'OK','Inserted '||v_rowcount||' records');
 
 -- Get new last_value
 v_step_id := add_step(v_job_id, 'Getting local max control field value for next lower boundary');
-    PERFORM gdb(p_debug, v_last_value_sql);
-    EXECUTE v_last_value_sql INTO v_last_value;
-    PERFORM update_step(v_step_id, 'OK','Max value is: '||v_last_value);
-    PERFORM gdb(p_debug, 'Max value is: '||v_last_value);
+PERFORM gdb(p_debug, v_last_value_sql);
+EXECUTE v_last_value_sql INTO v_last_value;
+PERFORM update_step(v_step_id, 'OK','Max value is: '||v_last_value);
+PERFORM gdb(p_debug, 'Max value is: '||v_last_value);
 
 -- update boundries
 v_step_id := add_step(v_job_id,'Updating last_value in config');
-UPDATE refresh_config_updater set last_value = v_last_value WHERE dest_table = p_destination;  
+UPDATE refresh_config_updater set last_value = v_last_value, last_run = CURRENT_TIMESTAMP WHERE dest_table = p_destination;  
 PERFORM update_step(v_step_id, 'OK','Done');
 
 EXECUTE 'DROP TABLE IF EXISTS '||v_tmp_table;
