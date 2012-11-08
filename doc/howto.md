@@ -148,7 +148,7 @@ To keep the destination tables up to date, there's a set of refresh functions fo
 
     destinationdb=# SELECT mimeo.refresh_dml('dest_schema.dml_test_dest');
 
-There are additional options for each refresh type that can allow you to do things like refresh the destination or change the number of rows obtained in a single run. See the mimeo.md doc file for more details.
+There are additional options for each refresh type that can allow you to do things like completely refresh all the data on the destination or change the number of rows obtained in a single run. See the mimeo.md doc file for more details.
 
 
 Scheduling
