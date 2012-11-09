@@ -49,6 +49,10 @@ Any role that will be calling the functions in mimeo will need to be granted usa
     GRANT
     destinationdb=# GRANT EXECUTE ON FUNCTION...
 
+If you just want to grant execute to all mimeo functions, you can do a much easier command
+
+    destinationdb=# GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA mimeo TO some_role;
+
 Source Databases
 ---------------
 
@@ -91,7 +95,7 @@ Snapshot replication is the easiest to setup, but should be limited to smaller t
             , "GRANT select ON keith.manual_snap_tables TO omniti"}', 'snap');
 
 - - -
-**Incremental** replication is useful when the source table has a timestamp column that is set at EVERY insert or update. Many other per-table replication methods rely solely on triggers on the source database (and mimeo does as well as you'll see later). But when a table has a special column like this, it's very easy to do replication without the overhead of triggers and this can greatly ease the load on the source database when a table receive a high rate of inserts (tracking web page hits for example). If the table only ever gets inserts, the inserter replication type is best to use since it has less overhead than the updater replication. Updater replication requires that the source table have either a primary or unique key. Inserter replication requires no primary/unique keys.
+**Incremental** replication is useful when the source table has a timestamp column that is set at EVERY insert or update. Incremental also DOES NOT replicate deletes. Many other per-table replication methods rely solely on triggers on the source database (and mimeo does as well as you'll see later). But when a table has a special column like this, it's very easy to do replication without the overhead of triggers and this can greatly ease the load on the source database when a table receive a high rate of inserts (tracking web page hits for example). There's two types of incremental replication: inserter & updater. If the table only ever gets inserts (or that's all you care about replicating), the inserter replication type is best to use since it has less overhead than the updater replication. Updater will also replicate rows if that same timestamp column is set on every update in addition to when it's inserted. Updater replication requires that the source table have either a primary or unique key. Inserter replication requires no primary/unique keys.
 
     destinationdb=# SELECT mimeo.inserter_maker('public.inserter_test_source', 'insert_timestamp', 1);
     NOTICE:  Snapshotting source table to pull all current source data...
@@ -114,7 +118,7 @@ Snapshot replication is the easiest to setup, but should be limited to smaller t
 
 You can ignore most of the output of the maker functions. As long as the *NOTICE:  Done* line shows up, everything went as planned. The maker functions all internally make use of the snapshot replication method to do the initial data pull which is why you see the above references to it.
 
-The key piece of both inserter & updater replication is the "control" column which is the second argument in the maker function call (insert_timestamp in the example). This column MUST be a timestamp column that is set at insert. And for updater replication this same column must also be updated with the current timestamp on every update.
+The key piece of both inserter & updater replication is the "control" column which is the second argument in the maker function call (insert_timestamp in the example). This is the column that MUST be a timestamp and is set on every insert and/or update.
 
 - - -
 **DML Replication** is used when neither snapshot nor incremental is convenient. This can handle replicating all Inserts, Updates and Deletes on a source table to the destination. Like most DML based replication methods, this is done using triggers on the source table to track these changes in order to replay them on the destination. As long as the permissions have been set properly as shown above, the maker function will take care of setting all this up for you.
