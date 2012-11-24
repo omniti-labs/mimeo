@@ -7,7 +7,6 @@ CREATE FUNCTION dml_destroyer(p_dest_table text, p_archive_option text) RETURNS 
     
 DECLARE
 
-v_conns             text[];
 v_dblink            int;
 v_dblink_schema     text;
 v_dest_table        text;
@@ -29,9 +28,7 @@ SELECT source_table, dest_table, dblink INTO v_src_table, v_dest_table, v_dblink
 IF NOT FOUND THEN
 		RAISE NOTICE 'This table is not set up for dml replication: %', v_dest_table;
 ELSE
-    IF position('.' in v_src_table) > 0 THEN 
-        v_table_name := substring(v_src_table from position('.' in v_src_table)+1);
-    END IF;
+    v_table_name := replace(v_src_table, '.', '_');
 
     v_drop_function := 'DROP FUNCTION IF EXISTS @extschema@.'||v_table_name||'_mimeo_queue()';
     v_drop_trigger := 'DROP TRIGGER IF EXISTS '||v_table_name||'_mimeo_trig ON '||v_src_table;
@@ -62,7 +59,6 @@ EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false''
 EXCEPTION
     WHEN OTHERS THEN
         EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_dblink_schema||''',''false'')';
-        v_conns := dblink_get_connections();
         IF dblink_get_connections() @> '{mimeo_dml_destroy}' THEN
             PERFORM dblink_disconnect('mimeo_dml_destroy');
         END IF;

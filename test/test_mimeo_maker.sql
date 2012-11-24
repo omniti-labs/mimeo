@@ -32,24 +32,28 @@ PERFORM dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.snap_test_source (
     col2 text,
     col3 timestamptz DEFAULT clock_timestamp())');
 PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.snap_test_source VALUES (generate_series(1,10), ''test''||generate_series(1,10)::text)');
+PERFORM dblink_exec('mimeo_test', 'CREATE INDEX ON mimeo_source.snap_test_source (col2)');
 
 PERFORM dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.inserter_test_source (
-    col1 int,
+    col1 int PRIMARY KEY,
     col2 text,
     col3 timestamptz DEFAULT clock_timestamp())');
 PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.inserter_test_source VALUES (generate_series(1,10), ''test''||generate_series(1,10)::text)');
+PERFORM dblink_exec('mimeo_test', 'CREATE INDEX ON mimeo_source.inserter_test_source (col2)');
 
 PERFORM dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.updater_test_source (
     col1 int PRIMARY KEY,
     col2 text,
     col3 timestamptz DEFAULT clock_timestamp())');
 PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.updater_test_source VALUES (generate_series(1,10), ''test''||generate_series(1,10)::text)');
+PERFORM dblink_exec('mimeo_test', 'CREATE INDEX ON mimeo_source.updater_test_source (col2)');
 
 -- Must do separate tables due to queue table needing to be distinct
 PERFORM dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.dml_test_source (
     col1 int PRIMARY KEY,
     col2 text,
     col3 timestamptz DEFAULT clock_timestamp())');
+PERFORM dblink_exec('mimeo_test', 'CREATE INDEX ON mimeo_source.dml_test_source (col2)');
 PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source VALUES (generate_series(1,10), ''test''||generate_series(1,10)::text)');
 PERFORM dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.dml_test_source2 (
     col1 int,
@@ -79,6 +83,7 @@ PERFORM dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.logdel_test_source 
     col2 text,
     col3 timestamptz DEFAULT clock_timestamp())');
 PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source VALUES (generate_series(1,10), ''test''||generate_series(1,10)::text)');
+PERFORM dblink_exec('mimeo_test', 'CREATE INDEX ON mimeo_source.logdel_test_source (col2)');
 PERFORM dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.logdel_test_source2 (
     col1 int,
     col2 text,

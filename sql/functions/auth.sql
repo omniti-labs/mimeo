@@ -1,7 +1,7 @@
 /*
  *  Authentication for dblink
  */
-CREATE OR REPLACE FUNCTION auth(integer) RETURNS text
+CREATE FUNCTION auth(integer) RETURNS text
     LANGUAGE plpgsql
     AS $$
 DECLARE

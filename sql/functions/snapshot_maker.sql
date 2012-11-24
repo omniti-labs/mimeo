@@ -1,7 +1,15 @@
 /*
  *  Snapshot maker function. Optional custom destination table name.
  */
-CREATE FUNCTION snapshot_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true) RETURNS void
+CREATE FUNCTION snapshot_maker(
+    p_src_table text
+    , p_dblink_id int
+    , p_dest_table text DEFAULT NULL
+    , p_index boolean DEFAULT true
+    , p_filter text[] DEFAULT NULL
+    , p_condition text DEFAULT NULL
+    , p_pulldata boolean DEFAULT true) 
+RETURNS void
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -27,14 +35,13 @@ EXECUTE v_insert_refresh_config;
 RAISE NOTICE 'Insert successful';	
 
 RAISE NOTICE 'attempting first snapshot';
-EXECUTE 'SELECT @extschema@.refresh_snap('||quote_literal(p_dest_table)||', p_pulldata := '||p_pulldata||')'; 
+EXECUTE 'SELECT @extschema@.refresh_snap('||quote_literal(p_dest_table)||', p_index := '||p_index||', p_pulldata := '||p_pulldata||')'; 
 
 RAISE NOTICE 'attempting second snapshot';
-EXECUTE 'SELECT @extschema@.refresh_snap('||quote_literal(p_dest_table)||', p_pulldata := '||p_pulldata||')';
+EXECUTE 'SELECT @extschema@.refresh_snap('||quote_literal(p_dest_table)||', p_index := '||p_index||', p_pulldata := '||p_pulldata||')';
 
 RAISE NOTICE 'all done';
 
 RETURN;
-
 END
 $$;

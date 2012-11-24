@@ -1,7 +1,7 @@
 /*
  *  Snap refresh to repull all table data
  */
-CREATE FUNCTION refresh_snap(p_destination text, p_debug boolean DEFAULT false, p_pulldata boolean DEFAULT true) RETURNS void
+CREATE FUNCTION refresh_snap(p_destination text, p_index boolean DEFAULT true, p_debug boolean DEFAULT false, p_pulldata boolean DEFAULT true) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
@@ -12,7 +12,7 @@ v_cols              text;
 v_condition         text;
 v_create_sql        text;
 v_dblink_schema     text;
-v_dblink            text;
+v_dblink            int;
 v_dest_table        text;
 v_exists            int;
 v_filter            text[];
@@ -29,7 +29,9 @@ v_parts             record;
 v_post_script       text[];
 v_rcols_array       text[];
 v_refresh_snap      text;
+v_remote_index_sql  text;
 v_remote_sql        text;
+v_row               record;
 v_rowcount          bigint;
 v_r                 text;
 v_snap              text;
@@ -98,11 +100,10 @@ v_exists := strpos(v_view_definition, 'snap1');
     ELSE
     v_snap := '_snap1';
  END IF;
-
-
 v_refresh_snap := v_dest_table||v_snap;
-
 PERFORM gdb(p_debug,'v_refresh_snap: '||v_refresh_snap::text);
+
+PERFORM dblink_connect('mimeo_refresh_snap', @extschema@.auth(v_dblink));
 
 v_remote_sql := 'SELECT array_to_string(array_agg(attname),'','') as cols, array_to_string(array_agg(attname||'' ''||format_type(atttypid, atttypmod)::text),'','') as cols_n_types FROM pg_attribute WHERE attrelid = '||quote_literal(v_source_table)||'::regclass AND attnum > 0 AND attisdropped is false';
 
@@ -111,7 +112,7 @@ IF v_filter IS NOT NULL THEN
     v_remote_sql := v_remote_sql || ' AND ARRAY[attname::text] <@ '||quote_literal(v_filter);
 END IF;
 
-v_remote_sql := 'SELECT cols, cols_n_types FROM dblink(auth(' || v_dblink || '), ' || quote_literal(v_remote_sql) || ') t (cols text, cols_n_types text)';
+v_remote_sql := 'SELECT cols, cols_n_types FROM dblink(''mimeo_refresh_snap'', ' || quote_literal(v_remote_sql) || ') t (cols text, cols_n_types text)';
 perform gdb(p_debug,'v_remote_sql: '||v_remote_sql);
 EXECUTE v_remote_sql INTO v_cols, v_cols_n_types;  
 perform gdb(p_debug,'v_cols: '||v_cols);
@@ -125,7 +126,7 @@ ELSIF v_condition IS NOT NULL THEN
     v_remote_sql := v_remote_sql || ' ' || v_condition;
 END IF;
 
-v_insert_sql := 'INSERT INTO ' || v_refresh_snap || ' SELECT '||v_cols||' FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_sql)||') t ('||v_cols_n_types||')';
+v_insert_sql := 'INSERT INTO ' || v_refresh_snap || ' SELECT '||v_cols||' FROM dblink(''mimeo_refresh_snap'','||quote_literal(v_remote_sql)||') t ('||v_cols_n_types||')';
 
 PERFORM update_step(v_step_id, 'OK','Done');
 
@@ -179,8 +180,41 @@ ELSE
     -- truncate non-active snap table
     EXECUTE 'TRUNCATE TABLE ' || v_refresh_snap;
 
-PERFORM update_step(v_step_id, 'OK','Done');
+    PERFORM update_step(v_step_id, 'OK','Done');
 END IF;
+
+-- Create indexes if new table was created
+IF (v_table_exists = 0 OR v_match = 'f') AND p_index = true THEN
+    v_remote_index_sql := 'SELECT
+                CASE
+                    WHEN i.indisprimary IS true THEN ''primary''
+                    WHEN i.indisunique IS true THEN ''unique''
+                    ELSE ''index''
+                END AS key_type,
+                array_agg( a.attname ) AS indkey_names
+            FROM
+                pg_index i
+                JOIN pg_attribute a ON i.indrelid = a.attrelid AND a.attnum = any( i.indkey )
+            WHERE
+                i.indrelid = '||quote_literal(v_source_table)||'::regclass';
+    IF v_filter IS NOT NULL THEN
+        v_remote_index_sql := v_remote_index_sql || ' AND ARRAY[a.attname::text] <@ '||quote_literal(v_filter);
+    END IF;
+    v_remote_index_sql := v_remote_index_sql || ' GROUP BY i.indexrelid::regclass, key_type';
+    FOR v_row IN EXECUTE 'SELECT key_type, indkey_names FROM dblink(''mimeo_refresh_snap'', '||quote_literal(v_remote_index_sql)||') t (key_type text, indkey_names text[])' LOOP
+        IF v_row.key_type = 'primary' THEN
+            RAISE NOTICE 'Creating primary key...';
+            EXECUTE 'ALTER TABLE '||v_refresh_snap||' ADD CONSTRAINT '||v_parts.oparts[2]||'_'||array_to_string(v_row.indkey_names, '_')||'_idx PRIMARY KEY ('||array_to_string(v_row.indkey_names, ',')||')';
+        ELSIF v_row.key_type = 'unique' THEN
+            RAISE NOTICE 'Creating unique index...';
+            EXECUTE 'CREATE UNIQUE INDEX '||v_parts.oparts[2]||'_'||array_to_string(v_row.indkey_names, '_')||'_idx ON '||v_refresh_snap|| '('||array_to_string(v_row.indkey_names, ',')||')';
+        ELSE
+            RAISE NOTICE 'Creating index...';
+            EXECUTE 'CREATE INDEX '||v_parts.oparts[2]||'_'||array_to_string(v_row.indkey_names, '_')||'_idx ON '||v_refresh_snap|| '('||array_to_string(v_row.indkey_names, ',')||')';
+        END IF;
+    END LOOP;
+END IF;
+
 -- populating snap table
 v_step_id := add_step(v_job_id,'Inserting records into local table');
 PERFORM gdb(p_debug,'Inserting rows... '||v_insert_sql);
@@ -215,14 +249,20 @@ ELSE
     RAISE EXCEPTION 'No rows found in source table';
 END IF;
 
+PERFORM dblink_disconnect('mimeo_refresh_snap');
+
 -- Ensure old search path is reset for the current session
 EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
 
 PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
 
 EXCEPTION
-
     WHEN QUERY_CANCELED THEN
+        EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
+        IF dblink_get_connections() @> '{mimeo_refresh_snap}' THEN
+            PERFORM dblink_disconnect('mimeo_refresh_snap');
+        END IF;
+        EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
         PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;   
     WHEN OTHERS THEN
@@ -236,10 +276,10 @@ EXCEPTION
         END IF;
         PERFORM update_step(v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
         PERFORM fail_job(v_job_id);
-
-        -- Ensure old search path is reset for the current session
+        IF dblink_get_connections() @> '{mimeo_refresh_snap}' THEN
+            PERFORM dblink_disconnect('mimeo_refresh_snap');
+        END IF;
         EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
-
         PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;
 END

@@ -1,7 +1,17 @@
 /*
  *  Inserter maker function. 
  */
-CREATE FUNCTION inserter_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00', p_dest_table text DEFAULT NULL, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true) RETURNS void
+CREATE FUNCTION inserter_maker(
+    p_src_table text
+    , p_control_field text
+    , p_dblink_id int
+    , p_boundary interval DEFAULT '00:10:00'
+    , p_dest_table text DEFAULT NULL
+    , p_index boolean DEFAULT true
+    , p_filter text[] DEFAULT NULL
+    , p_condition text DEFAULT NULL
+    , p_pulldata boolean DEFAULT true) 
+RETURNS void
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -11,11 +21,8 @@ v_dest_check                text;
 v_dest_schema_name          text;
 v_dest_table_name           text;
 v_dst_active                boolean;
-v_exists                    int;
 v_insert_refresh_config     text;
 v_max_timestamp             timestamptz;
-v_snap_suffix               text;
-v_view_definition           text;
 
 BEGIN
 
@@ -44,15 +51,12 @@ IF v_dest_check IS NULL THEN
     RAISE NOTICE 'Snapshotting source table to pull all current source data...';
     EXECUTE v_insert_refresh_config;	
 
-    EXECUTE 'SELECT @extschema@.refresh_snap('||quote_literal(p_dest_table)||', p_pulldata := '||p_pulldata||')';
+    EXECUTE 'SELECT @extschema@.refresh_snap('||quote_literal(p_dest_table)||', p_index := '||p_index||', p_pulldata := '||p_pulldata||')';
     PERFORM @extschema@.snapshot_destroyer(p_dest_table, 'ARCHIVE');
-	
+    	
     RAISE NOTICE 'Snapshot complete.';
 ELSE
-    IF p_filter IS NOT NULL THEN
-        RAISE EXCEPTION 'Cannot use filter option when destination table already exists';
-    END IF;
-    RAISE NOTICE 'Destination table % already exists. No data was pulled from source', p_dest_table;
+    RAISE NOTICE 'Destination table % already exists. No data or indexes were pulled from source', p_dest_table;
 END IF;
 
 RAISE NOTICE 'Getting the maximum destination timestamp...';
@@ -72,8 +76,5 @@ EXECUTE v_insert_refresh_config;
 EXECUTE 'DELETE FROM @extschema@.refresh_config_snap WHERE source_table = '||quote_literal(p_src_table)||' AND dest_table = '||quote_literal(p_dest_table);
 
 RAISE NOTICE 'Done';
-
-RETURN;
-
 END
 $$;

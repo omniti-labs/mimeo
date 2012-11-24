@@ -1,3 +1,14 @@
+0.8.0
+-- IMPORTANT NOTE: Signatures on maker functions & refresh_snap() have changes so they were dropped and recreated. Check permissions if needed before and after update.
+-- Automatic creation of indexes with maker functions. Does not automatically propogate future changes to indexes with refresh runs. Allows source and destination to be different (ex. often data warehouse destinations do not need indexes to save on space. Also prevents issues with partitioned destination tables).
+-- Ensure primary or unique indexes are always made on destination tables when using dml/logdel_maker() (update_maker() was already properly doing this). Will do this even when new p_index option is set to false.
+-- Changed funtion parameter 'p_pk_field' to 'p_pk_name' to be more consistent with other internal variable names.
+-- update_maker() now checks that if the column filter option is used, all columns that are part of primary/unqiue key are included.
+-- Fixed dml/logdel_destroyer() functions to actually remove the objects on the remote database.
+-- Fixed manually setting the primary/unique key types with the maker function parameter p_pk_type.
+-- Updated Makefile to allow setting of grep binary if needed during building.
+
+
 0.7.2
 -- IMPORTANT: To keep this update from interfering the least with current jobs, unschedule any running jobs. During this update, all jobs that try to run will be held until it is complete.
 -- Created new parent table column timestamptz 'last_run' that is used by run_refresh() to track when the job last ran.
