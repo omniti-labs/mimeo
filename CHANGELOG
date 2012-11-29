@@ -1,3 +1,7 @@
+0.8.2
+-- Moved index creation step after data insertion. This will apply to all maker functions as well.
+
+
 0.8.1
 -- IMPORTANT NOTE: The automatic indexes that were being created in versions <= 0.8.0 may not have kept the columns in the correct order for multi-column indexes. Please double-check any primary keys, unique indexes, or indexes created on the destination with versions <= 0.8.0
 -- Fixed above issue so that any indexes propagated from the source are created properly on the destination.
