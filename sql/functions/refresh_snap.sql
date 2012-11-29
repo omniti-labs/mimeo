@@ -185,32 +185,36 @@ END IF;
 
 -- Create indexes if new table was created
 IF (v_table_exists = 0 OR v_match = 'f') AND p_index = true THEN
-    v_remote_index_sql := 'SELECT
-                CASE
-                    WHEN i.indisprimary IS true THEN ''primary''
-                    WHEN i.indisunique IS true THEN ''unique''
-                    ELSE ''index''
-                END AS key_type,
-                array_agg( a.attname ) AS indkey_names
-            FROM
-                pg_index i
-                JOIN pg_attribute a ON i.indrelid = a.attrelid AND a.attnum = any( i.indkey )
-            WHERE
-                i.indrelid = '||quote_literal(v_source_table)||'::regclass';
+    v_remote_index_sql := 'SELECT 
+        CASE
+            WHEN i.indisprimary IS true THEN ''primary''
+            WHEN i.indisunique IS true THEN ''unique''
+            ELSE ''index''
+        END AS key_type,
+        ( SELECT array_agg( a.attname ORDER by x.r ) 
+            FROM pg_attribute a 
+            JOIN ( SELECT k, row_number() over () as r 
+                    FROM unnest(i.indkey) k ) as x 
+            ON a.attnum = x.k AND a.attrelid = i.indrelid ';
     IF v_filter IS NOT NULL THEN
-        v_remote_index_sql := v_remote_index_sql || ' AND ARRAY[a.attname::text] <@ '||quote_literal(v_filter);
+        v_remote_index_sql := v_remote_index_sql || ' WHERE ARRAY[a.attname::text] <@ '||quote_literal(v_filter);
     END IF;
-    v_remote_index_sql := v_remote_index_sql || ' GROUP BY i.indexrelid::regclass, key_type';
+    v_remote_index_sql := v_remote_index_sql || ') AS indkey_names
+        FROM pg_index i
+        WHERE i.indrelid = '||quote_literal(v_source_table)||'::regclass';
+
     FOR v_row IN EXECUTE 'SELECT key_type, indkey_names FROM dblink(''mimeo_refresh_snap'', '||quote_literal(v_remote_index_sql)||') t (key_type text, indkey_names text[])' LOOP
-        IF v_row.key_type = 'primary' THEN
-            RAISE NOTICE 'Creating primary key...';
-            EXECUTE 'ALTER TABLE '||v_refresh_snap||' ADD CONSTRAINT '||v_parts.oparts[2]||'_'||array_to_string(v_row.indkey_names, '_')||'_idx PRIMARY KEY ('||array_to_string(v_row.indkey_names, ',')||')';
-        ELSIF v_row.key_type = 'unique' THEN
-            RAISE NOTICE 'Creating unique index...';
-            EXECUTE 'CREATE UNIQUE INDEX '||v_parts.oparts[2]||'_'||array_to_string(v_row.indkey_names, '_')||'_idx ON '||v_refresh_snap|| '('||array_to_string(v_row.indkey_names, ',')||')';
-        ELSE
-            RAISE NOTICE 'Creating index...';
-            EXECUTE 'CREATE INDEX '||v_parts.oparts[2]||'_'||array_to_string(v_row.indkey_names, '_')||'_idx ON '||v_refresh_snap|| '('||array_to_string(v_row.indkey_names, ',')||')';
+        IF v_row.indkey_names IS NOT NULL THEN   -- If column filter is used, indkey_name column may be null
+            IF v_row.key_type = 'primary' THEN
+                RAISE NOTICE 'Creating primary key...';
+                EXECUTE 'ALTER TABLE '||v_refresh_snap||' ADD CONSTRAINT '||v_parts.oparts[2]||'_'||array_to_string(v_row.indkey_names, '_')||'_idx PRIMARY KEY ('||array_to_string(v_row.indkey_names, ',')||')';
+            ELSIF v_row.key_type = 'unique' THEN
+                RAISE NOTICE 'Creating unique index...';
+                EXECUTE 'CREATE UNIQUE INDEX '||v_parts.oparts[2]||'_'||array_to_string(v_row.indkey_names, '_')||'_idx ON '||v_refresh_snap|| '('||array_to_string(v_row.indkey_names, ',')||')';
+            ELSE
+                RAISE NOTICE 'Creating index...';
+                EXECUTE 'CREATE INDEX '||v_parts.oparts[2]||'_'||array_to_string(v_row.indkey_names, '_')||'_idx ON '||v_refresh_snap|| '('||array_to_string(v_row.indkey_names, ',')||')';
+            END IF;
         END IF;
     END LOOP;
 END IF;

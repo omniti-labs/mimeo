@@ -1,3 +1,8 @@
+0.8.1
+-- IMPORTANT NOTE: The automatic indexes that were being created in versions <= 0.8.0 may not have kept the columns in the correct order for multi-column indexes. Please double-check any primary keys, unique indexes, or indexes created on the destination with versions <= 0.8.0
+-- Fixed above issue so that any indexes propagated from the source are created properly on the destination.
+
+
 0.8.0
 -- IMPORTANT NOTE: Signatures on maker functions & refresh_snap() have changes so they were dropped and recreated. Check permissions if needed before and after update.
 -- Automatic creation of indexes with maker functions. Does not automatically propogate future changes to indexes with refresh runs. Allows source and destination to be different (ex. often data warehouse destinations do not need indexes to save on space. Also prevents issues with partitioned destination tables).

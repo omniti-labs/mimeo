@@ -59,7 +59,7 @@ PERFORM dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.dml_test_source2 (
     col1 int,
     col2 text,
     col3 timestamptz DEFAULT clock_timestamp(),
-    PRIMARY KEY (col1, col2) )');
+    PRIMARY KEY (col2, col1) )');
 PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source2 VALUES (generate_series(1,10), ''test''||generate_series(1,10)::text)');
 PERFORM dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.dml_test_source_nodata (
     col1 int UNIQUE NOT NULL,
@@ -88,7 +88,7 @@ PERFORM dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.logdel_test_source2
     col1 int,
     col2 text,
     col3 timestamptz DEFAULT clock_timestamp(),
-    PRIMARY KEY (col1, col2) )');
+    PRIMARY KEY (col2, col1) )');
 PERFORM dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source2 VALUES (generate_series(1,10), ''test''||generate_series(1,10)::text)');
 PERFORM dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.logdel_test_source_nodata (
     col1 int UNIQUE NOT NULL,

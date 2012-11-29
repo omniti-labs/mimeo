@@ -68,26 +68,37 @@ PERFORM dblink_connect('mimeo_dml', @extschema@.auth(p_dblink_id));
 
 IF p_pk_name IS NULL AND p_pk_type IS NULL THEN
     -- Either gets the primary key or it gets the first unique index in alphabetical order by index name. 
-    v_remote_key_sql := 'SELECT
-                    CASE
-                        WHEN i.indisprimary IS true THEN ''primary''
-                        WHEN i.indisunique IS true THEN ''unique''
-                    END AS key_type,
-                    array_agg( a.attname ) AS indkey_names,
-                    array_agg(format_type(a.atttypid, a.atttypmod)::text) AS indkey_types,
-                    array_agg(attname||'' ''||format_type(atttypid, atttypmod)::text) AS indkey_names_n_types
-                FROM
-                    pg_index i
-                    JOIN pg_attribute a ON i.indrelid = a.attrelid AND a.attnum = any( i.indkey )
-                WHERE
-                    i.indrelid = '||quote_literal(p_src_table)||'::regclass
-                    AND ( i.indisprimary OR i.indisunique )
-                GROUP BY i.indexrelid::regclass, key_type
-                HAVING bool_and( a.attnotnull ) 
-                ORDER BY key_type LIMIT 1';
-    EXECUTE 'SELECT key_type, indkey_names, indkey_types, indkey_names_n_types FROM dblink(''mimeo_dml'', '||quote_literal(v_remote_key_sql)||') t (key_type text, indkey_names text[], indkey_types text[], indkey_names_n_types text[])' 
-        INTO v_key_type, v_pk_name, v_pk_type, v_pk_name_n_type;
+    v_remote_key_sql := 'SELECT 
+        CASE
+            WHEN i.indisprimary IS true THEN ''primary''
+            WHEN i.indisunique IS true THEN ''unique''
+        END AS key_type,
+        ( SELECT array_agg( a.attname ORDER by x.r ) 
+            FROM pg_attribute a 
+            JOIN ( SELECT k, row_number() over () as r 
+                    FROM unnest(i.indkey) k ) as x 
+            ON a.attnum = x.k AND a.attrelid = i.indrelid
+            WHERE a.attnotnull
+        ) AS indkey_names,
+        ( SELECT array_agg( a.atttypid::regtype::text ORDER by x.r ) 
+            FROM pg_attribute a 
+            JOIN ( SELECT k, row_number() over () as r 
+                    FROM unnest(i.indkey) k ) as x 
+            ON a.attnum = x.k AND a.attrelid = i.indrelid
+            WHERE a.attnotnull 
+        ) AS indkey_types
+        FROM pg_index i
+        WHERE i.indrelid = '||quote_literal(p_src_table)||'::regclass
+            AND (i.indisprimary OR i.indisunique)
+        ORDER BY key_type LIMIT 1';
+
+    EXECUTE 'SELECT key_type, indkey_names, indkey_types FROM dblink(''mimeo_dml'', '||quote_literal(v_remote_key_sql)||') t (key_type text, indkey_names text[], indkey_types text[])' 
+        INTO v_key_type, v_pk_name, v_pk_type;
 END IF;
+
+RAISE NOTICE 'v_key_type: %', v_key_type;
+RAISE NOTICE 'v_pk_name: %', v_pk_name;
+RAISE NOTICE 'v_pk_type: %', v_pk_type;
 
 IF v_pk_name IS NULL OR v_pk_type IS NULL THEN
     RAISE EXCEPTION 'Source table has no valid primary key or unique index';
@@ -103,7 +114,17 @@ IF p_filter IS NOT NULL THEN
     END LOOP;
 END IF;
 
-v_remote_q_table := 'CREATE TABLE @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name_n_type, ',')|| ', processed boolean)';
+v_remote_q_table := 'CREATE TABLE @extschema@.'||v_src_table_name||'_pgq (';
+WHILE v_pk_counter <= array_length(v_pk_name,1) LOOP
+    v_remote_q_table := v_remote_q_table || v_pk_name[v_pk_counter]||' '||v_pk_type[v_pk_counter];
+    v_pk_counter := v_pk_counter + 1;
+    IF v_pk_counter <= array_length(v_pk_name,1) THEN
+        v_remote_q_table := v_remote_q_table || ', ';
+    END IF;
+END LOOP;
+v_remote_q_table := v_remote_q_table || ', processed boolean)';
+
+RAISE NOTICE 'v_remote_q_table: %', v_remote_q_table;
 
 v_remote_q_index := 'CREATE INDEX '||v_src_table_name||'_pgq_'||array_to_string(v_pk_name, '_')||'_idx ON @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||')';
 
