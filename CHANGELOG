@@ -1,3 +1,10 @@
+0.8.3
+-- Fixed dml refresh not propagating updates and deletes. This bug was introduced in v0.7.0 when trying to simplify the refresh process. You may have to repull data for any dml jobs that have run with that version or later to bring the destination back into sync with the source.
+-- Fixed dml/logdel refresh not updating a row if it has a multi-column primary/unique key and only a subset of the columns of that key are changed. This was not a new bug and has been an issue from the beginning. You may have to repull data for any dml/logdel jobs that have run to bring the destination back into sync with the source. Be aware that a full refresh of a logdel table will remove the deleted rows that were logged to the destination. Recommend backing those tables up before a full refresh.
+-- Fixed edge case in refresh_dml/logdel where, if the batch limit was hit, the remote queue table might not mark the processed rows properly.
+-- Changed tests to use pgTAP. Testing suite is now much more extensive and helped find above bugs.
+
+
 0.8.2
 -- Moved index creation step after data insertion. This will apply to all maker functions as well.
 

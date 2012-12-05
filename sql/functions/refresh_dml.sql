@@ -12,6 +12,7 @@ v_cols              text;
 v_condition         text;
 v_control           text;
 v_create_f_sql      text;
+v_create_q_sql      text;
 v_dblink_schema     text;
 v_dblink            text;
 v_delete_sql        text;
@@ -29,6 +30,8 @@ v_pk_counter        int;
 v_pk_field_csv      text := '';
 v_pk_field_type_csv text := '';
 v_pk_field          text[];
+v_pk_queue          text := '';
+v_pk_queue_where    text := '';
 v_pk_type           text[];
 v_pk_where          text;
 v_remote_f_sql      text;
@@ -128,12 +131,16 @@ v_pk_counter := 1;
 WHILE v_pk_counter <= array_length(v_pk_field,1) LOOP
     IF v_pk_counter > 1 THEN
         v_pk_field_type_csv := v_pk_field_type_csv || ', ';
+        v_pk_queue := v_pk_queue || ', ';
+        v_pk_queue_where := v_pk_queue_where || ' OR ';
     END IF;
     v_pk_field_type_csv := v_pk_field_type_csv ||v_pk_field[v_pk_counter]||' '||v_pk_type[v_pk_counter];
+    v_pk_queue := v_pk_queue || v_pk_field[v_pk_counter] || ' as mimeo_q_' || v_pk_field[v_pk_counter];
+    v_pk_queue_where := v_pk_queue_where || v_pk_field[v_pk_counter] || ' = mimeo_q_' || v_pk_field[v_pk_counter];
     v_pk_counter := v_pk_counter + 1;
 END LOOP;
 
-v_with_update := 'WITH a AS (SELECT '||v_pk_field_csv||' FROM '|| v_control ||' ORDER BY 1 LIMIT '|| v_limit ||') UPDATE '||v_control||' b SET processed = true FROM a WHERE a.'||v_pk_field[1]||' = b.'||v_pk_field[1];
+v_with_update := 'WITH a AS (SELECT '||v_pk_field_csv||' FROM '|| v_control ||' ORDER BY '||v_pk_field_csv||' LIMIT '|| v_limit ||') UPDATE '||v_control||' b SET processed = true FROM a WHERE a.'||v_pk_field[1]||' = b.'||v_pk_field[1];
 
 v_pk_counter := 2;
 IF array_length(v_pk_field, 1) > 1 THEN
@@ -162,13 +169,22 @@ IF p_repull THEN
     PERFORM update_step(v_step_id, 'OK','Request to repull ALL data from source. This could take a while...');
     PERFORM gdb(p_debug, 'Request to repull ALL data from source. This could take a while...');
 
-ELSE 
-    v_remote_f_sql := 'SELECT '||v_cols||' FROM '||v_source_table||' JOIN ('||v_remote_q_sql||') x USING ('||v_pk_field_csv||')';
+ELSE
+    -- Handles edge case to catch when a multi-column primary/unique key changes the value of a subset of the columns. 
+    v_remote_f_sql := 'SELECT '||v_cols||' 
+        FROM '||v_source_table||', 
+        (SELECT DISTINCT '||v_pk_queue||' FROM '||v_control||' WHERE processed = true) x ';
     IF v_condition IS NOT NULL THEN
-        v_remote_f_sql := v_remote_f_sql || ' ' || v_condition;
+        v_remote_f_sql := v_remote_f_sql || ' ' || v_condition ||' AND ';
+    ELSE
+        v_remote_f_sql := v_remote_f_sql || ' WHERE ';
     END IF;
+    v_remote_f_sql := v_remote_f_sql || v_pk_queue_where;
 
-    v_delete_sql := 'DELETE FROM '||v_dest_table||' a USING '||v_tmp_table||'_full b WHERE a.'||v_pk_field[1]||'= b.'||v_pk_field[1];
+    v_create_q_sql := 'CREATE TEMP TABLE '||v_tmp_table||'_queue AS SELECT '||v_pk_field_csv||'
+        FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_q_sql)||') t ('||v_pk_field_type_csv||')';
+
+    v_delete_sql := 'DELETE FROM '||v_dest_table||' a USING '||v_tmp_table||'_queue b WHERE a.'||v_pk_field[1]||'= b.'||v_pk_field[1];
     IF array_length(v_pk_field, 1) > 1 THEN
         v_delete_sql := v_delete_sql || v_pk_where;
     END IF; 
@@ -191,12 +207,12 @@ EXECUTE v_trigger_update INTO v_exec_status;
 PERFORM update_step(v_step_id, 'OK','Result was '||v_exec_status);
 
 -- create temp tables 
-v_step_id := add_step(v_job_id,'Creating temp tables');
+v_step_id := add_step(v_job_id,'Creating full temp table');
 -- Full table with all insert/update data    
 PERFORM gdb(p_debug,v_create_f_sql);
 EXECUTE v_create_f_sql;
 GET DIAGNOSTICS v_rowcount = ROW_COUNT;
-PERFORM gdb(p_debug,'Temp table row count '||v_rowcount::text);
+PERFORM gdb(p_debug,'Temp full table row count '||v_rowcount::text);
 IF v_rowcount < 1 THEN 
     PERFORM update_step(v_step_id, 'OK','No new rows found');
 ELSE 
@@ -208,6 +224,9 @@ ELSE
         EXECUTE 'TRUNCATE '||v_dest_table;
         PERFORM update_step(v_step_id, 'OK','Done');
     ELSE
+        EXECUTE v_create_q_sql;
+        GET DIAGNOSTICS v_rowcount = ROW_COUNT;
+        PERFORM gdb(p_debug,'Temp queue table row count '||v_rowcount::text);
         v_step_id := add_step(v_job_id,'Deleting records from local table');
         PERFORM gdb(p_debug,v_delete_sql);
         EXECUTE v_delete_sql; 
@@ -238,6 +257,7 @@ PERFORM update_step(v_step_id, 'OK','Last run was '||CURRENT_TIMESTAMP);
 
 PERFORM close_job(v_job_id);
 
+EXECUTE 'DROP TABLE IF EXISTS '||v_tmp_table||'_queue';
 EXECUTE 'DROP TABLE IF EXISTS '||v_tmp_table||'_full';
 
 -- Ensure old search path is reset for the current session

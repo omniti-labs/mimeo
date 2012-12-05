@@ -1,33 +1,28 @@
 Mimeo Test Suite
-==============
-The scripts in this folder can be used to test mimeo and make sure it is working as it should. All sql files and functions must be run as a super user in the database since it creates a new test super user and a database.
+================
 
-Run the files in this order:
+The pgTAP testing suite is used to provide an extensive and easily maintainable set of tests. Please see the pgTAP home page for more details on its installation and use.
 
-    db=# \i test_mimeo_setup.sql
+http://pgTAP.org/
 
-This will create a test "source" database, another test role, and schemas needed on the local database.
+Since mimeo uses dblink, testing cannot be done as recommended in the pgTAP documenation by putting everything into transactions that can be rolled back. The tests have been split into different logical groups in their own files and MUST be run in numerical order. They assume that the required extensions have been installed in the following schemas:
 
-    db=# \i test_mimeo_maker.sql
-    db=# select test_mimeo_maker();
+    dblink: dblink
+    mimeo: mimeo
+    pgTAP: tap
 
-This will create the objects in the "source" database above, run all maker functions and insert intial data in source tables
-A 35 second sleep is forced to ensure enough time passes for new data to be picked up in the following step
+If you've installed any of the above extensions in a different schema and would like to run the test suite, simply change the configuration option found at the top of each testing file to match your setup.
 
-    db=# \i test_mimeo_refresh.sql
-    db=# select test_mimeo_refresh();
+    SELECT set_config('search_path','mimeo, dblink, tap',false);
 
-Test all the refresh functions. Should pull the new data inserted at the end of the maker test.
-Currently the test suite does not automatically validate the data (working on it).
-For now, check all the tables/views created in both the mimeo_source and mimeo_dest schemas that were created on the database running the test.
-There should be at minimum 20 rows in most tables if things ran successfully. Exception is the _nodata tables. These may not since they didn't pull any data with the maker functions
-You can also check the pg_jobmon logs to ensure everything ran as it should.
+You will also need to ensure your pg_hba.conf file has an entry for the **mimeo_test** role connecting via the localhost. One or all of the entries below should work.
+    
+    host    all         mimeo_test      localhost           trust
+    host    all         mimeo_test      127.0.0.1/32        trust
+    host    all         mimeo_test      ::1/128             trust
+    
+Once that's done, it's best to use the **pg_prove** script that pgTAP comes with to run all the tests. I like using the -f -v options to get more useful feedback.
 
-    db=# \i test_mimeo_destroyer.sql
-    db=# select test_mimeo_destroyer('archive option');
+    pg_prove -f -v /path/to/mimeo/test/*sql
 
-Tests all the destroyer functions. Pass 'ARCHIVE' to test and make sure the archive option works (applies to all calls). Pass anything else, or nothing at all, to have it drop all objects in the test schemas.
-
-    db=# \i test_mimeo_cleanup.sql
-
-Clean up everything. Drop the test role, test schemas and test database.
+The tests must be run by a superuser since roles & databases are created & dropped as part of the test. The tests are not required to run mimeo, so if you don't feel safe doing this you don't need to run the tests. But if you are running into problems and report any issues, I will ask that you run the test suite so you can try and narrow down where the problem may be. You are free to look through to tests to see exactly what they're doing. The final two test scripts should clean up everything and leave your database as it was before.
