@@ -1,6 +1,6 @@
 {
     "name": "mimeo",
-    "abstract": "Extension for specialized replication between PostgreSQL instances",
+    "abstract": "Extension for specialized, per-table replication between PostgreSQL databases",
     "version": "0.8.4",
     "maintainer": [ 
         "Keith Fiske <keith@omniti.com>"
@@ -19,10 +19,10 @@
     },
     "provides": {
         "mimeo": {
-            "file": "sql/mimeo.sql",
+            "file": "sql/mimeo--0.8.4.sql",
             "docfile": "doc/mimeo.md",
             "version": "0.8.4",
-            "abstract": "Extension for specialized replication between PostgreSQL instances"
+            "abstract": "Extension for specialized, per-table replication between PostgreSQL databases"
         }
     },
     "resources": {
@@ -41,6 +41,7 @@
     },
     "tags": [
         "replication",
-        "materialized view",
+        "table",
+        "per-table"
     ]
 }
