@@ -1,3 +1,9 @@
+0.8.4
+-- No changes to mimeo core code.
+-- Fixed Makefile to use egrep instead of trying to allow GREP env variable. Latter option wasn't working as expected on non-gnu environment (testing on OmniOS - http://omnios.omniti.com/).
+-- Fixed pgTAP destroyer tests so they don't destroy any non-test replication jobs or tables.
+
+
 0.8.3
 -- Fixed dml refresh not propagating updates and deletes. This bug was introduced in v0.7.0 when trying to simplify the refresh process. You may have to repull data for any dml jobs that have run with that version or later to bring the destination back into sync with the source.
 -- Fixed dml/logdel refresh not updating a row if it has a multi-column primary/unique key and only a subset of the columns of that key are changed. This was not a new bug and has been an issue from the beginning. You may have to repull data for any dml/logdel jobs that have run to bring the destination back into sync with the source. Be aware that a full refresh of a logdel table will remove the deleted rows that were logged to the destination. Recommend backing those tables up before a full refresh.

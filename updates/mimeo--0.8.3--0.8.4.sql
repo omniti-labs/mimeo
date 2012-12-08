@@ -1,0 +1,3 @@
+-- No changes to mimeo core code. However, this file must reside in postgres extensions folder to allow upgrades to newer versions.
+-- Fixed Makefile to use egrep instead of trying to allow GREP env variable. Latter option wasn't working as expected on non-gnu environment (testing on OmniOS - http://omnios.omniti.com/).
+-- Fixed pgTAP destroyer tests so they don't destroy any non-test replication jobs or tables.
