@@ -7,15 +7,16 @@ CREATE FUNCTION refresh_updater(p_destination text, p_limit integer DEFAULT NULL
 DECLARE
 
 v_adv_lock              boolean;
-v_boundary_sql           text;
-v_boundary               timestamptz;
+v_batch_limit_reached   boolean := false;
+v_boundary_sql          text;
+v_boundary              timestamptz;
 v_cols_n_types          text;
 v_cols                  text;
 v_condition             text;
 v_control               text;
 v_create_sql            text;
 v_dblink_schema         text;
-v_dblink                text;
+v_dblink                int;
 v_delete_sql            text;
 v_dest_table            text;
 v_dst_active            boolean;
@@ -35,7 +36,7 @@ v_limit                 int;
 v_now                   timestamptz := now(); 
 v_old_search_path       text;
 v_pk_counter            int := 2;
-v_pk_field              text[];
+v_pk_name               text[];
 v_pk_type               text[];
 v_pk_where              text;
 v_remote_boundry_sql    text;
@@ -80,10 +81,11 @@ END IF;
 SELECT source_table
     , dest_table
     , 'tmp_'||replace(dest_table,'.','_')
-    , dblink, control
+    , dblink
+    , control
     , last_value
     , now() - boundary::interval
-    , pk_field
+    , pk_name
     , pk_type
     , filter
     , condition
@@ -100,7 +102,7 @@ WHERE dest_table = p_destination INTO
     , v_control
     , v_last_value
     , v_boundary
-    , v_pk_field
+    , v_pk_name
     , v_pk_type
     , v_filter
     , v_condition
@@ -117,10 +119,10 @@ IF v_dst_active THEN
     v_dst_check := @extschema@.dst_change(v_now);
     IF v_dst_check THEN 
         IF to_number(to_char(v_now, 'HH24MM'), '0000') > v_dst_start AND to_number(to_char(v_now, 'HH24MM'), '0000') < v_dst_end THEN
-            v_step_id := jobmon.add_step( v_job_id, 'DST Check');
-            PERFORM jobmon.update_step(v_step_id, 'OK', 'Job CANCELLED - Does not run during DST time change');
+            v_step_id := add_step( v_job_id, 'DST Check');
+            PERFORM update_step(v_step_id, 'OK', 'Job CANCELLED - Does not run during DST time change');
             UPDATE refresh_config_updater SET last_run = CURRENT_TIMESTAMP WHERE dest_table = p_destination;  
-            PERFORM jobmon.close_job(v_job_id);
+            PERFORM close_job(v_job_id);
             PERFORM gdb(p_debug, 'Cannot run during DST time change');
             EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
             PERFORM pg_advisory_unlock(hashtext('refresh_updater'), hashtext(v_job_name));
@@ -138,7 +140,7 @@ IF v_filter IS NULL THEN
         FROM pg_attribute WHERE attrelid = p_destination::regclass AND attnum > 0 AND attisdropped is false;
 ELSE
     -- ensure all primary key columns are included in any column filters
-    FOREACH v_field IN ARRAY v_pk_field LOOP
+    FOREACH v_field IN ARRAY v_pk_name LOOP
         IF v_field = ANY(v_filter) THEN
             CONTINUE;
         ELSE
@@ -192,7 +194,7 @@ ELSE
     END IF;
     v_remote_sql := v_remote_sql ||v_control||' > '||quote_literal(v_last_value)||' AND '||v_control||' < '||quote_literal(v_boundary)||' ORDER BY '||v_control||' ASC LIMIT '|| v_limit;
 
-    v_delete_sql := 'DELETE FROM '||v_dest_table||' USING '||v_tmp_table||' t WHERE '||v_dest_table||'.'||v_pk_field[1]||'=t.'||v_pk_field[1]; 
+    v_delete_sql := 'DELETE FROM '||v_dest_table||' USING '||v_tmp_table||' t WHERE '||v_dest_table||'.'||v_pk_name[1]||'=t.'||v_pk_name[1]; 
 
     PERFORM update_step(v_step_id, 'OK','Grabbing rows from '||v_last_value::text||' to '||v_boundary::text);
     PERFORM gdb(p_debug,'Grabbing rows from '||v_last_value::text||' to '||v_boundary::text);
@@ -200,10 +202,10 @@ END IF;
 
 v_create_sql := 'CREATE TEMP TABLE '||v_tmp_table||' AS SELECT '||v_cols||' FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_sql)||') t ('||v_cols_n_types||')';
 
-IF array_length(v_pk_field, 1) > 1 THEN
+IF array_length(v_pk_name, 1) > 1 THEN
     v_pk_where := '';
-    WHILE v_pk_counter <= array_length(v_pk_field,1) LOOP
-        v_pk_where := v_pk_where || ' AND '||v_dest_table||'.'||v_pk_field[v_pk_counter]||' = t.'||v_pk_field[v_pk_counter];
+    WHILE v_pk_counter <= array_length(v_pk_name,1) LOOP
+        v_pk_where := v_pk_where || ' AND '||v_dest_table||'.'||v_pk_name[v_pk_counter]||' = t.'||v_pk_name[v_pk_counter];
         v_pk_counter := v_pk_counter + 1;
     END LOOP;
 END IF;
@@ -239,6 +241,7 @@ v_step_id := add_step(v_job_id,'Creating temp table ('||v_tmp_table||') from rem
         GET DIAGNOSTICS v_rowcount = ROW_COUNT;
         PERFORM update_step(v_step_id, 'OK', 'Removed '||v_rowcount||' rows. Batch now contains '||v_limit - v_rowcount||' records');
         PERFORM gdb(p_debug, 'Removed '||v_rowcount||' rows from batch. Batch table now contains '||v_limit - v_rowcount||' records');
+        v_batch_limit_reached := true;
         IF (v_limit - v_rowcount) < 1 THEN
             v_step_id := add_step(v_job_id, 'Reached inconsistent state');
             PERFORM update_step(v_step_id, 'CRITICAL', 'Batch contained max rows ('||v_limit||') and all contained the same timestamp value. Unable to guarentee rows will ever be replicated consistently. Increase row limit parameter to allow a consistent batch.');
@@ -287,7 +290,13 @@ PERFORM update_step(v_step_id, 'OK','Done');
 
 EXECUTE 'DROP TABLE IF EXISTS '||v_tmp_table;
 
-PERFORM close_job(v_job_id);
+IF v_batch_limit_reached = false THEN
+    PERFORM close_job(v_job_id);
+ELSE
+    -- Set final job status to level 2 (WARNING) to bring notice that the batch limit was reached and may need adjusting.
+    -- Preventive warning to keep replication from falling behind.
+    PERFORM fail_job(v_job_id, 2);
+END IF;
 
 -- Ensure old search path is reset for the current session
 EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
@@ -306,7 +315,7 @@ EXCEPTION
                 v_step_id := add_step(v_job_id, 'EXCEPTION before job logging started');
         END IF;
         IF v_step_id IS NULL THEN
-            v_step_id := jobmon.add_step(v_job_id, 'EXCEPTION before first step logged');
+            v_step_id := add_step(v_job_id, 'EXCEPTION before first step logged');
         END IF;
         PERFORM update_step(v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
         PERFORM fail_job(v_job_id);

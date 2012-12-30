@@ -1,3 +1,13 @@
+0.9.0
+-- IMPORTANT NOTE: This update requires the new 1.0.0 version of pg_jobmon that was shortly before this update. Please update pg_jobmon before updating mimeo!
+-- Remove explicit calls to pg_jobmon schema. Would cause failure if pg_jobmon was installed in any schema other than "jobmon".
+-- Changed refresh functions that call dblink multiple times to use only a single, named connection instead of a new unnamed one for every call. Also ensured named connections are unique to each tables' refresh job to prevent conflicts.
+-- Fix repull option in dml to clear the queue table on the source database.
+-- Reaching the batch limit for any refresh function will now cause a level 2 (warning) alert to be triggered in pg_jobmon. Helps to prevent replication falling behind by giving warning that a higher rate of change is possibly happening on the source than the destination can handle.
+-- Changed all references to "pk_field" variable and column name to "pk_name". Was bad coding practice on my part using both names for the same thing throughout development. Changes visible to users are the optional argument name in updater/dml/logdel_maker & the column name in the refresh_config_updater/dml/logdel tables.
+-- Added pgTAP tests for data repull options
+
+
 0.8.4
 -- No changes to mimeo core code.
 -- Fixed Makefile to use egrep instead of trying to allow GREP env variable. Latter option wasn't working as expected on non-gnu environment (testing on OmniOS - http://omnios.omniti.com/).

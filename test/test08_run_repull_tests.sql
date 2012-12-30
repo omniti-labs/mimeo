@@ -1,32 +1,35 @@
 SELECT set_config('search_path','mimeo, dblink, tap',false);
 
-SELECT plan(32);
+SELECT plan(18);
 
 SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test password=mimeo_test');
-SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established'); 
+SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established');
 
--- ########## SNAP TESTS ##########
-SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.snap_test_source ORDER BY col1 ASC',
-    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.snap_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
-    'Check data for: mimeo_source.snap_test_source');
+SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.inserter_test_source SET col2 = ''repull''||col1::text');
+SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.updater_test_source SET col2 = ''repull''||col1::text');
+SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source SET col2 = ''repull''||col1::text');
+SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source2 SET col2 = ''repull''||col1::text');
+SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source_nodata SET col2 = ''repull''||col1::text');
+SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source_filter SET col2 = ''repull''||col1::text');
+SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source_condition SET col2 = ''repull''||col1::text');
 
-SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.snap_test_dest ORDER BY col1 ASC',
-    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.snap_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
-    'Check data for: mimeo_dest.snap_test_dest');
+SELECT refresh_inserter('mimeo_source.inserter_test_source', p_repull := true);
+SELECT refresh_inserter('mimeo_dest.inserter_test_dest', p_repull := true);
+SELECT refresh_inserter('mimeo_dest.inserter_test_dest_nodata', p_repull := true);
+SELECT refresh_inserter('mimeo_dest.inserter_test_dest_filter', p_repull := true);
+SELECT refresh_inserter('mimeo_dest.inserter_test_dest_condition', p_repull := true);
 
-SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.snap_test_dest_nodata ORDER BY col1 ASC',
-    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.snap_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
-    'Check data for: mimeo_dest.snap_test_dest');
+SELECT refresh_updater('mimeo_source.updater_test_source', p_repull := true);
+SELECT refresh_updater('mimeo_dest.updater_test_dest', p_repull := true);
+SELECT refresh_updater('mimeo_dest.updater_test_dest_nodata', p_repull := true);
+SELECT refresh_updater('mimeo_dest.updater_test_dest_filter');
+SELECT refresh_updater('mimeo_dest.updater_test_dest_condition', p_repull := true);
 
-SELECT results_eq('SELECT col1, col2 FROM mimeo_dest.snap_test_dest_filter ORDER BY col1 ASC',
-    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2 FROM mimeo_source.snap_test_source ORDER BY col1 ASC'') t (col1 int, col2 text)',
-    'Check data for: mimeo_dest.snap_test_dest_filter');
-SELECT hasnt_column('mimeo_dest', 'snap_test_dest_filter_snap1', 'col3', 'Check that snap_test_dest_filter_snap1 DOESN''T have col3');
-SELECT hasnt_column('mimeo_dest', 'snap_test_dest_filter_snap2', 'col3', 'Check that snap_test_dest_filter_snap2 DOESN''T have col3');
-
-SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.snap_test_dest_condition ORDER BY col1 ASC',
-    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.snap_test_source WHERE col1 > 3 AND col1 < 15 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
-    'Check data for: mimeo_dest.snap_test_dest_condition');
+SELECT refresh_dml('mimeo_source.dml_test_source', p_repull := true);
+SELECT refresh_dml('mimeo_dest.dml_test_dest', p_repull := true);
+SELECT refresh_dml('mimeo_dest.dml_test_dest_nodata', p_repull := true);
+SELECT refresh_dml('mimeo_dest.dml_test_dest_filter', p_repull := true);
+SELECT refresh_dml('mimeo_dest.dml_test_dest_condition', p_repull := true);
 
 -- ########## INSERTER TESTS ##########
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source ORDER BY col1 ASC',
@@ -38,7 +41,7 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.inserter_test_dest OR
     'Check data for: mimeo_dest.inserter_test_dest');
 
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.inserter_test_dest_nodata ORDER BY col1 ASC',
-    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source WHERE col1 >= 11 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.inserter_test_dest');
 
 SELECT results_eq('SELECT col1, col3 FROM mimeo_dest.inserter_test_dest_filter ORDER BY col1 ASC',
@@ -59,7 +62,7 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.updater_test_dest ORD
     'Check data for: mimeo_dest.updater_test_dest');
 
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.updater_test_dest_nodata ORDER BY col1 ASC',
-    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.updater_test_source WHERE col1 >= 11 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.updater_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.updater_test_dest_nodata');
 
 SELECT results_eq('SELECT col1, col3 FROM mimeo_dest.updater_test_dest_filter ORDER BY col1 ASC',
@@ -81,7 +84,7 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.dml_test_dest ORDER B
 SELECT is_empty('SELECT * FROM mimeo_dest.dml_test_dest WHERE col1 = 8', 'Check that deleted row is gone from mimeo_dest.dml_test_dest');
 
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.dml_test_dest_nodata ORDER BY col1 ASC',
-    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.dml_test_source_nodata WHERE col1 >= 11 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.dml_test_source_nodata ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.dml_test_dest_nodata');
 
 SELECT results_eq('SELECT col1, col2 FROM mimeo_dest.dml_test_dest_filter ORDER BY col1 ASC',
@@ -93,34 +96,7 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.dml_test_dest_conditi
     'Check data for: mimeo_dest.dml_test_dest_condition');
 SELECT is_empty('SELECT * FROM mimeo_dest.dml_test_dest_condition WHERE col1 = 11', 'Check that deleted row is gone from mimeo_dest.dml_test_dest_condition');
 
--- ########## LOGDEL TESTS ##########
-SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.logdel_test_source ORDER BY col1 ASC',
-    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.logdel_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
-    'Check data for: mimeo_source.logdel_test_source');
-
-SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.logdel_test_dest WHERE col1 <> 8 ORDER BY col1 ASC',
-    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.logdel_test_source2 WHERE col1 <> 8 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
-    'Check data for: mimeo_dest.logdel_test_dest');
-SELECT results_eq('SELECT col2 FROM mimeo_dest.logdel_test_dest WHERE col1 = 8 AND mimeo_source_deleted IS NOT NULL',
-    ARRAY['test8'],
-    'Check that deleted row is logged in mimeo_dest.logdel_test_dest');
-
-SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.logdel_test_dest_nodata ORDER BY col1 ASC',
-    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.logdel_test_source_nodata WHERE col1 >= 11 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
-    'Check data for: mimeo_dest.logdel_test_dest');
-
-SELECT results_eq('SELECT col1, col2 FROM mimeo_dest.logdel_test_dest_filter ORDER BY col1 ASC',
-    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2 FROM mimeo_source.logdel_test_source_filter ORDER BY col1 ASC'') t (col1 int, col2 text)',
-    'Check data for: mimeo_dest.logdel_test_dest_filter');
-
-SELECT results_eq('SELECT col1, col2 FROM mimeo_dest.logdel_test_dest_condition WHERE col1 <> 11 ORDER BY col1 ASC',
-    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2 FROM mimeo_source.logdel_test_source_condition WHERE col1 > 3 AND col1 < 15 ORDER BY col1 ASC'') t (col1 int, col2 text)',
-    'Check data for: mimeo_dest.logdel_test_dest_condition');
-SELECT results_eq('SELECT col2 FROM mimeo_dest.logdel_test_dest_condition WHERE col1 = 11 AND mimeo_source_deleted IS NOT NULL',
-    ARRAY['test11'],
-    'Check that deleted row is logged in mimeo_dest.logdel_test_dest_condition');
-
 SELECT dblink_disconnect('mimeo_test');
---SELECT is('SELECT dblink_get_connections() @> ''{mimeo_test}''','', 'Close remote database connection');
+--SELECT is_empty('SELECT dblink_get_connections() @> ''{mimeo_test}''', 'Close remote database connection');
 
 SELECT * FROM finish();

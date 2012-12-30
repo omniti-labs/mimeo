@@ -8,6 +8,7 @@ CREATE FUNCTION refresh_logdel(p_destination text, p_limit int default NULL, p_d
 DECLARE
 
 v_adv_lock              boolean;
+v_batch_limit_reached   boolean := false;
 v_cols_n_types          text;
 v_cols                  text;
 v_condition             text;
@@ -15,14 +16,16 @@ v_control               text;
 v_create_d_sql          text;
 v_create_f_sql          text;
 v_create_q_sql          text;
+v_dblink                int;
+v_dblink_name           text;
 v_dblink_schema         text;
-v_dblink                text;
 v_delete_d_sql          text;
 v_delete_f_sql          text;
 v_dest_table            text;
 v_exec_status           text;
 v_field                 text;
 v_filter                text[];
+v_full_rowcount         bigint := 0;
 v_insert_deleted_sql    text;
 v_insert_sql            text;
 v_job_id                int;
@@ -31,9 +34,9 @@ v_job_name              text;
 v_limit                 int; 
 v_old_search_path       text;
 v_pk_counter            int;
-v_pk_field              text[];
-v_pk_field_csv          text;
-v_pk_field_type_csv     text := '';
+v_pk_name               text[];
+v_pk_name_csv           text;
+v_pk_name_type_csv      text := '';
 v_pk_queue              text := '';
 v_pk_queue_where        text := '';
 v_pk_type               text[];
@@ -41,8 +44,7 @@ v_pk_where              text;
 v_remote_d_sql          text;
 v_remote_f_sql          text;
 v_remote_q_sql          text;
-v_full_rowcount         bigint;
-v_rowcount              bigint; 
+v_rowcount              bigint := 0; 
 v_source_table          text;
 v_step_id               int;
 v_tmp_table             text;
@@ -57,6 +59,7 @@ IF p_debug IS DISTINCT FROM true THEN
 END IF;
 
 v_job_name := 'Refresh Log Del: '||p_destination;
+v_dblink_name := 'mimeo_logdel_refresh_'||p_destination;
 
 SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
 SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
@@ -70,7 +73,7 @@ SELECT source_table
     , 'tmp_'||replace(dest_table,'.','_')
     , dblink
     , control
-    , pk_field
+    , pk_name
     , pk_type
     , filter
     , condition
@@ -82,7 +85,7 @@ WHERE dest_table = p_destination INTO
     , v_tmp_table
     , v_dblink
     , v_control
-    , v_pk_field
+    , v_pk_name
     , v_pk_type
     , v_filter
     , v_condition
@@ -107,7 +110,7 @@ END IF;
 
 v_step_id := add_step(v_job_id,'Grabbing Boundries, Building SQL');
 
-IF v_pk_field IS NULL OR v_pk_type IS NULL THEN
+IF v_pk_name IS NULL OR v_pk_type IS NULL THEN
     RAISE EXCEPTION 'ERROR: primary key fields in refresh_config_logdel must be defined';
 END IF;
 
@@ -118,7 +121,7 @@ IF v_filter IS NULL THEN
         FROM pg_attribute WHERE attnum > 0 AND attisdropped is false AND attrelid = p_destination::regclass AND attname != 'mimeo_source_deleted';
 ELSE
     -- ensure all primary key columns are included in any column filters
-    FOREACH v_field IN ARRAY v_pk_field LOOP
+    FOREACH v_field IN ARRAY v_pk_name LOOP
         IF v_field = ANY(v_filter) THEN
             CONTINUE;
         ELSE
@@ -134,15 +137,15 @@ END IF;
 
 v_limit = COALESCE(p_limit, v_limit, 10000);
 
-v_pk_field_csv := array_to_string(v_pk_field,',');
+v_pk_name_csv := array_to_string(v_pk_name,',');
 
-v_with_update := 'WITH a AS (SELECT '||v_pk_field_csv||' FROM '|| v_control ||' ORDER BY '||v_pk_field_csv||' LIMIT '|| v_limit ||') UPDATE '||v_control||' b SET processed = true FROM a WHERE a.'||v_pk_field[1]||' = b.'||v_pk_field[1];
+v_with_update := 'WITH a AS (SELECT '||v_pk_name_csv||' FROM '|| v_control ||' ORDER BY '||v_pk_name_csv||' LIMIT '|| v_limit ||') UPDATE '||v_control||' b SET processed = true FROM a WHERE a.'||v_pk_name[1]||' = b.'||v_pk_name[1];
 
 v_pk_counter := 2;
-IF array_length(v_pk_field, 1) > 1 THEN
+IF array_length(v_pk_name, 1) > 1 THEN
     v_pk_where := '';
-    WHILE v_pk_counter <= array_length(v_pk_field,1) LOOP
-        v_pk_where := v_pk_where || ' AND a.'||v_pk_field[v_pk_counter]||' = b.'||v_pk_field[v_pk_counter];
+    WHILE v_pk_counter <= array_length(v_pk_name,1) LOOP
+        v_pk_where := v_pk_where || ' AND a.'||v_pk_name[v_pk_counter]||' = b.'||v_pk_name[v_pk_counter];
         v_pk_counter := v_pk_counter + 1;
     END LOOP;
 END IF;
@@ -153,19 +156,19 @@ END IF;
 PERFORM gdb(p_debug, v_with_update);
 
 v_pk_counter := 1;
-WHILE v_pk_counter <= array_length(v_pk_field,1) LOOP
+WHILE v_pk_counter <= array_length(v_pk_name,1) LOOP
     IF v_pk_counter > 1 THEN
-        v_pk_field_type_csv := v_pk_field_type_csv || ', ';
+        v_pk_name_type_csv := v_pk_name_type_csv || ', ';
         v_pk_queue := v_pk_queue || ', ';
         v_pk_queue_where := v_pk_queue_where || ' OR ';
     END IF;
-    v_pk_field_type_csv := v_pk_field_type_csv ||v_pk_field[v_pk_counter]||' '||v_pk_type[v_pk_counter];
-    v_pk_queue := v_pk_queue || v_pk_field[v_pk_counter] || ' as mimeo_q_' || v_pk_field[v_pk_counter];
-    v_pk_queue_where := v_pk_queue_where || v_pk_field[v_pk_counter] || ' = mimeo_q_' || v_pk_field[v_pk_counter];
+    v_pk_name_type_csv := v_pk_name_type_csv ||v_pk_name[v_pk_counter]||' '||v_pk_type[v_pk_counter];
+    v_pk_queue := v_pk_queue || v_pk_name[v_pk_counter] || ' as mimeo_q_' || v_pk_name[v_pk_counter];
+    v_pk_queue_where := v_pk_queue_where || v_pk_name[v_pk_counter] || ' = mimeo_q_' || v_pk_name[v_pk_counter];
     v_pk_counter := v_pk_counter + 1;
 END LOOP;
 
-v_trigger_update := 'SELECT dblink_exec(auth('||v_dblink||'),'|| quote_literal(v_with_update)||')';
+v_trigger_update := 'SELECT dblink_exec('||quote_literal(v_dblink_name)||','|| quote_literal(v_with_update)||')';
 
 -- Handles edge case to catch when a multi-column primary/unique key changes the value of a subset of the columns. 
 v_remote_f_sql := 'SELECT '||v_cols||' 
@@ -179,33 +182,35 @@ END IF;
 v_remote_f_sql := v_remote_f_sql || '(' || v_pk_queue_where || ')'; 
 
 v_create_f_sql := 'CREATE TEMP TABLE '||v_tmp_table||'_full AS SELECT '||v_cols||' 
-    FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_f_sql)||') t ('||v_cols_n_types||')';
+    FROM dblink('||quote_literal(v_dblink_name)||','||quote_literal(v_remote_f_sql)||') t ('||v_cols_n_types||')';
 
 v_remote_d_sql = 'SELECT '||v_cols||', mimeo_source_deleted FROM '||v_control||' WHERE processed = true and mimeo_source_deleted IS NOT NULL';
 v_create_d_sql = 'CREATE TEMP TABLE '||v_tmp_table||'_deleted AS SELECT '||v_cols||', mimeo_source_deleted
-    FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_d_sql)||') t ('||v_cols_n_types||', mimeo_source_deleted timestamptz)';
+    FROM dblink('||quote_literal(v_dblink_name)||','||quote_literal(v_remote_d_sql)||') t ('||v_cols_n_types||', mimeo_source_deleted timestamptz)';
 
-v_remote_q_sql := 'SELECT DISTINCT '||v_pk_field_csv||' FROM '||v_control||' WHERE processed = true and mimeo_source_deleted IS NULL';
-v_create_q_sql := 'CREATE TEMP TABLE '||v_tmp_table||'_queue AS SELECT '||v_pk_field_csv||'
-        FROM dblink(auth('||v_dblink||'),'||quote_literal(v_remote_q_sql)||') t ('||v_pk_field_type_csv||')';
+v_remote_q_sql := 'SELECT DISTINCT '||v_pk_name_csv||' FROM '||v_control||' WHERE processed = true and mimeo_source_deleted IS NULL';
+v_create_q_sql := 'CREATE TEMP TABLE '||v_tmp_table||'_queue AS SELECT '||v_pk_name_csv||'
+        FROM dblink('||quote_literal(v_dblink_name)||','||quote_literal(v_remote_q_sql)||') t ('||v_pk_name_type_csv||')';
 
-v_delete_f_sql := 'DELETE FROM '||v_dest_table||' a USING '||v_tmp_table||'_queue b WHERE a.'||v_pk_field[1]||'= b.'||v_pk_field[1];
-IF array_length(v_pk_field, 1) > 1 THEN
+v_delete_f_sql := 'DELETE FROM '||v_dest_table||' a USING '||v_tmp_table||'_queue b WHERE a.'||v_pk_name[1]||'= b.'||v_pk_name[1];
+IF array_length(v_pk_name, 1) > 1 THEN
     v_delete_f_sql := v_delete_f_sql || v_pk_where;
 END IF; 
 
 -- remove rows that were deleted on source to ensure most recently deleted data is logged 
-v_delete_d_sql := 'DELETE FROM '||v_dest_table||' a USING '||v_tmp_table||'_deleted b WHERE a.'||v_pk_field[1]||'= b.'||v_pk_field[1];
-IF array_length(v_pk_field, 1) > 1 THEN
+v_delete_d_sql := 'DELETE FROM '||v_dest_table||' a USING '||v_tmp_table||'_deleted b WHERE a.'||v_pk_name[1]||'= b.'||v_pk_name[1];
+IF array_length(v_pk_name, 1) > 1 THEN
     v_delete_d_sql := v_delete_d_sql || v_pk_where;
 END IF; 
 
 v_insert_sql := 'INSERT INTO '||v_dest_table||'('||v_cols||') SELECT '||v_cols||' FROM '||v_tmp_table||'_full';
 v_insert_deleted_sql := 'INSERT INTO '||v_dest_table||'('||v_cols||', mimeo_source_deleted) SELECT '||v_cols||', mimeo_source_deleted FROM '||v_tmp_table||'_deleted'; 
 
-v_trigger_delete := 'SELECT dblink_exec(auth('||v_dblink||'),'||quote_literal('DELETE FROM '||v_control||' WHERE processed = true')||')'; 
+v_trigger_delete := 'SELECT dblink_exec('||quote_literal(v_dblink_name)||','||quote_literal('DELETE FROM '||v_control||' WHERE processed = true')||')'; 
 
 PERFORM update_step(v_step_id, 'OK','Remote table is '||v_source_table);
+
+PERFORM dblink_connect(v_dblink_name, auth(v_dblink));
 
 -- update remote entries
 v_step_id := add_step(v_job_id,'Updating remote trigger table');
@@ -218,21 +223,27 @@ v_step_id := add_step(v_job_id,'Create temp table from remote full table');
 PERFORM gdb(p_debug,v_create_f_sql);
 EXECUTE v_create_f_sql;  
 GET DIAGNOSTICS v_full_rowcount = ROW_COUNT;
-PERFORM gdb(p_debug,'Insert/Update Temp table row count '||v_full_rowcount::text);
-PERFORM update_step(v_step_id, 'OK','Table contains '||v_full_rowcount||' records');
+PERFORM gdb(p_debug,'Number of Insert/Update rows to process: '||v_full_rowcount);
+PERFORM update_step(v_step_id, 'OK','Number of Insert/Update rows to process: '||v_full_rowcount);
 
 -- create temp table for insertion (deleted rows)
 v_step_id := add_step(v_job_id,'Create temp table from remote delete table');
 PERFORM gdb(p_debug,v_create_d_sql);
 EXECUTE v_create_d_sql;  
 GET DIAGNOSTICS v_rowcount = ROW_COUNT;
-PERFORM gdb(p_debug,'Delete Temp table row count '||v_rowcount::text);
+PERFORM gdb(p_debug,'Number of Deleted rows to process '||v_rowcount);
+PERFORM update_step(v_step_id, 'OK','Number of Deleted rows to process '||v_rowcount);
 -- Check is here instead of earlier in case there are only deletes
+v_step_id := add_step(v_job_id, 'Processing fetched rows');
 IF v_rowcount < 1 AND v_full_rowcount < 1 THEN 
     PERFORM update_step(v_step_id, 'OK','No new rows found');
 ELSE
-    PERFORM update_step(v_step_id, 'OK','Table contains '||v_rowcount||' records');
-
+    IF (v_full_rowcount + v_rowcount) < v_limit THEN
+        PERFORM update_step(v_step_id, 'OK','Total number of rows to processes: '||v_full_rowcount + v_rowcount);
+    ELSE
+        PERFORM update_step(v_step_id, 'WARNING','Row count fetched equal to limit set: '||v_limit||'. Recommend increasing batch limit if possible.');
+        v_batch_limit_reached := true;
+    END IF;
     -- remove records from local table (inserts/updates)
     v_step_id := add_step(v_job_id,'Deleting insert/update records from local table');
     EXECUTE v_create_q_sql;
@@ -280,11 +291,18 @@ v_step_id := add_step(v_job_id,'Updating last_run in config table');
 UPDATE refresh_config_logdel SET last_run = CURRENT_TIMESTAMP WHERE dest_table = p_destination; 
 PERFORM update_step(v_step_id, 'OK','Last Value was '||current_timestamp);
 
-PERFORM close_job(v_job_id);
+PERFORM dblink_disconnect(v_dblink_name);
 
 EXECUTE 'DROP TABLE IF EXISTS '||v_tmp_table||'_full';
 EXECUTE 'DROP TABLE IF EXISTS '||v_tmp_table||'_deleted';
 
+IF v_batch_limit_reached = false THEN
+    PERFORM close_job(v_job_id);
+ELSE
+    -- Set final job status to level 2 (WARNING) to bring notice that the batch limit was reached and may need adjusting.
+    -- Preventive warning to keep replication from falling behind.
+    PERFORM fail_job(v_job_id, 2);
+END IF;
 -- Ensure old search path is reset for the current session
 EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
 
@@ -292,26 +310,31 @@ PERFORM pg_advisory_unlock(hashtext('refresh_logdel'), hashtext(v_job_name));
 
 EXCEPTION
     WHEN QUERY_CANCELED THEN
+        EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
+        IF dblink_get_connections() @> ARRAY[v_dblink_name] THEN
+            PERFORM dblink_disconnect(v_dblink_name);
+        END IF;
+        EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
         PERFORM pg_advisory_unlock(hashtext('refresh_logdel'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;  
     WHEN OTHERS THEN
-        -- Exception block resets path, so have to reset it again
         EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
         IF v_job_id IS NULL THEN
                 v_job_id := add_job('Refresh Log Del: '||p_destination);
                 v_step_id := add_step(v_job_id, 'EXCEPTION before job logging started');
         END IF;
         IF v_step_id IS NULL THEN
-            v_step_id := jobmon.add_step(v_job_id, 'EXCEPTION before first step logged');
+            v_step_id := add_step(v_job_id, 'EXCEPTION before first step logged');
+        END IF;
+        IF dblink_get_connections() @> ARRAY[v_dblink_name] THEN
+            PERFORM dblink_disconnect(v_dblink_name);
         END IF;
         PERFORM update_step(v_step_id, 'BAD', 'ERROR: '||coalesce(SQLERRM,'unknown'));
         PERFORM fail_job(v_job_id);
 
-        -- Ensure old search path is reset for the current session
-       EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
+        EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
 
         PERFORM pg_advisory_unlock(hashtext('refresh_logdel'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
-

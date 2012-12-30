@@ -61,7 +61,7 @@ ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN source_table text NOT 
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN control text NOT NULL;  
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN boundary interval;
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN last_value timestamptz NOT NULL;
-ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN pk_field text[] NOT NULL; 
+ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN pk_name text[] NOT NULL; 
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN pk_type text[] NOT NULL;
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN dst_active boolean NOT NULL DEFAULT true;
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN dst_start int NOT NULL DEFAULT 30;
@@ -75,7 +75,7 @@ ALTER TABLE @extschema@.refresh_config_dml ADD CONSTRAINT refresh_config_dml_dbl
 ALTER TABLE @extschema@.refresh_config_dml ADD CONSTRAINT refresh_config_dml_dest_table_pkey PRIMARY KEY (dest_table);
 ALTER TABLE @extschema@.refresh_config_dml ADD COLUMN source_table text NOT NULL;
 ALTER TABLE @extschema@.refresh_config_dml ADD COLUMN control text NOT NULL;  
-ALTER TABLE @extschema@.refresh_config_dml ADD COLUMN pk_field text[] NOT NULL; 
+ALTER TABLE @extschema@.refresh_config_dml ADD COLUMN pk_name text[] NOT NULL; 
 ALTER TABLE @extschema@.refresh_config_dml ADD COLUMN pk_type text[] NOT NULL;
 ALTER TABLE @extschema@.refresh_config_dml ALTER COLUMN type SET DEFAULT 'dml';
 ALTER TABLE @extschema@.refresh_config_dml ADD CONSTRAINT refresh_config_dml_type_check CHECK (type = 'dml');
@@ -87,7 +87,7 @@ ALTER TABLE @extschema@.refresh_config_logdel ADD CONSTRAINT refresh_config_logd
 ALTER TABLE @extschema@.refresh_config_logdel ADD CONSTRAINT refresh_config_logdel_dest_table_pkey PRIMARY KEY (dest_table);
 ALTER TABLE @extschema@.refresh_config_logdel ADD COLUMN source_table text NOT NULL;
 ALTER TABLE @extschema@.refresh_config_logdel ADD COLUMN control text NOT NULL;  
-ALTER TABLE @extschema@.refresh_config_logdel ADD COLUMN pk_field text[] NOT NULL; 
+ALTER TABLE @extschema@.refresh_config_logdel ADD COLUMN pk_name text[] NOT NULL; 
 ALTER TABLE @extschema@.refresh_config_logdel ADD COLUMN pk_type text[] NOT NULL;
 ALTER TABLE @extschema@.refresh_config_logdel ALTER COLUMN type SET DEFAULT 'logdel';
 ALTER TABLE @extschema@.refresh_config_logdel ADD CONSTRAINT refresh_config_logdel_type_check CHECK (type = 'logdel');

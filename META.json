@@ -1,7 +1,7 @@
 {
     "name": "mimeo",
     "abstract": "Extension for specialized, per-table replication between PostgreSQL databases",
-    "version": "0.8.4",
+    "version": "0.9.0",
     "maintainer": [ 
         "Keith Fiske <keith@omniti.com>"
     ],
@@ -13,15 +13,15 @@
             "requires": {
                 "PostgreSQL": "9.1.0",
                 "dblink": "1.0.0",
-                "pg_jobmon": "0.3.0"
+                "pg_jobmon": "1.0.0"
             }
         }
     },
     "provides": {
         "mimeo": {
-            "file": "sql/mimeo--0.8.4.sql",
+            "file": "sql/mimeo--0.9.0.sql",
             "docfile": "doc/mimeo.md",
-            "version": "0.8.4",
+            "version": "0.9.0",
             "abstract": "Extension for specialized, per-table replication between PostgreSQL databases"
         }
     },

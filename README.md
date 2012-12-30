@@ -8,7 +8,7 @@ It currently requires the pg_jobmon (see my other repositories) extension to log
 INSTALLATION
 ------------
 
-Requirements: dblink & pg_jobmon (>0.3.0) extensions
+Requirements: dblink & pg_jobmon (>= v1.0.0) extensions
 
 In directory where you downloaded mimeo to run
 

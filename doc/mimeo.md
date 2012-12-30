@@ -222,7 +222,7 @@ Tables
     control         - Column name that contains the timestamp that is updated on every insert AND update
     boundary        - Interval to adjust upper boundary max value of control field. See updater_maker() for more info
     last_value      - This is the max value of the control field from the last run and controls the time period of the batch of data pulled from the source table. 
-    pk_field        - Text array of all the column names that make up the source table primary key
+    pk_name         - Text array of all the column names that make up the source table primary key
     pk_type         - Text array of all the column types that make up the source table primary key
     dst_active      - Boolean set to true of database is not running on a server in UTC/GMT time. See About for more info
     dst_start       - Integer representation of the time that DST starts. Ex: 00:30 would be 30
@@ -233,7 +233,7 @@ Tables
 
     source_table    - Table name from source database. If not public, should be schema qualified
     control         - Schema qualified name of the queue table on the source database for this table
-    pk_field        - Text array of all the column names that make up the source table primary key
+    pk_name         - Text array of all the column names that make up the source table primary key
     pk_type         - Text array of all the column types that make up the source table primary key
  
 *refresh_config_logdel*  
@@ -241,5 +241,5 @@ Tables
 
     source_table    - Table name from source database. If not public, should be schema qualified
     control         - Schema qualified name of the queue table on the source database for this table
-    pk_field        - Text array of all the column names that make up the source table primary key
+    pk_name         - Text array of all the column names that make up the source table primary key
     pk_type         - Text array of all the column types that make up the source table primary key
