@@ -43,6 +43,8 @@ SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.dml_test_source2 (
     col3 timestamptz DEFAULT clock_timestamp(),
     PRIMARY KEY (col2, col1) )');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source2 VALUES (generate_series(1,10), ''test''||generate_series(1,10)::text)');
+-- Add another row with only one column of the composite key different to test for edge case
+SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source2 VALUES (4, ''test44'')');
 SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.dml_test_source_nodata (
     col1 int UNIQUE NOT NULL,
     col2 text,
@@ -72,6 +74,8 @@ SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.logdel_test_source2 
     col3 timestamptz DEFAULT clock_timestamp(),
     PRIMARY KEY (col2, col1) )');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source2 VALUES (generate_series(1,10), ''test''||generate_series(1,10)::text)');
+-- Add another row with only one column of the composite key different to test for edge case
+SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source2 VALUES (4, ''test44'')');
 SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.logdel_test_source_nodata (
     col1 int UNIQUE NOT NULL,
     col2 text UNIQUE NOT NULL,

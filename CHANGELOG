@@ -1,3 +1,9 @@
+0.9.1
+-- Fix bug introduced in 0.9.0 that would prevent composite primary/unique key replication from working in dml & logdel replication. This was introduced in 0.8.3 to try and handle when one column of the composite key would change. Data isn't missed on the destination anymore like previous to 0.8.3, replication can just completely fail due to unique key violations (errors will show up in pg_jobmon logs or when you attempt to manually run the replication). In order to fix this bug, you will have to re-create any dml replication jobs that use a composite primary/unique key to update the trigger function. Jobs that have a single column key work fine.
+-- IMPORTANT: Backup your destination table for logdel replication in order to preserve your deleted rows. These can then be inserted back in after things are fixed.
+-- If a table's refresh job tries to run concurrently, it will set the main entry in pg_jobmon's job_log table to level 2 (WARNING). Will allow 3 consecutive concurrent run attempts to cause pg_jobmon to raise a warning alert to possible problems.
+
+
 0.9.0
 -- IMPORTANT NOTE: This update requires the new 1.0.0 version of pg_jobmon that was shortly before this update. Please update pg_jobmon before updating mimeo!
 -- Remove explicit calls to pg_jobmon schema. Would cause failure if pg_jobmon was installed in any schema other than "jobmon".

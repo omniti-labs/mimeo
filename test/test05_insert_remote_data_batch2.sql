@@ -24,13 +24,13 @@ SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source_co
 SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.updater_test_source SET col2 = ''changed'', col3 = clock_timestamp() WHERE col1 = 13');
 
 -- Data for testing dml
-SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source2 SET col2 = ''changed'' WHERE col1 = 4');
+SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source2 SET col2 = ''changed'' WHERE col1 = 4 AND col2 = ''test4''');
 SELECT dblink_exec('mimeo_test', 'DELETE FROM mimeo_source.dml_test_source2 WHERE col1 = 8');
 SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source_condition SET col2 = ''changed'' WHERE col1 = 9');
 SELECT dblink_exec('mimeo_test', 'DELETE FROM mimeo_source.dml_test_source_condition where col1 = 11');
 
 -- Data for testing logdel
-SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.logdel_test_source2 SET col2 = ''changed'' WHERE col1 = 4');
+SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.logdel_test_source2 SET col2 = ''changed'' WHERE col1 = 4 AND col2 = ''test4''');
 SELECT dblink_exec('mimeo_test', 'DELETE FROM mimeo_source.logdel_test_source2 WHERE col1 = 8');
 SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.logdel_test_source_condition SET col2 = ''changed'' WHERE col1 = 9');
 SELECT dblink_exec('mimeo_test', 'DELETE FROM mimeo_source.logdel_test_source_condition where col1 = 11');

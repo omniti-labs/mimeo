@@ -65,8 +65,8 @@ v_adv_lock := pg_try_advisory_lock(hashtext('refresh_snap'), hashtext(v_job_name
 IF v_adv_lock = 'false' THEN
     v_step_id := add_step(v_job_id,'Obtaining advisory lock for job: '||v_job_name);
     PERFORM gdb(p_debug,'Obtaining advisory lock FAILED for job: '||v_job_name);
-    PERFORM update_step(v_step_id, 'OK','Found concurrent job. Exiting gracefully');
-    PERFORM close_job(v_job_id);
+    PERFORM update_step(v_step_id, 'WARNING','Found concurrent job. Exiting gracefully');
+    PERFORM fail_job(v_job_id, 2);
     EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
     RETURN;
 END IF;

@@ -18,7 +18,6 @@ DECLARE
 
 v_col_exists                int;
 v_cols                      text[];
-v_cols_csv                  text;
 v_cols_n_types              text[];
 v_cols_n_types_csv          text;
 v_counter                   int := 1;
@@ -35,6 +34,7 @@ v_key_type                  text;
 v_old_search_path           text;
 v_pk_name                   text[] := p_pk_name;
 v_pk_type                   text[] := p_pk_type;
+v_q_value                   text := '';
 v_remote_key_sql            text;
 v_remote_sql                text;
 v_remote_q_index            text;
@@ -79,7 +79,6 @@ END IF;
 v_remote_sql := 'SELECT cols, types, cols_n_types FROM dblink(''mimeo_logdel'', ' || quote_literal(v_remote_sql) || ') t (cols text[], types text[], cols_n_types text[])';
 EXECUTE v_remote_sql INTO v_cols, v_types, v_cols_n_types;
 
-v_cols_csv := array_to_string(v_cols, ',');
 v_cols_n_types_csv := array_to_string(v_cols_n_types, ',');
 
 v_remote_q_table := 'CREATE TABLE @extschema@.'||v_src_table_name||'_pgq ('||v_cols_n_types_csv||', mimeo_source_deleted timestamptz, processed boolean)';
@@ -132,42 +131,26 @@ v_remote_q_index := 'CREATE INDEX '||v_src_table_name||'_pgq_'||array_to_string(
 
 v_counter := 1;
 v_trigger_func := 'CREATE FUNCTION @extschema@.'||v_src_table_name||'_mimeo_queue() RETURNS trigger LANGUAGE plpgsql AS $_$ DECLARE ';
-    WHILE v_counter <= array_length(v_cols,1) LOOP
-        v_trigger_func := v_trigger_func||'v_'||v_cols[v_counter]||' '||v_types[v_counter]||'; ';
-        v_counter := v_counter + 1;
-    END LOOP;
-    v_trigger_func := v_trigger_func || 'v_del_time timestamptz; ';
+    v_trigger_func := v_trigger_func || 'v_del_time timestamptz := clock_timestamp(); ';
     v_counter := 1;
-    v_trigger_func := v_trigger_func || ' BEGIN 
-        IF TG_OP = ''INSERT'' THEN ';
-    WHILE v_counter <= array_length(v_pk_name,1) LOOP
-        v_trigger_func := v_trigger_func||' v_'||v_pk_name[v_counter]||' := NEW.'||v_pk_name[v_counter]||'; ';
-        v_counter := v_counter + 1;
-    END LOOP;
+    v_trigger_func := v_trigger_func || ' BEGIN IF TG_OP = ''INSERT'' THEN ';
+    v_q_value := array_to_string(v_pk_name, ', NEW.');
+    v_q_value := 'NEW.'||v_q_value;
+    v_trigger_func := v_trigger_func || ' INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_q_value||');';
     v_counter := 1;
     v_trigger_func := v_trigger_func || ' ELSIF TG_OP = ''UPDATE'' THEN  ';
-    WHILE v_counter <= array_length(v_pk_name,1) LOOP
-        v_trigger_func := v_trigger_func||' v_'||v_pk_name[v_counter]||' := OLD.'||v_pk_name[v_counter]||'; ';
-        v_counter := v_counter + 1;
-    END LOOP;
+    -- UPDATE needs to insert the NEW & OLD values so reuse v_q_value from INSERT operation
+    v_trigger_func := v_trigger_func || ' INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_q_value||');';
+    v_q_value := array_to_string(v_pk_name, ', OLD.');
+    v_q_value := 'OLD.'||v_q_value;
+    v_trigger_func := v_trigger_func || ' INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_q_value||');';
     v_counter := 1;
     v_trigger_func := v_trigger_func || ' ELSIF TG_OP = ''DELETE'' THEN  ';
-    WHILE v_counter <= array_length(v_cols,1) LOOP
-        v_trigger_func := v_trigger_func||' v_'||v_cols[v_counter]||' := OLD.'||v_cols[v_counter]||'; ';
-        v_counter := v_counter + 1;
-    END LOOP;
-    v_trigger_func := v_trigger_func || 'v_del_time := clock_timestamp(); ';
+    v_q_value := array_to_string(v_cols, ', OLD.');
+    v_q_value := 'OLD.'||v_q_value;
+    v_trigger_func := v_trigger_func || ' INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_cols, ',')||', mimeo_source_deleted) VALUES ('||v_q_value||', v_del_time);';
     v_counter := 1;
-    v_trigger_func := v_trigger_func || ' END IF; INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||v_cols_csv||', mimeo_source_deleted) ';
-    v_trigger_func := v_trigger_func || ' VALUES (';
-    WHILE v_counter <= array_length(v_cols,1) LOOP
-        IF v_counter > 1 THEN
-            v_trigger_func := v_trigger_func || ', ';
-        END IF;
-        v_trigger_func := v_trigger_func||'v_'||v_cols[v_counter];
-        v_counter := v_counter + 1;
-    END LOOP;
-    v_trigger_func := v_trigger_func ||', v_del_time); RETURN NULL; END $_$;';
+v_trigger_func := v_trigger_func ||' END IF; RETURN NULL; END $_$;';
 
 v_create_trig := 'CREATE TRIGGER '||v_src_table_name||'_mimeo_trig AFTER INSERT OR DELETE OR UPDATE';
 IF p_filter IS NOT NULL THEN

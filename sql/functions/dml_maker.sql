@@ -31,6 +31,7 @@ v_pk_counter                int := 1;
 v_pk_name                   text[] := p_pk_name;
 v_pk_name_n_type            text[];
 v_pk_type                   text[] := p_pk_type;
+v_pk_value                  text := '';
 v_remote_exists             int := 0;
 v_remote_key_sql            text;
 v_remote_q_index            text;
@@ -129,34 +130,24 @@ RAISE NOTICE 'v_remote_q_table: %', v_remote_q_table;
 v_remote_q_index := 'CREATE INDEX '||v_src_table_name||'_pgq_'||array_to_string(v_pk_name, '_')||'_idx ON @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||')';
 
 v_pk_counter := 1;
-v_trigger_func := 'CREATE FUNCTION @extschema@.'||v_src_table_name||'_mimeo_queue() RETURNS trigger LANGUAGE plpgsql AS $_$ DECLARE ';
-    WHILE v_pk_counter <= array_length(v_pk_name,1) LOOP
-        v_trigger_func := v_trigger_func||'v_'||v_pk_name[v_pk_counter]||' '||v_pk_type[v_pk_counter]||'; ';
-        v_pk_counter := v_pk_counter + 1;
-    END LOOP;
+v_trigger_func := 'CREATE FUNCTION @extschema@.'||v_src_table_name||'_mimeo_queue() RETURNS trigger LANGUAGE plpgsql AS $_$ ';
     v_pk_counter := 1;
     v_trigger_func := v_trigger_func || ' BEGIN IF TG_OP = ''INSERT'' THEN ';
-    WHILE v_pk_counter <= array_length(v_pk_name,1) LOOP
-        v_trigger_func := v_trigger_func||' v_'||v_pk_name[v_pk_counter]||' := NEW.'||v_pk_name[v_pk_counter]||'; ';
-        v_pk_counter := v_pk_counter + 1;
-    END LOOP;
+    v_pk_value := array_to_string(v_pk_name, ', NEW.');
+    v_pk_value := 'NEW.'||v_pk_value;
+    v_trigger_func := v_trigger_func || ' INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
+    v_trigger_func := v_trigger_func || ' ELSIF TG_OP = ''UPDATE'' THEN ';
+    -- UPDATE needs to insert the NEW & OLD values so reuse v_pk_value from INSERT operation
+    v_trigger_func := v_trigger_func || ' INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
     v_pk_counter := 1;
-    v_trigger_func := v_trigger_func || ' ELSE ';
-    WHILE v_pk_counter <= array_length(v_pk_name,1) LOOP
-        v_trigger_func := v_trigger_func||' v_'||v_pk_name[v_pk_counter]||' := OLD.'||v_pk_name[v_pk_counter]||'; ';
-        v_pk_counter := v_pk_counter + 1;
-    END LOOP;
-    v_pk_counter := 1;
-    v_trigger_func := v_trigger_func || ' END IF; INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||') ';
-    v_trigger_func := v_trigger_func || ' VALUES (';
-    WHILE v_pk_counter <= array_length(v_pk_name,1) LOOP
-        IF v_pk_counter > 1 THEN
-            v_trigger_func := v_trigger_func || ', ';
-        END IF;
-        v_trigger_func := v_trigger_func||'v_'||v_pk_name[v_pk_counter];
-        v_pk_counter := v_pk_counter + 1;
-    END LOOP;
-    v_trigger_func := v_trigger_func || '); RETURN NULL; END $_$;';
+    v_pk_value := '';
+    v_pk_value := array_to_string(v_pk_name, ', OLD.');
+    v_pk_value := 'OLD.'||v_pk_value;
+    v_trigger_func := v_trigger_func || ' INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
+    v_trigger_func := v_trigger_func || ' ELSIF TG_OP = ''DELETE'' THEN ';
+    -- DELETE needs to insert the OLD values so reuse v_pk_value from UPDATE operation
+    v_trigger_func := v_trigger_func || ' INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
+v_trigger_func := v_trigger_func || ' END IF; RETURN NULL; END $_$;';
 
 v_create_trig := 'CREATE TRIGGER '||v_src_table_name||'_mimeo_trig AFTER INSERT OR DELETE OR UPDATE';
 IF p_filter IS NOT NULL THEN

@@ -37,8 +37,6 @@ v_pk_counter            int;
 v_pk_name               text[];
 v_pk_name_csv           text;
 v_pk_name_type_csv      text := '';
-v_pk_queue              text := '';
-v_pk_queue_where        text := '';
 v_pk_type               text[];
 v_pk_where              text;
 v_remote_d_sql          text;
@@ -102,8 +100,8 @@ v_adv_lock := pg_try_advisory_lock(hashtext('refresh_logdel'), hashtext(v_job_na
 IF v_adv_lock = 'false' THEN
     v_step_id := add_step(v_job_id,'Obtaining advisory lock for job: '||v_job_name);
     PERFORM gdb(p_debug,'Obtaining advisory lock FAILED for job: '||v_job_name);
-    PERFORM update_step(v_step_id, 'OK','Found concurrent job. Exiting gracefully');
-    PERFORM close_job(v_job_id);
+    PERFORM update_step(v_step_id, 'WARNING','Found concurrent job. Exiting gracefully');
+    PERFORM fail_job(v_job_id, 2);
     EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
     RETURN;
 END IF;
@@ -159,38 +157,27 @@ v_pk_counter := 1;
 WHILE v_pk_counter <= array_length(v_pk_name,1) LOOP
     IF v_pk_counter > 1 THEN
         v_pk_name_type_csv := v_pk_name_type_csv || ', ';
-        v_pk_queue := v_pk_queue || ', ';
-        v_pk_queue_where := v_pk_queue_where || ' OR ';
     END IF;
     v_pk_name_type_csv := v_pk_name_type_csv ||v_pk_name[v_pk_counter]||' '||v_pk_type[v_pk_counter];
-    v_pk_queue := v_pk_queue || v_pk_name[v_pk_counter] || ' as mimeo_q_' || v_pk_name[v_pk_counter];
-    v_pk_queue_where := v_pk_queue_where || v_pk_name[v_pk_counter] || ' = mimeo_q_' || v_pk_name[v_pk_counter];
     v_pk_counter := v_pk_counter + 1;
 END LOOP;
 
 v_trigger_update := 'SELECT dblink_exec('||quote_literal(v_dblink_name)||','|| quote_literal(v_with_update)||')';
 
--- Handles edge case to catch when a multi-column primary/unique key changes the value of a subset of the columns. 
-v_remote_f_sql := 'SELECT '||v_cols||' 
-    FROM '||v_source_table||', 
-    (SELECT DISTINCT '||v_pk_queue||' FROM '||v_control||' WHERE processed = true and mimeo_source_deleted IS NULL) x ';
-IF v_condition IS NOT NULL THEN
-    v_remote_f_sql := v_remote_f_sql || ' ' || v_condition ||' AND ';
-ELSE
-    v_remote_f_sql := v_remote_f_sql || ' WHERE ';
-END IF;
-v_remote_f_sql := v_remote_f_sql || '(' || v_pk_queue_where || ')'; 
+v_remote_q_sql := 'SELECT DISTINCT '||v_pk_name_csv||' FROM '||v_control||' WHERE processed = true and mimeo_source_deleted IS NULL';
+v_create_q_sql := 'CREATE TEMP TABLE '||v_tmp_table||'_queue AS SELECT '||v_pk_name_csv||'
+        FROM dblink('||quote_literal(v_dblink_name)||','||quote_literal(v_remote_q_sql)||') t ('||v_pk_name_type_csv||')';
 
+v_remote_f_sql := 'SELECT '||v_cols||' FROM '||v_source_table||' JOIN ('||v_remote_q_sql||') x USING ('||v_pk_name_csv||')';
+IF v_condition IS NOT NULL THEN
+    v_remote_f_sql := v_remote_f_sql || ' ' || v_condition;
+END IF;
 v_create_f_sql := 'CREATE TEMP TABLE '||v_tmp_table||'_full AS SELECT '||v_cols||' 
     FROM dblink('||quote_literal(v_dblink_name)||','||quote_literal(v_remote_f_sql)||') t ('||v_cols_n_types||')';
 
 v_remote_d_sql = 'SELECT '||v_cols||', mimeo_source_deleted FROM '||v_control||' WHERE processed = true and mimeo_source_deleted IS NOT NULL';
 v_create_d_sql = 'CREATE TEMP TABLE '||v_tmp_table||'_deleted AS SELECT '||v_cols||', mimeo_source_deleted
     FROM dblink('||quote_literal(v_dblink_name)||','||quote_literal(v_remote_d_sql)||') t ('||v_cols_n_types||', mimeo_source_deleted timestamptz)';
-
-v_remote_q_sql := 'SELECT DISTINCT '||v_pk_name_csv||' FROM '||v_control||' WHERE processed = true and mimeo_source_deleted IS NULL';
-v_create_q_sql := 'CREATE TEMP TABLE '||v_tmp_table||'_queue AS SELECT '||v_pk_name_csv||'
-        FROM dblink('||quote_literal(v_dblink_name)||','||quote_literal(v_remote_q_sql)||') t ('||v_pk_name_type_csv||')';
 
 v_delete_f_sql := 'DELETE FROM '||v_dest_table||' a USING '||v_tmp_table||'_queue b WHERE a.'||v_pk_name[1]||'= b.'||v_pk_name[1];
 IF array_length(v_pk_name, 1) > 1 THEN

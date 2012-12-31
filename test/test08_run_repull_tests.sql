@@ -5,13 +5,13 @@ SELECT plan(18);
 SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test password=mimeo_test');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established');
 
-SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.inserter_test_source SET col2 = ''repull''||col1::text');
-SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.updater_test_source SET col2 = ''repull''||col1::text');
-SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source SET col2 = ''repull''||col1::text');
-SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source2 SET col2 = ''repull''||col1::text');
-SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source_nodata SET col2 = ''repull''||col1::text');
-SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source_filter SET col2 = ''repull''||col1::text');
-SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source_condition SET col2 = ''repull''||col1::text');
+SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.inserter_test_source SET col2 = ''repull''||col2::text');
+SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.updater_test_source SET col2 = ''repull''||col2::text');
+SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source SET col2 = ''repull''||col2::text');
+SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source2 SET col2 = ''repull''||col2::text');
+SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source_nodata SET col2 = ''repull''||col2::text');
+SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source_filter SET col2 = ''repull''||col2::text');
+SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source_condition SET col2 = ''repull''||col2::text');
 
 SELECT refresh_inserter('mimeo_source.inserter_test_source', p_repull := true);
 SELECT refresh_inserter('mimeo_dest.inserter_test_dest', p_repull := true);
