@@ -221,10 +221,10 @@ ELSE
         EXECUTE 'TRUNCATE '||v_dest_table;
         PERFORM update_step(v_step_id, 'OK','Done');
     ELSE
-        IF v_rowcount < v_limit THEN
+        IF v_rowcount <= (v_limit * .75) THEN
             PERFORM update_step(v_step_id, 'OK','Number of rows to process: '||v_rowcount);
         ELSE
-            PERFORM update_step(v_step_id, 'WARNING','Row count fetched equal to limit set: '||v_limit||'. Recommend increasing batch limit if possible.');
+            PERFORM update_step(v_step_id, 'WARNING','Row count fetched greater than 75% of batch limit: '||v_limit||'. Recommend increasing batch limit if possible.');
             v_batch_limit_reached := true;
         END IF;
         EXECUTE v_create_q_sql;
