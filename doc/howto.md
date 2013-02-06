@@ -18,8 +18,8 @@ pg_jobmon Setup
 -------------
 Both pg_jobmon and mimeo require the dblink extension which is an additionally supplied module that PostgreSQL comes with. Neither extension requires dblink to be in any specific schema. Please see the core documentation for more information on obtaining and installing this extension - http://www.postgresql.org/docs/current/static/contrib.html
 
-Please see the pg_jobmon docs and my wiki for more information on setup and use of pg_jobmon.
-https://github.com/keithf4/pg_jobmon
+Please see the pg_jobmon docs and my blog for more information on setup and use of pg_jobmon.
+https://github.com/omniti-labs/pg_jobmon
 http://keithf4.com/pg_jobmon
 
 Mimeo Base Setup
@@ -65,7 +65,9 @@ You will also have to grant, at a minimum, SELECT privileges on all tables that 
 
     CREATE SCHEMA mimeo;
     ALTER SCHEMA mimeo OWNER TO mimeo;
+    GRANT SELECT ON public.dml_test_source to mimeo;
     GRANT TRIGGER ON public.dml_test_source TO mimeo;
+    GRANT SELECT ON ...
     GRANT TRIGGER ON ...
 
 Replication Setup
@@ -86,7 +88,7 @@ Snapshot replication is the easiest to setup, but should be limited to smaller t
     ----------------
 
 - - -
-**Snapshot** is unique, however, in that it can automatically replicate column changes (add, drop, rename, & limited changing of data type). If you have any special permissions or constraints set on the destination snap table, you'll need to use the post_script array column to store commands to be replayed if the source columns ever do change. It's actually recommended to not have the same constraints on the destination since that can slow down the replication process. As long as the constraints exist on the source, and the only thing populating the destination tables is mimeo, you shouldn't run into data inconsistancies. But if you feel the need to do this, be aware that for constraints, there are two underlying snap tables. When a snap table is refreshed, there is a view that swaps between which one it points to. This is done to keep locking at a minimum while a refresh is done. But it also means that you have to create constraints on both underlying snap tables. 
+**Snapshot** is unique, however, in that it can automatically replicate column changes (add, drop, rename, & limited changing of data type). If you have any special permissions or constraints set on the destination snap table, you'll need to use the post_script array column to store commands to be replayed if the source columns ever do change. It's actually recommended to not have the same constraints on the destination since that can slow down the replication process. As long as the constraints exist on the source, and the only thing populating the destination tables is mimeo, you shouldn't run into data inconsistancies. But if you feel the need to do this, be aware that for constraints, there are two tables underlying a view. When a snap table is refreshed, there is a view that swaps between which one it points to. This is done to keep locking at a minimum while a refresh is done. But it also means that you have to create constraints on both underlying snap tables. 
 
     UPDATE mimeo.refresh_config_snap SET post_script = '{"ALTER TABLE public.snap_test_source_snap1 ADD CHECK (col1 < 100)"
     , "ALTER TABLE public.snap_test_source_snap2 ADD CHECK (col1 < 100)"
@@ -147,7 +149,7 @@ Mimeo has another special kind of DML replication called *logdel*. This is used 
 Refreshing the Destination
 -----------------------
 
-To keep the destination tables up to date, there's a set of refresh functions for each type. Each of them all take the *destination* table as the argument.
+To keep the destination tables up to date, there's a refresh function for each type. Each of them all take the *destination* table as the argument.
 
     destinationdb=# SELECT mimeo.refresh_dml('dest_schema.dml_test_dest');
 
@@ -157,7 +159,7 @@ There are additional options for each refresh type that can allow you to do thin
 Scheduling
 ---------
 
-PostgreSQL has no internal scheduler (something that I hope someday is fixed), so you'll have to use an external scheduler like cron to run the refresh jobs. To help make this a little easier so you don't have to schedule each and every replication job individually, a function to run every job of a certain type has been provided. You can schedule how often a job will run using the *period* column in the *mimeo.refresh_config* table with an interval value. 
+PostgreSQL has no internal scheduler (something that I hope someday is fixed), so you'll have to use an external scheduler like cron to run the refresh jobs. You can call each refresh job individually or, to help make this a little easier, a python script has been provided. You can schedule how often the script will run a job using the *period* column in the *mimeo.refresh_config* table with an interval value. 
 
     destinationdb=# update mimeo.refresh_config set period = '1 day' where dest_table = 'dest_schema.dml_test_dest';
     UPDATE 1
@@ -171,19 +173,25 @@ PostgreSQL has no internal scheduler (something that I hope someday is fixed), s
     filter      | 
     condition   | 
     period      | 1 day
-    batch_limit | 10000
+    batch_limit | 
 
 This will cause the replication job to run daily at the time listed for *last_run*. You can manually change the *last_run* value to whatever you wish if you need to reschedule the job to start running at a certain time.
 
-You can now use the **run_refresh()** function to run your refresh jobs. The first argument, which is required, is the type of replication jobs to run (snap, inserter, updater, dml, or logdel). The second argument is optional and tells the scheduler how many of that job type to grab for that run. They are run sequentially in the order of the job's last_run value, not in parallel. If this argument is not given, the default is 4. An example crontab running all replication types is below.
+You can now use the **run_refresh.py** script to run your refresh jobs. You can schedule it to run as often as you like and it will only run refresh jobs that have not run since their last configured period. The --type option will only run 1 of the 5 specific types given. The --batch_limit option sets how many tables to replicate in a single run of the script. Running the script with no arguments will cause all scheduled jobs of all replication types to be run in order of their last_run values.
 
-    00,10,20,30,40,50 * * * *  psql -c "select mimeo.run_refresh('snap');" >/dev/null
-    01,11,21,31,41,51 * * * *  psql -c "select mimeo.run_refresh('inserter', 10);" >/dev/null
-    02,12,22,32,42,52 * * * *  psql -c "select mimeo.run_refresh('updater', 10);" >/dev/null
-    03,13,23,33,43,53 * * * *  psql -c "select mimeo.run_refresh('dml', 10);" >/dev/null
-    04,14,24,34,44,54 * * * *  psql -c "select mimeo.run_refresh('logdel', 10);" >/dev/null
+An example crontab running all replication types with some different options is below
 
-This sets things up to run each job type at least every ten minutes. run_refresh() grabs all the jobs of the specified type, ordered ascending by last_run and if a job hasn't run within it's specified period, it will be added to the queue for that run up to the maximum given by the second argument (10 in the example). If there are no jobs that need to run, run_refresh just does nothing.
+    00,10,20,30,40,50 * * * *  python run_refresh.py -c "host=localhost dbname=mydb" -t snap -b 5 >/dev/null
+    01,11,21,31,41,51 * * * *  python run_refresh.py -c "host=localhost dbname=mydb" -t inserter >/dev/null
+    02,12,22,32,42,52 * * * *  python run_refresh.py -c "host=localhost dbname=mydb" -t updater >/dev/null
+    03,13,23,33,43,53 * * * *  python run_refresh.py -c "host=localhost dbname=mydb" -t dml -b 10 >/dev/null
+    04,14,24,34,44,54 * * * *  python run_refresh.py -c "host=localhost dbname=mydb" -t logdel -b 10 >/dev/null
+
+This sets things up to try and run a batch of each job type at least every ten minutes. It will run at most 5 snap jobs in one batch, all of the scheduled inserter & updater jobs and at most 10 dml or logdel jobs. If there are no jobs that need to run, it just does nothing. If you just want to try and run all scheduled jobs every time you can do
+
+    * * * * *  python run_refresh.py >/dev/null
+
+However, be aware that if there are a lot of jobs running in a single batch, it can cause the time that a job runs to drift. If you need a job to run at a specific time, it may be best to schedule it individually or spread things out like the previous example.
 
 Conclusion
 ---------

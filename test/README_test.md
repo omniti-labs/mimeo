@@ -15,7 +15,7 @@ If you've installed any of the above extensions in a different schema and would 
 
     SELECT set_config('search_path','mimeo, dblink, tap',false);
 
-You will also need to ensure your pg_hba.conf file has an entry for the **mimeo_test** role connecting via the localhost. One or all of the entries below should work.
+You will also need to ensure your pg_hba.conf file has a trust or md5 entry for the **mimeo_test** role connecting via the localhost. One or all of the entries below should work.
     
     host    all         mimeo_test      localhost           trust
     host    all         mimeo_test      127.0.0.1/32        trust

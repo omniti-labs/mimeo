@@ -1,3 +1,18 @@
+0.10.0
+-- !!!!IMPORTANT!!!! run_refresh() plpgsql function has been deprecated. While the function file has been removed (so it won't install for brand new extension installations), it was not dropped from the database yet so installing this version will not suddenly stop scheduled replication using it. It will be explicitly dropped in version 1.0. See mimeo.md help file for more information why.
+-- refresh_snap (and hence all maker functions) now uses a remote cursor to fetch data in batches instead of all at once. This will allow better large snap refreshes and, more importantly, reduce errors when trying to setup replication with very large remote source tables. Without this, initial data pull could time-out or cause OOM-killer to cancel the maker function.
+-- Fixed all other refresh functions to also use the remote cursor as well.
+-- Now that pulling larger amounts of data is more efficient, there is no longer a default batch limit. Every refresh run will get all new rows available. This does not affect existing jobs, only newly created jobs after this version is installed. If you'd like remove the batch limits (recommended unless necessary), set the batch_limit column to NULL in all config tables.
+-- Boundary value is now required for inserter/updater configuration to help ensure consistency. Default is 10 minutes. If any had been set as NULL, it has been updated to the default.
+-- New "extras" folder in repository. Contains some versions of functions for when the source database is older than 9.1. These can make it possible to use mimeo to upgrade a database across major versions. While they could be used for normal replication purposes as well, that is not advised long term since an extension update would overwrite the functions if you rename them to their original names.
+-- Extras folder also contains a python script to replace the deprecated run_refresh function. Use this to help make running scheduled replication jobs easier and more reliable that the old plpgsql function.
+-- Set functions as STABLE or IMMUTABLE that can be.
+-- Bug Fix: Temporary queue table not getting dropped in refresh_logdel. Caused errors if same refresh was run in the same session.
+-- Bug Fix: Will now accurately report row counts even when inserting to partitioned tables
+-- Code cleanup
+-- Make pgTAP tests a little more extensive. Added tests for batch limits.
+
+
 0.9.3
 -- Reaching the exact batch limit to cause a pg_jobmon log warning for dml/logdel replication would almost never actually occur due to getting DISTINCT entries from the source queue table. This would make notification of replication possibly falling behind not occur. Changed the alert to happen if the actual batch reaches 75% of the batch limit.
 

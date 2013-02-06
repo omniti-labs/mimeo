@@ -1,7 +1,12 @@
 /*
- *  Snap refresh to repull all table data
- */
-CREATE FUNCTION refresh_snap(p_destination text, p_index boolean DEFAULT true, p_debug boolean DEFAULT false, p_pulldata boolean DEFAULT true) RETURNS void
+* !!!!!! READ THIS FIRST !!!!!!
+* Alternate function to provide a way to use a pre-9.0 version of PostgreSQL as the source.
+* It is not installed as part of the extension so can be safely added and removed without affecting it if you don't rename the function to its original name.
+* You must do a find-and-replace to set the proper schema that mimeo is installed to on the destination database.
+* I left "@extschema@" in here from the original extension code to provide an easy string to find and replace.
+* Just search for that and replace with your installation's schema.
+*/
+CREATE OR REPLACE FUNCTION @extschema@.refresh_snap_pre90(p_destination text, p_index boolean DEFAULT true, p_debug boolean DEFAULT false, p_pulldata boolean DEFAULT true) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
@@ -202,26 +207,28 @@ PERFORM update_step(v_step_id, 'OK','Inserted '||v_total||' rows');
 
 -- Create indexes if new table was created
 IF (v_table_exists = 0 OR v_match = 'f') AND p_index = true THEN
-    v_remote_index_sql := 'SELECT 
+    v_remote_index_sql := 'SELECT
         CASE
             WHEN i.indisprimary IS true THEN ''primary''
             WHEN i.indisunique IS true THEN ''unique''
             ELSE ''index''
         END AS key_type,
-        ( SELECT array_agg( a.attname ORDER by x.r ) 
-            FROM pg_attribute a 
-            JOIN ( SELECT k, row_number() over () as r 
-                    FROM unnest(i.indkey) k ) as x 
-            ON a.attnum = x.k AND a.attrelid = i.indrelid ';
-    IF v_filter IS NOT NULL THEN
-        v_remote_index_sql := v_remote_index_sql || ' WHERE ARRAY[a.attname::text] <@ '||quote_literal(v_filter);
-    END IF;
-    v_remote_index_sql := v_remote_index_sql || ') AS indkey_names
-        FROM pg_index i
-        WHERE i.indrelid = '||quote_literal(v_source_table)||'::regclass';
+        array(
+            SELECT a.attname
+            FROM pg_attribute a
+            WHERE a.attrelid = i.indrelid';
+                IF v_filter IS NOT NULL THEN
+                    v_remote_index_sql := v_remote_index_sql || ' AND ARRAY[a.attname::text] <@ '||quote_literal(v_filter);
+                END IF;
+                v_remote_index_sql := v_remote_index_sql || '
+                AND '',''||array_to_string(i.indkey::int2[], '','')||'','' like ''%,'' || a.attnum || '',%''
+            ORDER BY strpos( '',''||array_to_string(i.indkey::int2[], '','')||'','', '',''|| a.attnum || '','')
+        ) AS indkey_names
+    FROM pg_index i
+    WHERE i.indrelid = '||quote_literal(v_source_table)||'::regclass;';
 
     FOR v_row IN EXECUTE 'SELECT key_type, indkey_names FROM dblink('||quote_literal(v_dblink_name)||', '||quote_literal(v_remote_index_sql)||') t (key_type text, indkey_names text[])' LOOP
-        IF v_row.indkey_names IS NOT NULL THEN   -- If column filter is used, indkey_name column may be null
+        IF (array_upper(v_row.indkey_names, 1) IS NOT NULL) THEN   -- If column filter is used, indkey_name column may be null
             IF v_row.key_type = 'primary' THEN
                 RAISE NOTICE 'Creating primary key...';
                 EXECUTE 'ALTER TABLE '||v_refresh_snap||' ADD CONSTRAINT '||v_parts.oparts[2]||'_'||array_to_string(v_row.indkey_names, '_')||'_idx PRIMARY KEY ('||array_to_string(v_row.indkey_names, ',')||')';

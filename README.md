@@ -8,7 +8,7 @@ It currently requires the pg_jobmon (see my other repositories) extension to log
 INSTALLATION
 ------------
 
-Requirements: dblink & pg_jobmon (>= v1.0.0) extensions
+Requirements: dblink & pg_jobmon (>= v1.0.0) extensions (https://github.com/omniti-labs/pg_jobmon)
 
 In directory where you downloaded mimeo to run
 
@@ -19,6 +19,8 @@ Log into PostgreSQL and run the following commands. Schema can be whatever you w
 
     CREATE SCHEMA mimeo;
     CREATE EXTENSION mimeo SCHEMA mimeo;
+
+See the doc folder for more usage information. The howto.md file provides a quickstart guide. The mimeo.md file contains a full reference guide.
 
 
 UPGRADE
@@ -32,8 +34,8 @@ Make sure all the upgrade scripts for the version you have installed up to the m
 AUTHOR
 ------
 
-Keith Fiske
-OmniTI, Inc - http://www.omniti.com
+Keith Fiske  
+OmniTI, Inc - http://www.omniti.com  
 keith@omniti.com
 
 
@@ -42,7 +44,7 @@ LICENSE AND COPYRIGHT
 
 Mimeo is released under the PostgreSQL License, a liberal Open Source license, similar to the BSD or MIT licenses.
 
-Copyright (c) 2012 OmniTI, Inc.
+Copyright (c) 2013 OmniTI, Inc.
 
 Permission to use, copy, modify, and distribute this software and its documentation for any purpose, without fee, and without a written agreement is hereby granted, provided that the above copyright notice and this paragraph and the following two paragraphs appear in all copies.
 

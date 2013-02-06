@@ -2,7 +2,7 @@
  *  Authentication for dblink
  */
 CREATE FUNCTION auth(integer) RETURNS text
-    LANGUAGE plpgsql
+    LANGUAGE plpgsql STABLE
     AS $$
 DECLARE
 

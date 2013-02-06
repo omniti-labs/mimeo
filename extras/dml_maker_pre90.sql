@@ -1,11 +1,13 @@
 /*
  *  !!!!!! READ THIS FIRST !!!!!!
- *  Alternate function to provide a way to use a pre-9.0 version of PostgreSQL as the source. 
- *  It is not installed as part of the extension so can be safely added and removed without affecting it.
+ *  Alternate function to provide a way to use a pre-9.0 version of PostgreSQL as the source.
+ *  This also requires the other extras function refresh_snap_pre90.sql to be installed as "refresh_snap_pre90" if the destination table has not been created first. 
+ *  It is not installed as part of the extension so can be safely added and removed without affecting it if you don't rename the function to its original name.
  *  You must do a find-and-replace to set the proper schema that mimeo is installed to on the destination & source databases (these should be the same anyway).
  *  I left "@extschema@" in here from the original extension code to provide an easy string to find and replace. 
  *  Just search for that and replace with your installation's schema.
  */
+
 CREATE OR REPLACE FUNCTION @extschema@.dml_maker_pre90(
     p_src_table text
     , p_dblink_id int
@@ -196,7 +198,7 @@ IF v_dest_check IS NULL THEN
         ||COALESCE(quote_literal(p_filter), 'NULL')||','||COALESCE(quote_literal(p_condition), 'NULL')||')';
     EXECUTE v_insert_refresh_config;
 
-    EXECUTE 'SELECT @extschema@.refresh_snap('||quote_literal(p_dest_table)||', p_index := '||p_index||', p_pulldata := '||p_pulldata||')';
+    EXECUTE 'SELECT @extschema@.refresh_snap_pre90('||quote_literal(p_dest_table)||', p_index := '||p_index||', p_pulldata := '||p_pulldata||')';
     PERFORM @extschema@.snapshot_destroyer(p_dest_table, 'ARCHIVE');
     -- Ensure destination indexes that are needed for efficient replication are created even if p_index is set false
     IF p_index = false THEN

@@ -2,7 +2,7 @@
  *  Debug function
  */
 CREATE FUNCTION gdb(in_debug boolean, in_notice text) RETURNS void
-    LANGUAGE plpgsql
+    LANGUAGE plpgsql IMMUTABLE
     AS $$
 BEGIN
     IF in_debug THEN 
