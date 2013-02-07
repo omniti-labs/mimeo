@@ -27,11 +27,11 @@
     },
     "resources": {
         "bugtracker": {
-            "web": "https://github.com/keithf4/mimeo/issues"
+            "web": "https://github.com/omniti-labs/mimeo/issues"
         },
         "repository": {
-            "url": "git://github.com/keithf4/mimeo.git" ,
-            "web": "https://github.com/keithf4/mimeo",
+            "url": "git://github.com/omniti-labs/mimeo.git" ,
+            "web": "https://github.com/omniti-labs/mimeo",
             "type": "git"
         }
     },    
