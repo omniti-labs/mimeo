@@ -35,10 +35,12 @@ v_old_search_path           text;
 v_pk_name                   text[] := p_pk_name;
 v_pk_type                   text[] := p_pk_type;
 v_q_value                   text := '';
+v_remote_grants_sql         text;
 v_remote_key_sql            text;
 v_remote_sql                text;
 v_remote_q_index            text;
 v_remote_q_table            text;
+v_row                       record;
 v_src_table_name            text;
 v_trigger_func              text;
 v_types                     text[];
@@ -55,19 +57,22 @@ END IF;
 
 SELECT data_source INTO v_data_source FROM @extschema@.dblink_mapping WHERE data_source_id = p_dblink_id; 
 IF NOT FOUND THEN
-	RAISE EXCEPTION 'ERROR: database link ID is incorrect %', p_dblink_id; 
+	RAISE EXCEPTION 'Database link ID is incorrect %', p_dblink_id; 
 END IF;
 
 IF p_dest_table IS NULL THEN
     p_dest_table := p_src_table;
 END IF;
 
-v_src_table_name := replace(p_src_table, '.', '_');
-
-IF position('.' in p_dest_table) > 0 THEN
+IF position('.' in p_dest_table) > 0 AND position('.' in p_src_table) > 0 THEN
     v_dest_schema_name := split_part(p_dest_table, '.', 1); 
     v_dest_table_name := split_part(p_dest_table, '.', 2);
+ELSE
+    RAISE EXCEPTION 'Source (and destination) table must be schema qualified';
 END IF;
+
+-- Substring avoids some issues with tables near max length
+v_src_table_name := substring(replace(p_src_table, '.', '_') for 61);
 
 PERFORM dblink_connect('mimeo_logdel', @extschema@.auth(p_dblink_id));
 
@@ -81,7 +86,7 @@ EXECUTE v_remote_sql INTO v_cols, v_types, v_cols_n_types;
 
 v_cols_n_types_csv := array_to_string(v_cols_n_types, ',');
 
-v_remote_q_table := 'CREATE TABLE @extschema@.'||v_src_table_name||'_pgq ('||v_cols_n_types_csv||', mimeo_source_deleted timestamptz, processed boolean)';
+v_remote_q_table := 'CREATE TABLE @extschema@.'||v_src_table_name||'_q ('||v_cols_n_types_csv||', mimeo_source_deleted timestamptz, processed boolean)';
 
 IF p_pk_name IS NULL AND p_pk_type IS NULL THEN
     -- Either gets the primary key or it gets the first unique index in alphabetical order by index name
@@ -127,7 +132,7 @@ IF p_filter IS NOT NULL THEN
     END LOOP;
 END IF;
 
-v_remote_q_index := 'CREATE INDEX '||v_src_table_name||'_pgq_'||array_to_string(v_pk_name, '_')||'_idx ON @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||')';
+v_remote_q_index := 'CREATE INDEX '||v_src_table_name||'_q_'||array_to_string(v_pk_name, '_')||'_idx ON @extschema@.'||v_src_table_name||'_q ('||array_to_string(v_pk_name, ',')||')';
 
 v_counter := 1;
 v_trigger_func := 'CREATE FUNCTION @extschema@.'||v_src_table_name||'_mimeo_queue() RETURNS trigger LANGUAGE plpgsql AS $_$ DECLARE ';
@@ -138,12 +143,12 @@ v_trigger_func := 'CREATE FUNCTION @extschema@.'||v_src_table_name||'_mimeo_queu
     v_q_value := array_to_string(v_pk_name, ', NEW.');
     v_q_value := 'NEW.'||v_q_value;
     v_trigger_func := v_trigger_func || ' 
-            INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_q_value||');';
+            INSERT INTO @extschema@.'||v_src_table_name||'_q ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_q_value||');';
     v_trigger_func := v_trigger_func || ' 
         ELSIF TG_OP = ''UPDATE'' THEN  ';
     -- UPDATE needs to insert the NEW values so reuse v_q_value from INSERT operation
     v_trigger_func := v_trigger_func || ' 
-            INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_q_value||');';
+            INSERT INTO @extschema@.'||v_src_table_name||'_q ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_q_value||');';
     -- Only insert the old row if the new key doesn't match the old key. This handles edge case when only one column of a composite key is updated
     v_trigger_func := v_trigger_func || ' 
             IF ';
@@ -158,7 +163,7 @@ v_trigger_func := 'CREATE FUNCTION @extschema@.'||v_src_table_name||'_mimeo_queu
     v_q_value := array_to_string(v_pk_name, ', OLD.');
     v_q_value := 'OLD.'||v_q_value;
     v_trigger_func := v_trigger_func || ' 
-                INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_q_value||'); ';
+                INSERT INTO @extschema@.'||v_src_table_name||'_q ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_q_value||'); ';
     v_trigger_func := v_trigger_func || ' 
             END IF;';
     v_trigger_func := v_trigger_func || ' 
@@ -166,7 +171,7 @@ v_trigger_func := 'CREATE FUNCTION @extschema@.'||v_src_table_name||'_mimeo_queu
     v_q_value := array_to_string(v_cols, ', OLD.');
     v_q_value := 'OLD.'||v_q_value;
     v_trigger_func := v_trigger_func || ' 
-            INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_cols, ',')||', mimeo_source_deleted) VALUES ('||v_q_value||', v_del_time);';
+            INSERT INTO @extschema@.'||v_src_table_name||'_q ('||array_to_string(v_cols, ',')||', mimeo_source_deleted) VALUES ('||v_q_value||', v_del_time);';
 v_trigger_func := v_trigger_func ||' 
         END IF; RETURN NULL; END $_$;';
 
@@ -180,6 +185,14 @@ RAISE NOTICE 'Creating objects on source database (function, trigger & queue tab
 PERFORM dblink_exec('mimeo_logdel', v_remote_q_table);
 PERFORM dblink_exec('mimeo_logdel', v_remote_q_index);
 PERFORM dblink_exec('mimeo_logdel', v_trigger_func);
+-- Grant any current role with write privileges on source table INSERT on the queue table before the trigger is actually created
+v_remote_grants_sql := 'SELECT DISTINCT grantee FROM information_schema.table_privileges WHERE table_schema ||''.''|| table_name = '||quote_literal(p_dest_table)||' and privilege_type IN (''INSERT'',''UPDATE'',''DELETE'')';
+FOR v_row IN SELECT grantee FROM dblink('mimeo_logdel', v_remote_grants_sql) t (grantee text)
+LOOP
+    PERFORM dblink_exec('mimeo_logdel', 'GRANT USAGE ON SCHEMA @extschema@ TO '||v_row.grantee);
+    PERFORM dblink_exec('mimeo_logdel', 'GRANT INSERT ON TABLE @extschema@.'||v_src_table_name||'_q TO '||v_row.grantee);
+    PERFORM dblink_exec('mimeo_logdel', 'GRANT EXECUTE ON FUNCTION @extschema@.'||v_src_table_name||'_mimeo_queue() TO '||v_row.grantee);
+END LOOP;
 PERFORM dblink_exec('mimeo_logdel', v_create_trig);
 
 -- Only create destination table if it doesn't already exist
@@ -190,7 +203,6 @@ IF v_dest_check IS NULL THEN
     v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_snap(source_table, dest_table, dblink, filter, condition) VALUES('
         ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||','
         ||COALESCE(quote_literal(p_filter), 'NULL')||','||COALESCE(quote_literal(p_condition), 'NULL')||')';
-
     EXECUTE v_insert_refresh_config;
 
     EXECUTE 'SELECT @extschema@.refresh_snap('||quote_literal(p_dest_table)||', p_index := '||p_index||', p_pulldata := '||p_pulldata||')';
@@ -219,7 +231,7 @@ END IF;
 PERFORM dblink_disconnect('mimeo_logdel');
 
 v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_logdel(source_table, dest_table, dblink, control, pk_name, pk_type, last_run, filter, condition) VALUES('
-    ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||', '||quote_literal('@extschema@.'||v_src_table_name||'_pgq')||', '
+    ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||', '||quote_literal('@extschema@.'||v_src_table_name||'_q')||', '
     ||quote_literal(v_pk_name)||', '||quote_literal(v_pk_type)||', '||quote_literal(CURRENT_TIMESTAMP)||','||COALESCE(quote_literal(p_filter), 'NULL')||','
     ||COALESCE(quote_literal(p_condition), 'NULL')||')';
 RAISE NOTICE 'Inserting data into config table';
@@ -236,7 +248,7 @@ EXCEPTION
         -- Only cleanup remote objects if replication doesn't exist at all for source table
         EXECUTE 'SELECT count(*) FROM @extschema@.refresh_config_logdel WHERE source_table = '||quote_literal(p_src_table) INTO v_exists;
         IF v_exists = 0 THEN
-            PERFORM dblink_exec('mimeo_logdel', 'DROP TABLE IF EXISTS @extschema@.'||v_src_table_name||'_pgq');
+            PERFORM dblink_exec('mimeo_logdel', 'DROP TABLE IF EXISTS @extschema@.'||v_src_table_name||'_q');
             PERFORM dblink_exec('mimeo_logdel', 'DROP TRIGGER IF EXISTS '||v_src_table_name||'_mimeo_trig ON '||p_src_table);
             PERFORM dblink_exec('mimeo_logdel', 'DROP FUNCTION IF EXISTS @extschema@.'||v_src_table_name||'_mimeo_queue()');
         END IF;

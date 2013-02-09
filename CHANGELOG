@@ -1,3 +1,12 @@
+0.10.1
+-- The update from 0.9.3 to 0.10.0 does not work for PostgreSQL versions less than 9.2 due to using GET STACKED DIAGNOSTIC. The direct upgrade script from 0.9.3 to 0.10.1 should provide a working by-pass if you're updating from <= 0.9.3.
+-- Removed call to GET STACKED DIAGNOSTIC since it's only compatible with 9.2
+-- Set permissions for queue table & trigger function on source. Will set properly for any roles that have permissions on the source table at the time the maker function is run.
+-- Changed queue table for dml replication on source to have "_q" suffix instead of "_pgq". Does not change existing queue table names.
+-- Also truncates the queue table name if it is longer than 61 characters to avoid max table length issues. Does not change existing queue table names.
+-- Added pgTAP tests for empty source table.
+
+
 0.10.0
 -- !!!!IMPORTANT!!!! run_refresh() plpgsql function has been deprecated. While the function file has been removed (so it won't install for brand new extension installations), it was not dropped from the database yet so installing this version will not suddenly stop scheduled replication using it. It will be explicitly dropped in version 1.0. See mimeo.md help file for more information why.
 -- refresh_snap (and hence all maker functions) now uses a remote cursor to fetch data in batches instead of all at once. This will allow better large snap refreshes and, more importantly, reduce errors when trying to setup replication with very large remote source tables. Without this, initial data pull could time-out or cause OOM-killer to cancel the maker function.

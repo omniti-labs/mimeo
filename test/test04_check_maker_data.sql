@@ -1,6 +1,6 @@
 SELECT set_config('search_path','mimeo, dblink, tap',false);
 
-SELECT plan(76);
+SELECT plan(81);
 
 SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test password=mimeo_test');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established');
@@ -18,8 +18,7 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.snap_test_dest ORDER 
 SELECT has_index('mimeo_dest','snap_test_dest_snap1','snap_test_dest_snap1_col2_idx','col2','Check index for: mimeo_dest.snap_test_dest_snap1');
 SELECT has_index('mimeo_dest','snap_test_dest_snap2','snap_test_dest_snap2_col2_idx','col2','Check index for: mimeo_dest.snap_test_dest_snap2');
 
-SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_dest.snap_test_dest_nodata ORDER BY col1 ASC',
-    'Check data for: mimeo_dest.snap_test_dest_nodata');
+SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_dest.snap_test_dest_nodata ORDER BY col1 ASC', 'Check data for: mimeo_dest.snap_test_dest_nodata');
 SELECT has_index('mimeo_dest','snap_test_dest_nodata_snap1','snap_test_dest_nodata_snap1_col2_idx','col2','Check index for: mimeo_dest.snap_test_dest_nodata_snap1');
 SELECT has_index('mimeo_dest','snap_test_dest_nodata_snap2','snap_test_dest_nodata_snap2_col2_idx','col2','Check index for: mimeo_dest.snap_test_dest_nodata_snap2');
 
@@ -37,6 +36,8 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.snap_test_dest_condit
 SELECT has_index('mimeo_dest','snap_test_dest_condition_snap1','snap_test_dest_condition_snap1_col2_idx','col2','Check index for: mimeo_dest.snap_test_dest_condition_snap1');
 SELECT has_index('mimeo_dest','snap_test_dest_condition_snap2','snap_test_dest_condition_snap2_col2_idx','col2','Check index for: mimeo_dest.snap_test_dest_condition_snap2');
 
+SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_source.snap_test_source_empty ORDER BY col1 ASC', 'Check data for: mimeo_source.snap_test_source_empty');
+
 -- ########## INSERTER TESTS ##########
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
@@ -50,8 +51,7 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.inserter_test_dest OR
 SELECT col_is_pk('mimeo_dest','inserter_test_dest', 'col1', 'Check primary key for: mimeo_dest.inserter_test_dest');
 SELECT has_index('mimeo_dest','inserter_test_dest','inserter_test_dest_snap1_col2_idx','col2','Check index for: mimeo_dest.inserter_test_dest');
 
-SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_dest.inserter_test_dest_nodata ORDER BY col1 ASC',
-    'Check data for: mimeo_dest.inserter_test_dest_nodata');
+SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_dest.inserter_test_dest_nodata ORDER BY col1 ASC', 'Check data for: mimeo_dest.inserter_test_dest_nodata');
 SELECT col_is_pk('mimeo_dest','inserter_test_dest_nodata', 'col1', 'Check primary key for: mimeo_dest.inserter_test_dest_nodata');
 SELECT has_index('mimeo_dest','inserter_test_dest_nodata','inserter_test_dest_nodata_snap1_col2_idx','col2','Check index for: mimeo_dest.inserter_test_dest_nodata');
 
@@ -67,6 +67,8 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.inserter_test_dest_co
 SELECT col_is_pk('mimeo_dest','inserter_test_dest_condition', 'col1', 'Check primary key for: mimeo_dest.inserter_test_dest_condition');
 SELECT has_index('mimeo_dest','inserter_test_dest_condition','inserter_test_dest_condition_snap1_col2_idx','col2','Check index for: mimeo_dest.inserter_test_dest_condition');
 
+SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source_empty ORDER BY col1 ASC', 'Check data for: mimeo_source.inserter_test_dest_empty');
+
 -- ########## UPDATER TESTS ##########
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.updater_test_source ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.updater_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
@@ -80,8 +82,7 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.updater_test_dest ORD
 SELECT col_is_pk('mimeo_dest','updater_test_dest', 'col1', 'Check primary key for: mimeo_dest.updater_test_dest');
 SELECT has_index('mimeo_dest','updater_test_dest','updater_test_dest_snap1_col2_idx','col2','Check index for: mimeo_dest.updater_test_dest');
 
-SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_dest.updater_test_dest_nodata ORDER BY col1 ASC',
-    'Check data for: mimeo_dest.updater_test_dest_nodata');
+SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_dest.updater_test_dest_nodata ORDER BY col1 ASC', 'Check data for: mimeo_dest.updater_test_dest_nodata');
 SELECT col_is_pk('mimeo_dest','updater_test_dest_nodata', 'col1', 'Check primary key for: mimeo_dest.updater_test_dest_nodata');
 SELECT has_index('mimeo_dest','updater_test_dest_nodata','updater_test_dest_nodata_snap1_col2_idx','col2','Check index for: mimeo_dest.updater_test_dest_nodata');
 
@@ -96,6 +97,8 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.updater_test_dest_con
     'Check data for: mimeo_dest.updater_test_dest_condition');
 SELECT col_is_pk('mimeo_dest','updater_test_dest_condition', 'col1', 'Check primary key for: mimeo_dest.updater_test_dest_condition');
 SELECT has_index('mimeo_dest','updater_test_dest_condition','updater_test_dest_condition_snap1_col2_idx','col2','Check index for: mimeo_dest.updater_test_dest_condition');
+
+SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_source.updater_test_source_empty ORDER BY col1 ASC', 'Check data for: mimeo_source.updater_test_source_empty');
 
 -- ########## DML TESTS ##########
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.dml_test_source ORDER BY col1 ASC',
@@ -124,6 +127,8 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.dml_test_dest_conditi
     'Check data for: mimeo_dest.dml_test_dest_condition');
 SELECT col_is_pk('mimeo_dest','dml_test_dest_condition','col1','Check primary key for: mimeo_dest.dml_test_dest_condition');
 SELECT index_is_unique('mimeo_dest','dml_test_dest_condition', 'dml_test_dest_condition_snap1_col2_idx', 'Check unique index for: mimeo_dest.dml_test_dest_condition');
+
+SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_source.dml_test_source_empty ORDER BY col1 ASC', 'Check data for: mimeo_source.dml_test_dest_empty');
 
 -- ########## LOGDEL TESTS ##########
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.logdel_test_source ORDER BY col1 ASC',
@@ -154,6 +159,8 @@ SELECT results_eq('SELECT col1, col2 FROM mimeo_dest.logdel_test_dest_condition 
     'Check data for: mimeo_dest.logdel_test_dest_condition');
 SELECT col_is_pk('mimeo_dest','logdel_test_dest_condition', 'col1', 'Check primary key for: mimeo_dest.logdel_test_dest_condition');
 SELECT index_is_unique('mimeo_dest','logdel_test_dest_condition', 'logdel_test_dest_condition_snap1_col2_idx', 'Check unique index for col2: mimeo_dest.logdel_test_dest_condition');
+
+SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_source.logdel_test_source_empty ORDER BY col1 ASC', 'Check data for: mimeo_source.logdel_test_source_empty');
 
 
 SELECT dblink_disconnect('mimeo_test');

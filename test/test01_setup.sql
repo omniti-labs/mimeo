@@ -23,11 +23,13 @@ CREATE DATABASE mimeo_source;
 SELECT set_config('search_path','mimeo, dblink, tap',false);
 
 -- Plan the tests.
-SELECT plan(5);
+SELECT plan(6);
 
 -- Run the tests.
 CREATE ROLE mimeo_test WITH LOGIN SUPERUSER PASSWORD 'mimeo_test';
 SELECT has_role('mimeo_test', 'Create mimeo test role');
+CREATE ROLE mimeo_dumb_role WITH LOGIN PASSWORD 'mimeo_test';
+SELECT has_role('mimeo_dumb_role', 'Create mimeo dumb role');
 CREATE SCHEMA mimeo_source;
 SELECT has_schema('mimeo_source', 'Create test schema for default destination tables');
 CREATE SCHEMA mimeo_dest;

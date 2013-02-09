@@ -134,6 +134,7 @@ Functions
  * Function to automatically setup dml replication for a table. See setup instructions above for permissions that are needed on source database. By default source and destination table will have same schema and table names.  
  * Source table must have a primary key or unique index. Either the primary key or a unique index (first in alphabetical order if more than one) on the source table will be obtained automatically. Columns of primary/unique key cannot be arrays nor can they be an expression.  
  * If destination table already exists, no data will be pulled from the source. You can use the refresh_dml() 'repull' option to truncate the destination table and grab all the source data.  
+ * The queue table and trigger function on the source database will have permissions set to allow any current roles with write privileges on the source table to use them. If any further privileges are changed on the source table, the queue and trigger function will have to have their privileges adjusted manually.
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.  
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
@@ -153,6 +154,7 @@ Functions
  * Function to automatically setup logdel replication for a table. See setup instructions above for permissions that are needed on source database. By default source and destination table will have same schema and table names.  
  * Source table must have a primary key or unique index. Either the primary key or a unique index (first in alphabetical order if more than one) on the source table will be obtained automatically. Columns of primary/unique key cannot be arrays nor can they be an expression.  
  * If destination table already exists, no data will be pulled from the source. You can use the refresh_logdel() 'repull' option to truncate the destination table and grab all the source data.
+ * The queue table and trigger function on the source database will have permissions set to allow any current roles with write privileges on the source table to use them. If any further privileges are changed on the source table, the queue and trigger function will have to have their privileges adjusted manually.
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.  
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.

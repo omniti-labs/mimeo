@@ -23,7 +23,6 @@ v_dst_active            boolean;
 v_dst_check             boolean;
 v_dst_start             int;
 v_dst_end               int;
-v_ex_context            text;
 v_fetch_sql             text;
 v_filter                text[]; 
 v_full_refresh          boolean := false;
@@ -286,7 +285,6 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;    
     WHEN OTHERS THEN
         EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
-        GET STACKED DIAGNOSTICS v_ex_context = PG_EXCEPTION_CONTEXT;
         IF v_job_id IS NULL THEN
             v_job_id := add_job('Refresh Inserter: '||p_destination);
             v_step_id := add_step(v_job_id, 'EXCEPTION before job logging started');
@@ -302,7 +300,6 @@ EXCEPTION
 
         EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
         PERFORM pg_advisory_unlock(hashtext('refresh_inserter'), hashtext(v_job_name));
-        RAISE EXCEPTION '%
-            CONTEXT: %', SQLERRM, v_ex_context;    
+        RAISE EXCEPTION '%', SQLERRM;    
 END
 $$;

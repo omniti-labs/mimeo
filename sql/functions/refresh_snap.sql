@@ -15,7 +15,6 @@ v_dblink            int;
 v_dblink_name       text;
 v_dblink_schema     text;
 v_dest_table        text;
-v_ex_context        text;
 v_exists            int;
 v_fetch_sql         text;
 v_filter            text[];
@@ -281,7 +280,6 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;   
     WHEN OTHERS THEN
         EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
-        GET STACKED DIAGNOSTICS v_ex_context = PG_EXCEPTION_CONTEXT;
         IF v_job_id IS NULL THEN
             v_job_id := add_job('Refresh Snap: '||p_destination);
             v_step_id := add_step(v_job_id, 'EXCEPTION before job logging started');
@@ -296,7 +294,6 @@ EXCEPTION
         END IF;
         EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
         PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
-        RAISE EXCEPTION '%
-            CONTEXT: %', SQLERRM, v_ex_context;
+        RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
