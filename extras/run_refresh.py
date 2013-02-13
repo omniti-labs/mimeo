@@ -14,7 +14,7 @@ If type or batch_limit options are not given, all replication tables of all type
   --connection (-c):     Connection string for use by psycopg to connect to your database. Defaults to "host=localhost".\n
                          Highly recommended to use .pgpass file to keep credentials secure.\n
   --schema (-s):         The schema that mimeo was installed to on the destination database. Default is "mimeo".\n
-  --type (-t):           Must be one of the following values: snap, inserter, updater, dml, logdel."
+  --type (-t):           Must be one of the following values: snap, inserter, updater, dml, logdel, table."
                          If you'd like to run more than one type, but not all of them, call this script separately for each type.\n
   --batch_limit (-b):    An integer representing how many replication tables you want to run for this call of the script."
                          Default is all of them that are scheduled to run.\n
@@ -47,8 +47,8 @@ for opt, arg in opts:
         arg_schema = arg
     elif opt in ("-t", "--type"):
         arg_type = arg
-        if arg_type not in ("snap", "inserter", "updater", "dml", "logdel"):
-            print "--type (-t) must be one of the following: snap, inserter, updater, dml, logdel"
+        if arg_type not in ("snap", "inserter", "updater", "dml", "logdel", "table"):
+            print "--type (-t) must be one of the following: snap, inserter, updater, dml, logdel, table"
             sys.exit(2)
     elif opt in ("-b", "--batch_limit"):
         arg_batch_limit = arg
