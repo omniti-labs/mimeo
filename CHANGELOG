@@ -1,3 +1,9 @@
+0.10.2
+-- New refresh_table option for just doing a straight truncate and repull for a regular table. Only adding as a minor feature because other changes do not affect API and it's not recommended as a regular refresh job if possible. Also refresh_table() does not currently log to pg_jobmon, so cannot be monitored and will not set off any alerts if/when this refresh type fails. What this is useful for is having a way to get data from production to a staging/dev database where you still want to be able to edit the destination table. Could do that with Incremental or DML, but this avoids requiring any primary keys, control columns or write access on the source database.
+-- Removed custom enum type. Made things much more complicated than they needed to be. Enums are REALLY bad in extensions since you can never just add a new value in an update.
+-- The commands to remove the batch limit defaults & set the default boundaries for incremental replication were missing from the mimeo--0.9.3--0.10.1 bypass update file. If that file was used to update mimeo, the defaults were never changed and limits were still being set for new refresh jobs. Run those here again.
+
+
 0.10.1
 -- The update from 0.9.3 to 0.10.0 does not work for PostgreSQL versions less than 9.2 due to using GET STACKED DIAGNOSTIC. The direct upgrade script from 0.9.3 to 0.10.1 should provide a working by-pass if you're updating from <= 0.9.3.
 -- Removed call to GET STACKED DIAGNOSTIC since it's only compatible with 9.2

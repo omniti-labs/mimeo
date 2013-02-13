@@ -9,6 +9,12 @@ SELECT refresh_snap('mimeo_dest.snap_test_dest_filter');
 SELECT refresh_snap('mimeo_dest.snap_test_dest_condition');
 SELECT refresh_snap('mimeo_source.snap_test_source_empty');
 
+SELECT refresh_table('mimeo_dest.table_test_dest');
+SELECT refresh_table('mimeo_dest.table_test_dest_nodata');
+SELECT refresh_table('mimeo_dest.table_test_dest_filter');
+SELECT refresh_table('mimeo_dest.table_test_dest_condition');
+SELECT refresh_table('mimeo_dest.table_test_dest_empty');
+
 SELECT refresh_inserter('mimeo_source.inserter_test_source');
 SELECT refresh_inserter('mimeo_dest.inserter_test_dest');
 SELECT refresh_inserter('mimeo_dest.inserter_test_dest_nodata');

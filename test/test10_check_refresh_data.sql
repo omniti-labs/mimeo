@@ -2,7 +2,7 @@
 
 SELECT set_config('search_path','mimeo, dblink, tap',false);
 
-SELECT plan(32);
+SELECT plan(38);
 
 SELECT pass('Re-running refresh functions. This may take a bit...');
 
@@ -11,6 +11,12 @@ SELECT refresh_snap('mimeo_dest.snap_test_dest');
 SELECT refresh_snap('mimeo_dest.snap_test_dest_nodata');
 SELECT refresh_snap('mimeo_dest.snap_test_dest_filter');
 SELECT refresh_snap('mimeo_dest.snap_test_dest_condition');
+
+SELECT refresh_table('mimeo_dest.table_test_dest');
+SELECT refresh_table('mimeo_dest.table_test_dest_nodata');
+SELECT refresh_table('mimeo_dest.table_test_dest_filter');
+SELECT refresh_table('mimeo_dest.table_test_dest_condition');
+SELECT refresh_table('mimeo_dest.table_test_dest_empty');
 
 SELECT refresh_inserter('mimeo_source.inserter_test_source');
 SELECT refresh_inserter('mimeo_dest.inserter_test_dest');
@@ -61,6 +67,28 @@ SELECT hasnt_column('mimeo_dest', 'snap_test_dest_filter_snap2', 'col3', 'Check 
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.snap_test_dest_condition ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.snap_test_source WHERE col1 > 9000 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.snap_test_dest_condition');
+
+
+-- ########## PLAIN TABLE TESTS ##########
+SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.table_test_dest ORDER BY col1 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.snap_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
+    'Check data for: mimeo_dest.table_test_dest');
+
+SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.table_test_dest_nodata ORDER BY col1 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.snap_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
+    'Check data for: mimeo_dest.table_test_dest');
+
+SELECT results_eq('SELECT col1, col2 FROM mimeo_dest.table_test_dest_filter ORDER BY col1 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2 FROM mimeo_source.snap_test_source ORDER BY col1 ASC'') t (col1 int, col2 text)',
+    'Check data for: mimeo_dest.table_test_dest_filter');
+SELECT hasnt_column('mimeo_dest', 'table_test_dest_filter', 'col3', 'Check that table_test_dest_filter_snap1 DOESN''T have col3');
+
+SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.table_test_dest_condition ORDER BY col1 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.snap_test_source WHERE col1 > 9000 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
+    'Check data for: mimeo_dest.table_test_dest_condition');
+
+SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_dest.table_test_dest_empty ORDER BY col1 ASC', 'Check data for: mimeo_dest.table_test_dest_empty');
+
 
 -- ########## INSERTER TESTS ##########
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source ORDER BY col1 ASC',

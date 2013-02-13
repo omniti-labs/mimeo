@@ -9,6 +9,13 @@ SELECT snapshot_maker('mimeo_source.snap_test_source', data_source_id, 'mimeo_de
 SELECT snapshot_maker('mimeo_source.snap_test_source', data_source_id, 'mimeo_dest.snap_test_dest_condition', p_condition := 'WHERE col1 > 9000') FROM dblink_mapping WHERE username = 'mimeo_test';
 SELECT snapshot_maker('mimeo_source.snap_test_source_empty', data_source_id) FROM dblink_mapping WHERE username = 'mimeo_test';
 
+-- Just reuse snap table source since it's doing mostly the same thing
+SELECT table_maker('mimeo_source.snap_test_source', data_source_id, 'mimeo_dest.table_test_dest') FROM dblink_mapping WHERE username = 'mimeo_test';
+SELECT table_maker('mimeo_source.snap_test_source', data_source_id, 'mimeo_dest.table_test_dest_nodata', p_pulldata := false) FROM dblink_mapping WHERE username = 'mimeo_test';
+SELECT table_maker('mimeo_source.snap_test_source', data_source_id, 'mimeo_dest.table_test_dest_filter', p_filter := '{"col1","col2"}') FROM dblink_mapping WHERE username = 'mimeo_test';
+SELECT table_maker('mimeo_source.snap_test_source', data_source_id, 'mimeo_dest.table_test_dest_condition', p_condition := 'WHERE col1 > 9000') FROM dblink_mapping WHERE username = 'mimeo_test';
+SELECT table_maker('mimeo_source.snap_test_source_empty', data_source_id, 'mimeo_dest.table_test_dest_empty') FROM dblink_mapping WHERE username = 'mimeo_test';
+
 SELECT inserter_maker('mimeo_source.inserter_test_source', 'col3', data_source_id, '00:00:05'::interval) FROM dblink_mapping WHERE username = 'mimeo_test';
 SELECT inserter_maker('mimeo_source.inserter_test_source', 'col3', data_source_id,'00:00:05'::interval, 'mimeo_dest.inserter_test_dest') FROM dblink_mapping WHERE username = 'mimeo_test';
 SELECT inserter_maker('mimeo_source.inserter_test_source', 'col3', data_source_id,'00:00:05'::interval, 'mimeo_dest.inserter_test_dest_nodata', p_pulldata := false) FROM dblink_mapping WHERE username = 'mimeo_test';

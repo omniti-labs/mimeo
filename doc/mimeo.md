@@ -14,6 +14,8 @@ Also be aware that if you stop incremental replication permanently on a table, a
 
 DML replication replays on the destination every insert, update and delete that happens on the source table. The special "logdel" dml replication does not remove rows that are deleted on the source. Instead it grabs the latest data that was deleted from the source, updates that on the destination and logs a timestamp of when it was deleted from the source (special destination timestamp field is called *mimeo_source_deleted* to try and keep it from conflicting with any existing column names).
 
+There is also a plain table replication method that always does a truncate and refresh every time it is run. It requires no primary keys, control columns or triggers on the source table. It is recommended not to use this refresh method for a regular refresh job if possible since it is much less efficient. What this is ideal for is a staging or development database where you just want to pull data from production on an as-needed basis and be able to edit things on the destination. Since it requires no write access on the source database, you can safely connect to your production system to grab data (as long as you set permissions properly). This replication method also does not use pg_jobmon so it means tables using this method cannot be monitored.
+
 The **p_condition** option in the maker functions (and the **condition** column in the config tables) can be used to as a way to designate specific rows that should be replicated. This is done using the WHERE condition part of what would be a select query on the source table. You can also designate a comma separated list of tables before the WHERE keyword if you need to join against other tables on the SOURCE database. When doing this, assume that the source table is already listed as part of the FROM clause and that your table will be second in the list (which means you must begin with a comma). Please note that using the JOIN keyword to join again other tables is not guarenteed to work at this time. Some examples of how this field are used in the maker functions:
 
     SELECT mimeo.snapshot_maker(..., p_condition := 'WHERE col1 > 4 AND col2 <> ''test''');
@@ -79,11 +81,21 @@ Functions
  * Can be setup with logdel_maker(...) and removed with logdel_destroyer(...) functions.  
  * p_limit, an optional argument, can be used to change the limit on how many rows are grabbed from the source with each run of the function. Defaults to all new rows if not given here or set in configuration table. Has no affect on function performance as it does with inserter/updater.
 
+*refresh_table(p_destination text, p_debug boolean DEFAULT false)*  
+ * A basic replication method that simply truncates the destination and repulls all the data.
+ * Requires no primary keys or control columns. Requires no write access on the source database.
+ * Not ideal for regular replication, but useful for a stage/dev database pulling data from production.
+ * DOES NOT use pg_jobmon to log refreshes so cannot be monitored.
+ * Can be setup with table_maker(...) and removed with table_destroyer(...) functions.  
+ * For replication on a table that doesn't need to be edited on the destination, the other methods are recommended for better performance.
+ * Use case is for staging/dev systems that need to pull from a production system and should have no write access on said system. It requires no primary keys, control columns or triggers/queues on the source.
+ * Does not log to pg_jobmon so cannot be monitored.
+
 *snapshot_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true)*  
  * Function to automatically setup snapshot replication for a table. By default source and destination table will have same schema and table names.  
  * Destination table CANNOT exist first due to the way the snapshot system works (view /w two tables).
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.
- * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
+ * p_dest_table, an optional argument, is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
  * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication.
  * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
@@ -170,6 +182,19 @@ Functions
  * Be aware that only the owner of a table can drop triggers, so this function will fail if the source database mimeo role does not own the source table. This is the way PostgreSQL permissions are currently setup and there's nothing I can do about it.
  * Pass 'ARCHIVE' as p_archive_option to leave the destination table intact. Pass any other value to completely remove everything.
 
+*table_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true)*  
+ * Function to automatically setup plain table replication. By default source and destination table will have same schema and table names.  
+ * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.
+ * p_dest_table, an optional argument, is to set a custom destination table. Be sure to schema qualify it if needed.
+ * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
+ * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication.
+ * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
+ * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
+
+*table_destroyer(p_dest_table text, p_archive_option text)*  
+ * Function to automatically remove a plain replication table from the destination.  
+ * Pass 'ARCHIVE' as p_archive_option to leave the destination table intact. Pass any other value to completely remove everything.
+
 
 !!!!!!!!!!!!!!!!!  THIS FUNCTION IS DEPRECATED AND WILL BE EXPLICITLY DROPPED IN VERSION 1.0 !!!!!!!!!!!!!!!!!  
 *run_refresh(p_type text, p_batch int DEFAULT 4, p_debug boolean DEFAULT false)*  
@@ -181,7 +206,6 @@ This function is no longer installed as of 0.10.0, but may still be around if yo
 Using this function, a single failure of a replication job when running batches greater than one would cause ALL replication jobs that ran before it in the same batch to roll back. This could continue without knowing that the other jobs were never running successfully on time since pg_jobmon's log entries are not rolled back and the jobs were assumed to have completed successfully.
 
 Please use the external python script of the same name instead for more reliable batch runs (see **Extras** below). With that script each job is commited individually.
-
 !!!!!!!!!!!!!!!!!  THIS FUNCTION IS DEPRECATED AND WILL BE EXPLICITLY DROPPED IN VERSION 1.0 !!!!!!!!!!!!!!!!!  
 
 Tables
@@ -255,6 +279,11 @@ Tables
     pk_name         - Text array of all the column names that make up the source table primary key
     pk_type         - Text array of all the column types that make up the source table primary key
 
+*refresh_config_table*  
+    Child of refresh_config. Contains config info for plain table replication jobs.
+
+    source_table    - Table name from source database. If not public, should be schema qualified
+    
 Extras
 ------
 
@@ -274,7 +303,7 @@ Extras
 
 *dml_maker_pre90.sql*
  * Alternate function for dml_maker() to provide a way to use a pre-9.0 version of PostgreSQL as the source database.
- * Also requires "refresh_snap_pre90" to be installed as "refresh_snap".
+ * Also requires "refresh_snap_pre90" to be installed as "refresh_snap_pre90".
  * Useful if you're using mimeo to upgrade PostgreSQL across major versions.
  * Please read the notes in the top of this sql file for more important information.
 

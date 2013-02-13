@@ -1,7 +1,7 @@
 {
     "name": "mimeo",
     "abstract": "Extension for specialized, per-table replication between PostgreSQL databases",
-    "version": "0.10.1",
+    "version": "0.10.2",
     "maintainer": [ 
         "Keith Fiske <keith@omniti.com>"
     ],
@@ -19,9 +19,9 @@
     },
     "provides": {
         "mimeo": {
-            "file": "sql/mimeo--0.10.1.sql",
+            "file": "sql/mimeo--0.10.2.sql",
             "docfile": "doc/mimeo.md",
-            "version": "0.10.1",
+            "version": "0.10.2",
             "abstract": "Extension for specialized, per-table replication between PostgreSQL databases"
         }
     },
