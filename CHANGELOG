@@ -1,3 +1,8 @@
+0.10.3
+-- Plain table refresh method didn't work to well if you had foreign keys set up on your dev database. Added an option in the config table to do a truncate cascade. Please be VERY careful when you use this. It is set to false by default and must be changed manually via an update to the config table.
+-- Bug fix: Make refresh_table() properly set the last_run column.
+
+
 0.10.2
 -- New refresh_table option for just doing a straight truncate and repull for a regular table. Only adding as a minor feature because other changes do not affect API and it's not recommended as a regular refresh job if possible. Also refresh_table() does not currently log to pg_jobmon, so cannot be monitored and will not set off any alerts if/when this refresh type fails. What this is useful for is having a way to get data from production to a staging/dev database where you still want to be able to edit the destination table. Could do that with Incremental or DML, but this avoids requiring any primary keys, control columns or write access on the source database.
 -- Removed custom enum type. Made things much more complicated than they needed to be. Enums are REALLY bad in extensions since you can never just add a new value in an update.

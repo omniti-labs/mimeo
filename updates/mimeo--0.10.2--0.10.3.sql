@@ -1,7 +1,14 @@
+-- Plain table refresh method didn't work to well if you had foreign keys set up on your dev database. Added an option in the config table to do a truncate cascade. Please be VERY careful when you use this and be sure to also refresh the tables your foreign key references when you refresh the parent table. It is set to false by default and must be changed manually via an update to the config table.
+-- Bug fix: Make refresh_table properly set the last_run column.
+
+ALTER TABLE @extschema@.refresh_config_table ADD truncate_cascade boolean NOT NULL DEFAULT false;
+
+DROP FUNCTION @extschema@.refresh_table(text, boolean);
+
 /*
  *  Plain table refresh function. 
  */
-CREATE FUNCTION refresh_table(p_destination text, p_truncate_cascade boolean DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
+CREATE OR REPLACE FUNCTION refresh_table(p_destination text, p_truncate_cascade boolean DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
     LANGUAGE plpgsql
     AS $$
 DECLARE

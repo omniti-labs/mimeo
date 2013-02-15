@@ -97,5 +97,6 @@ SELECT pg_catalog.pg_extension_config_dump('refresh_config_table', '');
 ALTER TABLE @extschema@.refresh_config_table ADD CONSTRAINT refresh_config_table_dblink_fkey FOREIGN KEY (dblink) REFERENCES @extschema@.dblink_mapping(data_source_id);
 ALTER TABLE @extschema@.refresh_config_table ADD CONSTRAINT refresh_config_table_dest_table_pkey PRIMARY KEY (dest_table);
 ALTER TABLE @extschema@.refresh_config_table ADD COLUMN source_table text NOT NULL;
+ALTER TABLE @extschema@.refresh_config_table ADD COLUMN truncate_cascade boolean NOT NULL DEFAULT false;
 ALTER TABLE @extschema@.refresh_config_table ALTER COLUMN type SET DEFAULT 'table';
 ALTER TABLE @extschema@.refresh_config_table ADD CONSTRAINT refresh_config_snap_type_check CHECK (type = 'table');

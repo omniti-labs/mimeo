@@ -14,7 +14,7 @@ Also be aware that if you stop incremental replication permanently on a table, a
 
 DML replication replays on the destination every insert, update and delete that happens on the source table. The special "logdel" dml replication does not remove rows that are deleted on the source. Instead it grabs the latest data that was deleted from the source, updates that on the destination and logs a timestamp of when it was deleted from the source (special destination timestamp field is called *mimeo_source_deleted* to try and keep it from conflicting with any existing column names).
 
-There is also a plain table replication method that always does a truncate and refresh every time it is run. It requires no primary keys, control columns or triggers on the source table. It is recommended not to use this refresh method for a regular refresh job if possible since it is much less efficient. What this is ideal for is a staging or development database where you just want to pull data from production on an as-needed basis and be able to edit things on the destination. Since it requires no write access on the source database, you can safely connect to your production system to grab data (as long as you set permissions properly). This replication method also does not use pg_jobmon so it means tables using this method cannot be monitored.
+There is also a plain table replication method that always does a truncate and refresh every time it is run. It requires no primary keys, control columns or triggers on the source table. It is not recommended to use this refresh method for a regular refresh job if possible since it is much less efficient. What this is ideal for is a development database where you just want to pull data from production on an as-needed basis and be able to edit things on the destination. Since it requires no write access on the source database, you can safely connect to your production system to grab data (as long as you set permissions properly). This replication method also does not use pg_jobmon so it means tables using this method cannot be monitored.
 
 The **p_condition** option in the maker functions (and the **condition** column in the config tables) can be used to as a way to designate specific rows that should be replicated. This is done using the WHERE condition part of what would be a select query on the source table. You can also designate a comma separated list of tables before the WHERE keyword if you need to join against other tables on the SOURCE database. When doing this, assume that the source table is already listed as part of the FROM clause and that your table will be second in the list (which means you must begin with a comma). Please note that using the JOIN keyword to join again other tables is not guarenteed to work at this time. Some examples of how this field are used in the maker functions:
 
@@ -81,15 +81,12 @@ Functions
  * Can be setup with logdel_maker(...) and removed with logdel_destroyer(...) functions.  
  * p_limit, an optional argument, can be used to change the limit on how many rows are grabbed from the source with each run of the function. Defaults to all new rows if not given here or set in configuration table. Has no affect on function performance as it does with inserter/updater.
 
-*refresh_table(p_destination text, p_debug boolean DEFAULT false)*  
+*refresh_table(p_destination text, p_truncate_cascade boolean DEFAULT NULL, p_debug boolean DEFAULT false)  
  * A basic replication method that simply truncates the destination and repulls all the data.
- * Requires no primary keys or control columns. Requires no write access on the source database.
- * Not ideal for regular replication, but useful for a stage/dev database pulling data from production.
- * DOES NOT use pg_jobmon to log refreshes so cannot be monitored.
+ * Not ideal for normal replication but is useful for dev systems that need to pull from a production system and should have no write access on said system. It requires no primary keys, control columns or triggers/queues on the source.
+ * DOES NOT use pg_jobmon to log refreshes so cannot be monitored or accidentally set off alarms.
  * Can be setup with table_maker(...) and removed with table_destroyer(...) functions.  
- * For replication on a table that doesn't need to be edited on the destination, the other methods are recommended for better performance.
- * Use case is for staging/dev systems that need to pull from a production system and should have no write access on said system. It requires no primary keys, control columns or triggers/queues on the source.
- * Does not log to pg_jobmon so cannot be monitored.
+ * p_truncate_cascade, an optional argument that will cascade the truncation of the given table to any tables that reference it with foreign keys. This argument is here to provide an override to the config table option. Both this parameter and the config table default to NOT doing a cascade, so doing this should be a conscious choice.
 
 *snapshot_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true)*  
  * Function to automatically setup snapshot replication for a table. By default source and destination table will have same schema and table names.  
@@ -282,7 +279,8 @@ Tables
 *refresh_config_table*  
     Child of refresh_config. Contains config info for plain table replication jobs.
 
-    source_table    - Table name from source database. If not public, should be schema qualified
+    source_table        - Table name from source database. If not public, should be schema qualified
+    p_truncate_cascade  - Boolean that causes the truncate part of the refresh to cascade to any tables that reference it with foreign keys. Defaults to FALSE. To change this you must manually update the config table and set it to true. Be EXTREMELY careful with this option.
     
 Extras
 ------
