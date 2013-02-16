@@ -8,6 +8,7 @@ CREATE FUNCTION table_maker(
     , p_index boolean DEFAULT true
     , p_filter text[] DEFAULT NULL
     , p_condition text DEFAULT NULL
+    , p_sequences text[] DEFAULT NULL
     , p_pulldata boolean DEFAULT true) 
 RETURNS void
     LANGUAGE plpgsql
@@ -21,6 +22,8 @@ v_dest_table_name           text;
 v_dst_active                boolean;
 v_insert_refresh_config     text;
 v_max_timestamp             timestamptz;
+v_seq                       text;
+v_seq_max                   bigint;
 
 BEGIN
 
@@ -59,9 +62,9 @@ ELSE
     RAISE NOTICE 'Destination table % already exists. No data or indexes were pulled from source', p_dest_table;
 END IF;
 
-v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_table(source_table, dest_table, dblink, last_run, filter, condition) VALUES('
+v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_table(source_table, dest_table, dblink, last_run, filter, condition, sequences) VALUES('
     ||quote_literal(p_src_table)||','||quote_literal(p_dest_table)||','|| p_dblink_id||','
-    ||quote_literal(CURRENT_TIMESTAMP)||','||COALESCE(quote_literal(p_filter), 'NULL')||','||COALESCE(quote_literal(p_condition), 'NULL')||');';
+    ||quote_literal(CURRENT_TIMESTAMP)||','||COALESCE(quote_literal(p_filter), 'NULL')||','||COALESCE(quote_literal(p_condition), 'NULL')||','||COALESCE(quote_literal(p_sequences), 'NULL')||');';
 
 RAISE NOTICE 'Inserting data into config table';
 EXECUTE v_insert_refresh_config;

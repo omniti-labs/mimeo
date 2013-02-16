@@ -1,3 +1,8 @@
+0.10.4
+-- Allow refresh_table() to handle if there are sequences in the destination table. See mimeo.md doc file for required configuration if this is needed.
+-- Added p_sequences argument to table_maker() so they can be setup to be reset right away. Maker function does not reset them, just adds them to the config table so the refresh function can do so.
+
+
 0.10.3
 -- Plain table refresh method didn't work to well if you had foreign keys set up on your dev database. Added an option in the config table to do a truncate cascade. Please be VERY careful when you use this. It is set to false by default and must be changed manually via an update to the config table.
 -- Bug fix: Make refresh_table() properly set the last_run column.

@@ -1,6 +1,6 @@
 SELECT set_config('search_path','mimeo, dblink, tap',false);
 
-SELECT plan(42);
+SELECT plan(43);
 
 SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test password=mimeo_test');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established'); 
@@ -34,6 +34,9 @@ SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_source.snap_test_source_empt
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.table_test_dest ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.snap_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.table_test_dest');
+-- Make sure sequences are getting reset if configured to do so on destination
+SELECT nextval('mimeo_dest.col1_seq');
+SELECT results_eq('SELECT currval(''mimeo_dest.col1_seq'')::text', ARRAY['20001'], 'Check that destination sequence was reset for mimeo_dest.table_test_dest');
 
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.table_test_dest_nodata ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.snap_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',

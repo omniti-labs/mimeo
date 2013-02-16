@@ -14,7 +14,7 @@ Also be aware that if you stop incremental replication permanently on a table, a
 
 DML replication replays on the destination every insert, update and delete that happens on the source table. The special "logdel" dml replication does not remove rows that are deleted on the source. Instead it grabs the latest data that was deleted from the source, updates that on the destination and logs a timestamp of when it was deleted from the source (special destination timestamp field is called *mimeo_source_deleted* to try and keep it from conflicting with any existing column names).
 
-There is also a plain table replication method that always does a truncate and refresh every time it is run. It requires no primary keys, control columns or triggers on the source table. It is not recommended to use this refresh method for a regular refresh job if possible since it is much less efficient. What this is ideal for is a development database where you just want to pull data from production on an as-needed basis and be able to edit things on the destination. Since it requires no write access on the source database, you can safely connect to your production system to grab data (as long as you set permissions properly). This replication method also does not use pg_jobmon so it means tables using this method cannot be monitored.
+There is also a plain table replication method that always does a truncate and refresh every time it is run. It requires no primary keys, control columns or triggers on the source table. It is not recommended to use this refresh method for a regular refresh job if possible since it is much less efficient. What this is ideal for is a development database where you just want to pull data from production on an as-needed basis and be able to edit things on the destination. Since it requires no write access on the source database, you can safely connect to your production system to grab data (as long as you set permissions properly). This replication method also does not use pg_jobmon so it means tables using this method cannot be monitored. It has options available for dealing with foreign key constraints and resetting sequences on the destination.
 
 The **p_condition** option in the maker functions (and the **condition** column in the config tables) can be used to as a way to designate specific rows that should be replicated. This is done using the WHERE condition part of what would be a select query on the source table. You can also designate a comma separated list of tables before the WHERE keyword if you need to join against other tables on the SOURCE database. When doing this, assume that the source table is already listed as part of the FROM clause and that your table will be second in the list (which means you must begin with a comma). Please note that using the JOIN keyword to join again other tables is not guarenteed to work at this time. Some examples of how this field are used in the maker functions:
 
@@ -84,8 +84,9 @@ Functions
 *refresh_table(p_destination text, p_truncate_cascade boolean DEFAULT NULL, p_debug boolean DEFAULT false)  
  * A basic replication method that simply truncates the destination and repulls all the data.
  * Not ideal for normal replication but is useful for dev systems that need to pull from a production system and should have no write access on said system. It requires no primary keys, control columns or triggers/queues on the source.
- * DOES NOT use pg_jobmon to log refreshes so cannot be monitored or accidentally set off alarms.
- * Can be setup with table_maker(...) and removed with table_destroyer(...) functions.  
+ * DOES NOT use pg_jobmon to log refreshes so cannot be monitored at this time.
+ * Can be setup with table_maker(...) and removed with table_destroyer(...) functions.
+ * If the destination table has any sequences, they can be reset by adding them to the *sequences* array column in the *refresh_config_table* table or with the *p_sequences* option in the maker function. Note this will check all tables that have the given sequences set as a default at the time the refresh is run and reset the sequence to the highest value found.
  * p_truncate_cascade, an optional argument that will cascade the truncation of the given table to any tables that reference it with foreign keys. This argument is here to provide an override to the config table option. Both this parameter and the config table default to NOT doing a cascade, so doing this should be a conscious choice.
 
 *snapshot_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true)*  
@@ -184,9 +185,11 @@ Functions
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.
  * p_dest_table, an optional argument, is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
- * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication.
+ * p_filter, an optional argument, is a text array list that can be used to designate only specific columns that should be used for replication.
  * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
+ * p_sequences, an optional argument, is a text array list of schema qualified sequences used as default values in the destination table. This maker function does NOT automatically pull sequences from the source database. If you require that sequences exist on the destination, you'll have to create them and alter the table manually. This option provides an easy way to add them if your destination table exists and already has sequences. The maker function will not reset them. Run the refresh function to have them reset.
  * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
+
 
 *table_destroyer(p_dest_table text, p_archive_option text)*  
  * Function to automatically remove a plain replication table from the destination.  
@@ -280,7 +283,10 @@ Tables
     Child of refresh_config. Contains config info for plain table replication jobs.
 
     source_table        - Table name from source database. If not public, should be schema qualified
-    p_truncate_cascade  - Boolean that causes the truncate part of the refresh to cascade to any tables that reference it with foreign keys. Defaults to FALSE. To change this you must manually update the config table and set it to true. Be EXTREMELY careful with this option.
+    truncate_cascade    - Boolean that causes the truncate part of the refresh to cascade to any tables that reference it with foreign keys. 
+                          Defaults to FALSE. To change this you must manually update the config table and set it to true. Be EXTREMELY careful with this option.
+    sequences           - An optional text array that can contain the schema qualified names of any sequences used as default values in the destination table. 
+                          These sequences will be reset every time the refresh function is run, checking all tables that use the sequence as a default value.
     
 Extras
 ------
