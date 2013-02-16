@@ -1,3 +1,7 @@
+0.10.5
+-- If a sequence column type was a bigint but the highest value turned out to be an int, the sequence_max_value() function's query plan wasn't handling it well. Explicitly casting to a bigint during variable assignment fixed it.
+
+
 0.10.4
 -- Allow refresh_table() to handle if there are sequences in the destination table. See mimeo.md doc file for required configuration if this is needed.
 -- Added p_sequences argument to table_maker() so they can be setup to be reset right away. Maker function does not reset them, just adds them to the config table so the refresh function can do so.

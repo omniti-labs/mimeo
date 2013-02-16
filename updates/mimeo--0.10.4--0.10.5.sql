@@ -1,8 +1,10 @@
+-- If a sequence column type was a bigint but the highest value turned out to be an int, the sequence_max_value() function's query plan wasn't handling it well. Explicitly casting to a bigint during variable assignment fixed it.
+
 /*
  * Returns the highest value for the given sequence by checking all columns that use it as a default
  * Awesome query poached and fixed from http://stackoverflow.com/a/5943183
  */
-CREATE FUNCTION sequence_max_value(oid) RETURNS bigint
+CREATE OR REPLACE FUNCTION sequence_max_value(oid) RETURNS bigint
     LANGUAGE plpgsql STRICT
     AS $$ 
 DECLARE
