@@ -21,9 +21,9 @@ FOR v_tabrelid, v_colname IN
         )
     ) 
 LOOP
-    FOR v_row IN EXECUTE 'SELECT max(' || quote_ident(v_colname) || ') FROM ' || v_tabrelid::regclass LOOP
+    FOR v_row IN EXECUTE 'SELECT max(' || quote_ident(v_colname) || ')::bigint FROM ' || v_tabrelid::regclass LOOP
         IF v_newmax IS NULL OR v_row.max > v_newmax THEN
-            v_newmax := v_row.max::bigint;
+            v_newmax := v_row.max;
         END IF;
     END LOOP;
 END LOOP;

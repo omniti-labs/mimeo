@@ -1,4 +1,4 @@
--- If a sequence column type was a bigint but the highest value turned out to be an int, the sequence_max_value() function's query plan wasn't handling it well. Explicitly casting to a bigint during variable assignment fixed it.
+-- If a sequence column type was a bigint but the highest value turned out to be an int (or vice versa), the sequence_max_value() function's query plan wasn't handling it well. Explicitly casting max() to bigint fixed it.
 
 /*
  * Returns the highest value for the given sequence by checking all columns that use it as a default
@@ -23,9 +23,9 @@ FOR v_tabrelid, v_colname IN
         )
     ) 
 LOOP
-    FOR v_row IN EXECUTE 'SELECT max(' || quote_ident(v_colname) || ') FROM ' || v_tabrelid::regclass LOOP
+    FOR v_row IN EXECUTE 'SELECT max(' || quote_ident(v_colname) || ')::bigint FROM ' || v_tabrelid::regclass LOOP
         IF v_newmax IS NULL OR v_row.max > v_newmax THEN
-            v_newmax := v_row.max::bigint;
+            v_newmax := v_row.max;
         END IF;
     END LOOP;
 END LOOP;
