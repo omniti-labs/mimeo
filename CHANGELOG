@@ -1,3 +1,8 @@
+0.10.6
+-- Bug fix: When repulling data from source for specific time periods in refresh_inserter() or refresh_updater(), it was recording the last_value of the batch instead of the real last value of the destination table. This bug was introduced in v0.10.0 with the new remote cursor data fetching method. If you've used this repull method, please check for data duplication on the destination. Repulling for that time period again should fix things.
+-- Note in docs that the only type of indexes from the source tables that are currently supported properly when recreating them on the destination are B-tree. 
+
+
 0.10.5
 -- If a sequence column type was a bigint but the highest value turned out to be an int, the sequence_max_value() function's query plan wasn't handling it well. Explicitly casting to a bigint during variable assignment fixed it.
 

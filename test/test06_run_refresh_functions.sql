@@ -8,6 +8,7 @@ SELECT refresh_snap('mimeo_dest.snap_test_dest_nodata');
 SELECT refresh_snap('mimeo_dest.snap_test_dest_filter');
 SELECT refresh_snap('mimeo_dest.snap_test_dest_condition');
 SELECT refresh_snap('mimeo_source.snap_test_source_empty');
+SELECT refresh_snap('mimeo_dest.snap_test_dest_change_col');
 
 SELECT refresh_table('mimeo_dest.table_test_dest');
 SELECT refresh_table('mimeo_dest.table_test_dest_nodata');

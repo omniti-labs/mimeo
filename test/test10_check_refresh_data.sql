@@ -2,7 +2,7 @@
 
 SELECT set_config('search_path','mimeo, dblink, tap',false);
 
-SELECT plan(38);
+SELECT plan(44);
 
 SELECT pass('Re-running refresh functions. This may take a bit...');
 
@@ -11,6 +11,9 @@ SELECT refresh_snap('mimeo_dest.snap_test_dest');
 SELECT refresh_snap('mimeo_dest.snap_test_dest_nodata');
 SELECT refresh_snap('mimeo_dest.snap_test_dest_filter');
 SELECT refresh_snap('mimeo_dest.snap_test_dest_condition');
+-- Call twice to change both snap tables
+SELECT refresh_snap('mimeo_dest.snap_test_dest_change_col');
+SELECT refresh_snap('mimeo_dest.snap_test_dest_change_col');
 
 SELECT refresh_table('mimeo_dest.table_test_dest');
 SELECT refresh_table('mimeo_dest.table_test_dest_nodata');
@@ -67,6 +70,22 @@ SELECT hasnt_column('mimeo_dest', 'snap_test_dest_filter_snap2', 'col3', 'Check 
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.snap_test_dest_condition ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.snap_test_source WHERE col1 > 9000 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.snap_test_dest_condition');
+
+SELECT results_eq('SELECT col1, col3, col4 FROM mimeo_dest.snap_test_dest_change_col ORDER BY col1 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col3, col4 FROM mimeo_source.snap_test_source_change_col ORDER BY col1 ASC'') t (col1 int, col3 timestamptz, col4 bigint)',
+    'Check data for: mimeo_dest.snap_test_dest_change_col');
+SELECT has_view('mimeo_dest', 'snap_test_dest_change_col', 'Check that view exists: mimeo_dest.snap_test_dest_change_col');
+SELECT columns_are('mimeo_dest', 'snap_test_dest_change_col_snap1', ARRAY['col1', 'col3', 'col4'], 'Check that column change propagated for mimeo_dest.snap_test_dest_change_col_snap1');
+SELECT columns_are('mimeo_dest', 'snap_test_dest_change_col_snap2', ARRAY['col1', 'col3', 'col4'], 'Check that column change propagated for mimeo_dest.snap_test_dest_change_col_snap2');
+SELECT col_is_pk('mimeo_dest','snap_test_dest_change_col_snap1', ARRAY['col1'],'Check primary key for: mimeo_dest.snap_test_dest_change_col_snap1');
+SELECT col_is_pk('mimeo_dest','snap_test_dest_change_col_snap2', ARRAY['col1'],'Check primary key for: mimeo_dest.snap_test_dest_change_col_snap2');
+/* For 0.11.0 update of snapshot stuff
+SELECT table_privs_are('mimeo_dest', 'snap_test_dest_change_col', 'mimeo_dumb_role', ARRAY['SELECT'], 'Checking mimeo_dumb_role privileges for mimeo_dest.snap_test_dest_change_col');
+SELECT table_privs_are('mimeo_dest', 'snap_test_dest_change_col_snap1', 'mimeo_dumb_role', ARRAY['SELECT'], 'Checking mimeo_dumb_role privileges for mimeo_dest.snap_test_dest_change_col_snap1');
+SELECT table_privs_are('mimeo_dest', 'snap_test_dest_change_col_snap2', 'mimeo_dumb_role', ARRAY['SELECT'], 'Checking mimeo_dumb_role privileges for mimeo_dest.snap_test_dest_change_col_snap2');
+SELECT view_owner_is ('mimeo_dest', 'snap_test_dest_change_col', 'mimeo_test', 'Check ownership for view mimeo_dest.snap_test_dest_change_col');
+*/
+
 
 
 -- ########## PLAIN TABLE TESTS ##########

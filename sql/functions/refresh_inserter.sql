@@ -30,8 +30,9 @@ v_insert_sql            text;
 v_job_id                int;
 v_jobmon_schema         text;
 v_job_name              text;
+v_last_fetched          timestamptz;
 v_last_value            timestamptz;
-v_last_value_new      timestamptz;
+--v_last_value_new      timestamptz;
 v_limit                 int;
 v_now                   timestamptz := now();
 v_old_search_path       text;
@@ -195,16 +196,14 @@ LOOP
     EXECUTE v_fetch_sql;
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
     v_total := v_total + coalesce(v_rowcount, 0);
-    IF v_rowcount > 0 AND v_rowcount IS NOT NULL THEN -- otherwise would set max to NULL on last loop
-        EXECUTE 'SELECT max('||v_control||') FROM '||v_tmp_table INTO v_last_value_new;
-    END IF;
+    EXECUTE 'SELECT max('||v_control||') FROM '||v_tmp_table INTO v_last_fetched;
     IF v_limit IS NULL THEN -- insert into the real table in batches if no limit to avoid excessively large temp tables
         EXECUTE 'INSERT INTO '||v_dest_table||' ('||v_cols||') SELECT '||v_cols||' FROM '||v_tmp_table;
         EXECUTE 'TRUNCATE '||v_tmp_table;
     END IF;
     EXIT WHEN v_rowcount = 0;        
-    PERFORM gdb(p_debug,'Fetching rows in batches: '||v_total||' done so far. New last_value: '||v_last_value_new);
-    PERFORM update_step(v_step_id, 'PENDING', 'Fetching rows in batches: '||v_total||' done so far. New last_value: '||v_last_value_new);
+    PERFORM gdb(p_debug,'Fetching rows in batches: '||v_total||' done so far. Last fetched: '||v_last_fetched);
+    PERFORM update_step(v_step_id, 'PENDING', 'Fetching rows in batches: '||v_total||' done so far. Last fetched: '||v_last_fetched);
 END LOOP;
 PERFORM dblink_close(v_dblink_name, 'mimeo_cursor');
 PERFORM update_step(v_step_id, 'OK','Rows fetched: '||v_total);
@@ -249,9 +248,10 @@ END IF; -- end v_limit IF
 
 IF v_batch_limit_reached <> 3 THEN
     v_step_id := add_step(v_job_id, 'Setting next lower boundary');
-    UPDATE refresh_config_inserter set last_value = coalesce(v_last_value_new, v_last_value), last_run = CURRENT_TIMESTAMP WHERE dest_table = p_destination;  
-    PERFORM update_step(v_step_id, 'OK','Lower boundary value is: '||coalesce(v_last_value_new, v_last_value));
-    PERFORM gdb(p_debug, 'Lower boundary value is: '||coalesce(v_last_value_new, v_last_value));
+    EXECUTE 'SELECT max('||v_control||') FROM '|| v_dest_table INTO v_last_value;
+    UPDATE refresh_config_inserter set last_value = coalesce(v_last_value, CURRENT_TIMESTAMP), last_run = CURRENT_TIMESTAMP WHERE dest_table = p_destination;  
+    PERFORM update_step(v_step_id, 'OK','Lower boundary value is: '|| coalesce(v_last_value, CURRENT_TIMESTAMP));
+    PERFORM gdb(p_debug, 'Lower boundary value is: '||coalesce(v_last_value, CURRENT_TIMESTAMP));
 END IF;
 
 EXECUTE 'DROP TABLE IF EXISTS ' || v_tmp_table;

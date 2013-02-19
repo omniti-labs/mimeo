@@ -2,7 +2,7 @@
 
 SELECT set_config('search_path','mimeo, dblink, tap',false);
 
-SELECT plan(55);
+SELECT plan(58);
 
 -- ########## SNAPSHOT DESTROYER ##########
 SELECT snapshot_destroyer('mimeo_dest.snap_test_dest', 'ARCHIVE');
@@ -38,6 +38,10 @@ SELECT hasnt_view('mimeo_source', 'snap_test_source_empty', 'Check snapshot_dest
 SELECT hasnt_table('mimeo_source', 'snap_test_source_empty_snap1', 'Check snapshot_destroyer dropped table: mimeo_source.snap_test_source_empty_snap1');
 SELECT hasnt_table('mimeo_source', 'snap_test_source_empty_snap2', 'Check snapshot_destroyer dropped table: mimeo_source.snap_test_source_empty_snap2');
 
+SELECT snapshot_destroyer('mimeo_dest.snap_test_dest_change_col', 'n');
+SELECT hasnt_view('mimeo_dest', 'snap_test_dest_change_col', 'Check snapshot_destroyer dropped view: mimeo_dest.snap_test_dest_change_col');
+SELECT hasnt_table('mimeo_dest', 'snap_test_dest_change_col_snap1', 'Check snapshot_destroyer dropped table: mimeo_dest.snap_test_dest_change_col_snap1');
+SELECT hasnt_table('mimeo_dest', 'snap_test_dest_change_col_snap2', 'Check snapshot_destroyer dropped table: mimeo_dest.snap_test_dest_change_col_snap2');
 
 -- ########## PLAIN TABLE DESTROYER ##########
 SELECT table_destroyer('mimeo_dest.table_test_dest', 'ARCHIVE');

@@ -20,6 +20,11 @@ SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.snap_test_source_emp
     col1 int,
     col2 text,
     col3 timestamptz DEFAULT clock_timestamp())');
+SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.snap_test_source_change_col (
+    col1 int primary key,
+    col2 text,
+    col3 timestamptz DEFAULT clock_timestamp())');
+SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.snap_test_source_change_col VALUES (generate_series(1,10000), ''test''||generate_series(1,10000)::text)');
 
 SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.inserter_test_source (
     col1 int PRIMARY KEY,

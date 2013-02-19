@@ -5,6 +5,11 @@ SELECT plan(2);
 SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test password=mimeo_test');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established');
 
+-- Change column on snap table to ensure the change propagates and permissions are kept
+SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.snap_test_source_change_col DROP COLUMN col2');
+SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.snap_test_source_change_col ADD COLUMN col4 bigint');
+SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.snap_test_source_change_col (col1, col4) VALUES (generate_series(20001,100000), generate_series(20001,100000))');
+
 -- Insert new data
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.snap_test_source VALUES (generate_series(20001,100000), ''test''||generate_series(20001,100000)::text)');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.inserter_test_source VALUES (generate_series(20001,100000), ''test''||generate_series(20001,100000)::text)');

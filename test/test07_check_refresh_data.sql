@@ -1,6 +1,6 @@
 SELECT set_config('search_path','mimeo, dblink, tap',false);
 
-SELECT plan(43);
+SELECT plan(44);
 
 SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test password=mimeo_test');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established'); 
@@ -29,6 +29,10 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.snap_test_dest_condit
     'Check data for: mimeo_dest.snap_test_dest_condition');
 
 SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_source.snap_test_source_empty ORDER BY col1 ASC', 'Check data for: mimeo_source.snap_test_source_empty');
+
+SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.snap_test_dest_change_col ORDER BY col1 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.snap_test_source_change_col ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
+    'Check data for: mimeo_dest.snap_test_dest_change_col');
 
 -- ########## PLAIN TABLE TESTS ##########
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.table_test_dest ORDER BY col1 ASC',

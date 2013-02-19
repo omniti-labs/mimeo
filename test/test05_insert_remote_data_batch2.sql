@@ -7,6 +7,7 @@ SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database conn
 
 -- Insert new data
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.snap_test_source VALUES (generate_series(10001,20000), ''test''||generate_series(10001,20000)::text)');
+SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.snap_test_source_change_col VALUES (generate_series(10001,20000), ''test''||generate_series(10001,20000)::text)');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.inserter_test_source VALUES (generate_series(10001,20000), ''test''||generate_series(10001,20000)::text)');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.updater_test_source VALUES (generate_series(10001,20000), ''test''||generate_series(10001,20000)::text)');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source VALUES (generate_series(10001,20000), ''test''||generate_series(10001,20000)::text)');
