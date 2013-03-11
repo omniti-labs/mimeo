@@ -4,9 +4,9 @@ Mimeo
 About
 ----
 
-Mimeo is a specialized replication extension for copying specific tables in one of several specialized ways from any number of source databases to a destination database where mimeo is installed. 
+Mimeo is a replication extension for copying specific tables in one of several specialized ways from any number of source databases to a destination database where mimeo is installed. 
 
-Snapshot replication is for copying the entire table from the source to the destination every time it is run. This is the only one of the replication types that can automatically replicate column changes (add, drop, rename, new type). If you're taking advantage of this please use the post_script column in the refresh_config_snap table to reproduce permissions or constraints after the destination is recreated. Indexes will be automatically recreated if the p_index parameter for the refresh_snap() function is set to true.
+Snapshot replication is for copying the entire table from the source to the destination every time it is run. This is the only one of the replication types that can automatically replicate column changes (add, drop, rename, new type). It can also detect if there has been no new DML (inserts, updates, deletes) on the source table and skip the data pull step entirely (does not work if source is a view). The "track_counts" PostgreSQL setting must be turned on for this to work (which is the default). Be aware that a column structure change will cause the tables and view to be recreated from scratch on the destination. Indexes as they exist on the source will be automatically recreated if the p_index parameter for the refresh_snap() function is set to true (default) and permissions as they exist on the destination will be preserved. But if you had any different indexes or constraints on the destination, you will have to use the *post_script* column in the config table to have them automatically recreated.
 
 Incremental replication comes in two forms: Insert Only and Insert/Update Only. This can only be done on a table that has a timestamp control column that is set during every insert and/or update. The update replication requires that the source has a primary key. Insert-only replication doesn't require a primary key, just the control column. If the source table ever has rows deleted, this WILL NOT be replicated to the destination.  
 Since incremental replication is time-based, systems that do not run in UTC time can have issues during DST changes. To account for this, these maker functions check the timezone of the server and if it is anything but UTC/GMT, it sets dst_active to true in the config table. This causes all replication to pause between 12:30am and 2:30am on the morning of any DST change day. These times can be adjusted if needed using the dst_start and dst_end columns in the refresh_config_inserter or refresh_config_updater table accordingly.
@@ -14,7 +14,7 @@ Also be aware that if you stop incremental replication permanently on a table, a
 
 DML replication replays on the destination every insert, update and delete that happens on the source table. The special "logdel" dml replication does not remove rows that are deleted on the source. Instead it grabs the latest data that was deleted from the source, updates that on the destination and logs a timestamp of when it was deleted from the source (special destination timestamp field is called *mimeo_source_deleted* to try and keep it from conflicting with any existing column names).
 
-There is also a plain table replication method that always does a truncate and refresh every time it is run. It requires no primary keys, control columns or triggers on the source table. It is not recommended to use this refresh method for a regular refresh job if possible since it is much less efficient. What this is ideal for is a development database where you just want to pull data from production on an as-needed basis and be able to edit things on the destination. Since it requires no write access on the source database, you can safely connect to your production system to grab data (as long as you set permissions properly). This replication method also does not use pg_jobmon so it means tables using this method cannot be monitored. It has options available for dealing with foreign key constraints and resetting sequences on the destination.
+There is also a plain table replication method that always does a truncate and refresh every time it is run, but doesn't use the view swap method that snapshot does. It just uses a normal table as the destination. It requires no primary keys, control columns or triggers on the source table. It is not recommended to use this refresh method for a regular refresh job if possible since it is much less efficient. What this is ideal for is a development database where you just want to pull data from production on an as-needed basis and be able to edit things on the destination. Since it requires no write access on the source database, you can safely connect to your production system to grab data (as long as you set permissions properly). This replication method also does not use pg_jobmon so it means tables using this method cannot be monitored. It has options available for dealing with foreign key constraints and resetting sequences on the destination.
 
 The **p_condition** option in the maker functions (and the **condition** column in the config tables) can be used to as a way to designate specific rows that should be replicated. This is done using the WHERE condition part of what would be a select query on the source table. You can also designate a comma separated list of tables before the WHERE keyword if you need to join against other tables on the SOURCE database. When doing this, assume that the source table is already listed as part of the FROM clause and that your table will be second in the list (which means you must begin with a comma). Please note that using the JOIN keyword to join again other tables is not guarenteed to work at this time. Some examples of how this field are used in the maker functions:
 
@@ -51,7 +51,7 @@ Functions
 ---------
 
 *refresh_snap(p_destination text, p_index boolean DEFAULT true, p_debug boolean DEFAULT false, p_pulldata boolean DEFAULT true)*  
- * Full table replication to the destination table given by p_destination. Automatically creates destination view and tables needed if they do not already exist.  
+ * Full table replication to the destination table given by p_destination. Automatically creates destination view and tables needed if they do not already exist. * If data has not changed on the soure (insert, update or delete), no data will be repulled. pg_jobmon still records that the job ran successfully and updates last_run, so you are still able to monitor that tables using this method are refreshed on a regular basis. It just logs that no new data was pulled.
  * Can be setup with snapshot_maker(...) and removed with snapshot_destroyer(...) functions.  
   * p_index, an optional argument, sets whether to recreate all indexes if any of the columns on the source table change. Defaults to true. Note this only applies when the columns on the source change, not the indexes. Currently only B-trees indexes are supported.
  * The final parameter, p_pulldata, does not generally need to be used and in most cases can just be ignored. It is primarily for internal use by the maker functions to allow their p_pulldata parameters to work.
@@ -237,7 +237,7 @@ Tables
 
     source_table    - Table name from source database. If not public, should be schema qualified
     post_script     - Text array of commands to run should the source columns ever change. Each value in the array is run as a single command
-                      Should contain commands for things such as recreating indexes/constraints or granting permission
+                      Should contain commands for things such as recreating indexes that are different than the source, but needed on the destination.
 
 *refresh_config_inserter*  
     Child of refresh_config. Contains config info for inserter replication jobs.
@@ -296,7 +296,7 @@ Extras
  * This script can be run as often as needed and refreshes will only fire if their interval period has passed.
  * --connection (-c)  Option to set the psycopg connection string to the database. Default is "host=localhost".
  * --schema (-s)  Option to set the schema that mimeo is installed to. Defaults to "mimeo".
- * --type (-t)  Option to set which type of replication to run (snap, inserter, updater, dml, logdel). Default is all types.
+ * --type (-t)  Option to set which type of replication to run (snap, inserter, updater, dml, logdel, table). Default is all types.
  * --batch_limit (-b)  Option to set how many tables to replicate in a single run of the script. Default is all jobs scheduled to run at time script is run.
  * Please see the howto.md file for some examples.
 
@@ -304,14 +304,34 @@ Extras
  * Alternate function for refresh_snap to provide a way to use a pre-9.0 version of PostgreSQL as the source database.
  * Useful if you're using mimeo to upgrade PostgreSQL across major versions.
  * Please read the notes in the top of this sql file for more important information.
+ * Requires one of the custom array_agg functions provided if source is less than v8.4.
+
+*snapshot_maker_pre90.sql*
+ * Alternate function for snapshot_maker to provide a way to use a pre9.0 version of PostgreSQL as the source database.
+ * Requires one of the custom array_agg functions provided if source is less than v8.4.
+ * Requires "refresh_snap_pre90" to be installed as "refresh_snap_pre90" in mimeo extension schema.
 
 *dml_maker_pre90.sql*
  * Alternate function for dml_maker() to provide a way to use a pre-9.0 version of PostgreSQL as the source database.
- * Also requires "refresh_snap_pre90" to be installed as "refresh_snap_pre90".
+ * Also requires "refresh_snap_pre90" to be installed as "refresh_snap_pre90" in mimeo extension schema.
  * Useful if you're using mimeo to upgrade PostgreSQL across major versions.
  * Please read the notes in the top of this sql file for more important information.
+ * Requires one of the custom array_agg functions provided if source is less than v8.4.
 
+*dml_maker_81.sql*
+ * Same as dml_maker_pre90, but for v8.1.
+  
 *refresh_dml_pre91.sql*
  * Alternate function for refresh_dml() to provide a way to use a pre-9.1 version of PostgreSQL as the source.
  * Useful if you're using mimeo to upgrade PostgreSQL across major versions. 
  * Please read the notes in the top of this sql file for more important information.
+ * Requires one of the custom array_agg functions provided if source is less than v8.4.
+
+*refresh_dml_81.sql*
+ * Same as refresh_dml_pre91, but for v8.1. 
+
+*array_agg_pre84.sql*
+ * An array aggregate function to be installed on the source database if it is less than major version 8.4 but greater than major version 8.1.
+
+*array_agg_81.sql*
+ * An array aggreate function to be installed on the source database if it is version 8.1.

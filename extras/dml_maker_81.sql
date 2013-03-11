@@ -1,14 +1,33 @@
 /*
  *  !!!!!! READ THIS FIRST !!!!!!
- *  Alternate function to provide a way to use a pre-9.0 version of PostgreSQL as the source.
+ *  Alternate function to provide a way to use PostgreSQL 8.1 as the source.
+ *  Another issue with 8.1 is that grants for mimeo source objects will not automatically be applied unless the source mimeo role is a superuser.
  *  This also requires the other extras function refresh_snap_pre90.sql to be installed as "refresh_snap_pre90" if the destination table has not been created first. 
  *  It is not installed as part of the extension so can be safely added and removed without affecting it if you don't rename the function to its original name.
  *  You must do a find-and-replace to set the proper schema that mimeo is installed to on the destination & source databases (these should be the same anyway).
  *  I left "@extschema@" in here from the original extension code to provide an easy string to find and replace. 
  *  Just search for that and replace with your installation's schema.
+ *
+ *  This function cannot yet remove mimeo source objects (trigger, trigger function & queue table) when there's an error. 
+ *  The following commands will remove all of them from a source database. Recommend reviewing the drop commands that are generated to ensure it only touches mimeo objects.
+    \t
+    \set ECHO all
+    \o drop_stuff
+    select 'DROP table '||schemaname||'.'||tablename||';' from pg_tables where schemaname = 'mimeo' and tablename like '%_q';
+    \o
+    \i drop_stuff
+    \o drop_stuff
+    select 'DROP TRIGGER '||tgname||' ON '||relname||';' from pg_trigger as t join pg_class as c on t.tgrelid = c.oid where tgname like '%_mimeo_trig';
+    \o
+    \i drop_stuff
+    \o drop_stuff
+    select 'DROP FUNCTION '||nspname||'.'||proname||'();' from pg_proc p join pg_namespace n on n.oid = p.pronamespace where proname like '%_queue';
+    \o
+    \i drop_stuff
+    \t
  */
 
-CREATE OR REPLACE FUNCTION @extschema@.dml_maker_pre90(
+CREATE OR REPLACE FUNCTION @extschema@.dml_maker_81(
     p_src_table text
     , p_dblink_id int
     , p_dest_table text DEFAULT NULL
@@ -40,11 +59,14 @@ v_pk_name_n_type            text[];
 v_pk_type                   text[] := p_pk_type;
 v_pk_value                  text := '';
 v_remote_exists             int := 0;
+v_remote_grants_sql         text;
 v_remote_key_sql            text;
 v_remote_q_index            text;
 v_remote_q_table            text;
+v_row                       record;
 v_src_table_name            text;
 v_trigger_func              text;
+v_version                   int;
 
 BEGIN
 
@@ -123,7 +145,7 @@ IF p_filter IS NOT NULL THEN
     END LOOP;
 END IF;
 
-v_remote_q_table := 'CREATE TABLE @extschema@.'||v_src_table_name||'_pgq (';
+v_remote_q_table := 'CREATE TABLE @extschema@.'||v_src_table_name||'_q (';
 WHILE v_pk_counter <= array_length(v_pk_name,1) LOOP
     v_remote_q_table := v_remote_q_table || v_pk_name[v_pk_counter]||' '||v_pk_type[v_pk_counter];
     v_pk_counter := v_pk_counter + 1;
@@ -135,7 +157,7 @@ v_remote_q_table := v_remote_q_table || ', processed boolean)';
 
 RAISE NOTICE 'v_remote_q_table: %', v_remote_q_table;
 
-v_remote_q_index := 'CREATE INDEX '||v_src_table_name||'_pgq_'||array_to_string(v_pk_name, '_')||'_idx ON @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||')';
+v_remote_q_index := 'CREATE INDEX '||v_src_table_name||'_q_'||array_to_string(v_pk_name, '_')||'_idx ON @extschema@.'||v_src_table_name||'_q ('||array_to_string(v_pk_name, ',')||')';
 
 v_pk_counter := 1;
 v_trigger_func := 'CREATE FUNCTION @extschema@.'||v_src_table_name||'_mimeo_queue() RETURNS trigger LANGUAGE plpgsql AS $_$ ';
@@ -144,12 +166,12 @@ v_trigger_func := 'CREATE FUNCTION @extschema@.'||v_src_table_name||'_mimeo_queu
     v_pk_value := array_to_string(v_pk_name, ', NEW.');
     v_pk_value := 'NEW.'||v_pk_value;
     v_trigger_func := v_trigger_func || ' 
-            INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
+            INSERT INTO @extschema@.'||v_src_table_name||'_q ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
     v_trigger_func := v_trigger_func || ' 
         ELSIF TG_OP = ''UPDATE'' THEN ';
     -- UPDATE needs to insert the NEW values so reuse v_pk_value from INSERT operation
     v_trigger_func := v_trigger_func || ' 
-            INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
+            INSERT INTO @extschema@.'||v_src_table_name||'_q ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
     -- Only insert the old row if the new key doesn't match the old key. This handles edge case when only one column of a composite key is updated
     v_trigger_func := v_trigger_func || ' 
             IF ';
@@ -164,14 +186,14 @@ v_trigger_func := 'CREATE FUNCTION @extschema@.'||v_src_table_name||'_mimeo_queu
     v_pk_value := array_to_string(v_pk_name, ', OLD.');
     v_pk_value := 'OLD.'||v_pk_value;
     v_trigger_func := v_trigger_func || ' 
-                INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
+                INSERT INTO @extschema@.'||v_src_table_name||'_q ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
     v_trigger_func := v_trigger_func || ' 
             END IF;';
     v_trigger_func := v_trigger_func || ' 
         ELSIF TG_OP = ''DELETE'' THEN ';
     -- DELETE needs to insert the OLD values so reuse v_pk_value from UPDATE operation
     v_trigger_func := v_trigger_func || ' 
-            INSERT INTO @extschema@.'||v_src_table_name||'_pgq ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
+            INSERT INTO @extschema@.'||v_src_table_name||'_q ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
 v_trigger_func := v_trigger_func || ' 
         END IF; RETURN NULL; END $_$;';
 
@@ -186,6 +208,14 @@ RAISE NOTICE 'Creating objects on source database (function, trigger & queue tab
 PERFORM dblink_exec('mimeo_dml', v_remote_q_table);
 PERFORM dblink_exec('mimeo_dml', v_remote_q_index);
 PERFORM dblink_exec('mimeo_dml', v_trigger_func);
+-- Grant any current role with write privileges on source table INSERT on the queue table before the trigger is actually created
+v_remote_grants_sql := 'SELECT DISTINCT grantee FROM information_schema.table_privileges WHERE table_schema ||''.''|| table_name = '||quote_literal(p_dest_table)||' and privilege_type IN (''INSERT'',''UPDATE'',''DELETE'')';
+FOR v_row IN SELECT grantee FROM dblink('mimeo_dml', v_remote_grants_sql) t (grantee text)
+LOOP
+    PERFORM dblink_exec('mimeo_dml', 'GRANT USAGE ON SCHEMA @extschema@ TO '||quote_ident(v_row.grantee));
+    PERFORM dblink_exec('mimeo_dml', 'GRANT INSERT ON TABLE @extschema@.'||v_src_table_name||'_q TO '||quote_ident(v_row.grantee));
+    PERFORM dblink_exec('mimeo_dml', 'GRANT EXECUTE ON FUNCTION @extschema@.'||v_src_table_name||'_mimeo_queue() TO '||quote_ident(v_row.grantee));
+END LOOP;
 PERFORM dblink_exec('mimeo_dml', v_create_trig);
 
 -- Only create destination table if it doesn't already exist
@@ -214,7 +244,7 @@ ELSE
 END IF;
 
 v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_dml(source_table, dest_table, dblink, control, pk_name, pk_type, last_run, filter, condition) VALUES('
-    ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||', '||quote_literal('@extschema@.'||v_src_table_name||'_pgq')||', '
+    ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||', '||quote_literal('@extschema@.'||v_src_table_name||'_q')||', '
     ||quote_literal(v_pk_name)||', '||quote_literal(v_pk_type)||', '||quote_literal(CURRENT_TIMESTAMP)||','||COALESCE(quote_literal(p_filter), 'NULL')||','
     ||COALESCE(quote_literal(p_condition), 'NULL')||')';
 RAISE NOTICE 'Inserting data into config table';
@@ -230,21 +260,10 @@ EXCEPTION
     WHEN OTHERS THEN
         EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_dblink_schema||''',''false'')';
         -- Only cleanup remote objects if replication doesn't exist at all for source table
-        EXECUTE 'SELECT count(*) FROM @extschema@.refresh_config_dml WHERE source_table = '||quote_literal(p_src_table) INTO v_exists;
-        IF v_exists = 0 THEN
-            PERFORM dblink_exec('mimeo_dml', 'DROP TABLE IF EXISTS @extschema@.'||v_src_table_name||'_pgq');
-            PERFORM dblink_exec('mimeo_dml', 'DROP TRIGGER IF EXISTS '||v_src_table_name||'_mimeo_trig ON '||p_src_table);
-            PERFORM dblink_exec('mimeo_dml', 'DROP FUNCTION IF EXISTS @extschema@.'||v_src_table_name||'_mimeo_queue()');
-        END IF;
         IF dblink_get_connections() @> '{mimeo_dml}' THEN
             PERFORM dblink_disconnect('mimeo_dml');
         END IF;
         EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
-        IF v_exists = 0 THEN
-            RAISE EXCEPTION 'dml_maker() failure. No mimeo configuration found for source %. Cleaned up source table mimeo objects (queue table, function & trigger) if they existed.  SQLERRM: %', p_src_table, SQLERRM;
-        ELSE
-            RAISE EXCEPTION 'dml_maker() failure. Check to see if dml configuration for % already exists. SQLERRM: % ', p_src_table, SQLERRM;
-        END IF;
+        RAISE EXCEPTION 'dml_maker() failure. You may need to clean up source table mimeo objects (queue table, function & trigger) if they were created.  SQLERRM: %', SQLERRM;
 END
 $$;
-

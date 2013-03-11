@@ -2,7 +2,7 @@
 
 SELECT set_config('search_path','mimeo, dblink, tap',false);
 
-SELECT plan(44);
+SELECT plan(48);
 
 SELECT pass('Re-running refresh functions. This may take a bit...');
 
@@ -79,13 +79,10 @@ SELECT columns_are('mimeo_dest', 'snap_test_dest_change_col_snap1', ARRAY['col1'
 SELECT columns_are('mimeo_dest', 'snap_test_dest_change_col_snap2', ARRAY['col1', 'col3', 'col4'], 'Check that column change propagated for mimeo_dest.snap_test_dest_change_col_snap2');
 SELECT col_is_pk('mimeo_dest','snap_test_dest_change_col_snap1', ARRAY['col1'],'Check primary key for: mimeo_dest.snap_test_dest_change_col_snap1');
 SELECT col_is_pk('mimeo_dest','snap_test_dest_change_col_snap2', ARRAY['col1'],'Check primary key for: mimeo_dest.snap_test_dest_change_col_snap2');
-/* For 0.11.0 update of snapshot stuff
 SELECT table_privs_are('mimeo_dest', 'snap_test_dest_change_col', 'mimeo_dumb_role', ARRAY['SELECT'], 'Checking mimeo_dumb_role privileges for mimeo_dest.snap_test_dest_change_col');
 SELECT table_privs_are('mimeo_dest', 'snap_test_dest_change_col_snap1', 'mimeo_dumb_role', ARRAY['SELECT'], 'Checking mimeo_dumb_role privileges for mimeo_dest.snap_test_dest_change_col_snap1');
 SELECT table_privs_are('mimeo_dest', 'snap_test_dest_change_col_snap2', 'mimeo_dumb_role', ARRAY['SELECT'], 'Checking mimeo_dumb_role privileges for mimeo_dest.snap_test_dest_change_col_snap2');
 SELECT view_owner_is ('mimeo_dest', 'snap_test_dest_change_col', 'mimeo_test', 'Check ownership for view mimeo_dest.snap_test_dest_change_col');
-*/
-
 
 
 -- ########## PLAIN TABLE TESTS ##########

@@ -35,9 +35,11 @@ IF p_dest_table IS NULL THEN
     p_dest_table := p_src_table;
 END IF;
 
-IF position('.' in p_dest_table) > 0 THEN
+IF position('.' in p_dest_table) > 0 AND position('.' in p_src_table) > 0 THEN
     v_dest_schema_name := split_part(p_dest_table, '.', 1); 
     v_dest_table_name := split_part(p_dest_table, '.', 2);
+ELSE
+    RAISE EXCEPTION 'Source (and destination) table must be schema qualified';
 END IF;
 
 -- Only create destination table if it doesn't already exist
@@ -78,3 +80,4 @@ EXECUTE 'DELETE FROM @extschema@.refresh_config_snap WHERE source_table = '||quo
 RAISE NOTICE 'Done';
 END
 $$;
+

@@ -1,3 +1,11 @@
+v0.11.0
+-- For snapshot replication, if the source's columns change and the destination tables & view are recreated, the original permissions are now automatically restored. Prior to this, the post_script array field had to be used to replay the grants. This is no longer required and you can remove any grant commands from the post_script columns.
+-- Snapshot refreshes can now detect whether the source table has had any DML changes (inserts, updates & deletes) and if there have been no changes, skip the data pull step completely. Does not work if source is a view. This can be a massive savings on system load for large tables that don't change often, but you still want to have a way to ensure you get any changes to the destination as soon as possible. The "track_counts" PostgreSQL setting must be turned on for this to work (which is the default).
+-- Truncate the old snapshot table as well after the view swap to avoid storing data twice. Thanks to Raghavendra for the suggestion.
+-- Snapshot & incremental maker functions now ensure that the given table names are schema qualified.
+-- Updated the extras functions for older source versions of postgresql. There's new dml functions for 8.1 as well as custom array_agg() functions that mimeo requires.
+
+
 0.10.6
 -- Bug fix: When repulling data from source for specific time periods in refresh_inserter() or refresh_updater(), it was recording the last_value of the batch instead of the real last value of the destination table. This bug was introduced in v0.10.0 with the new remote cursor data fetching method. If you've used this repull method, please check for data duplication on the destination. Repulling for that time period again should fix things.
 -- Note in docs that the only type of indexes from the source tables that are currently supported properly when recreating them on the destination are B-tree. 

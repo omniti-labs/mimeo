@@ -1,9 +1,9 @@
-Mimeo - How to Setup
+jimeo - How to Setup
 ==================
 
 Overview
 -------
-Mimeo is designed to be an easy to setup, per-table replication solution. Please don't feel overwhelmed at the length of this HowTo or all the options shown in the doc file. The extension has many options available, but I've tried to keep its basic use pretty simple, which is what is covered here. Many of the options may not be relevant for your initial needs, but they're there when/if you need them. This document will go over installing and setting up mimeo from the ground up and get each of the different types of replication working. 
+Mimeo is designed to be an easy to setup, per-table replication solution. Please don't feel overwhelmed at the length of this HowTo or all the options shown in the doc file. The extension has many options available, but I've tried to keep its basic use pretty simple, which is what is covered here. Many of the options may not be relevant for your initial needs, but they're there when/if you need them. This document will go over installing and setting up mimeo from the ground up and getting each of the different types of replication working. 
 
 This document assumes the following:
 
@@ -76,7 +76,7 @@ Ensure all source databases have their pg_hba.conf file set accordingly to allow
 
 Each of the replication types has its own maker (and destroyer) function. The dblink_id that is created when you enter data into the dblink_mapping table is used for every maker function to tell mimeo which source database to use. For snapshot and incremental, the only permissions needed are the ones listed above and to create tables on the destination database.
 
-Snapshot replication is the easiest to setup, but should be limited to smaller tables since it truncates the destination table and repulls all the source data every time it is run. 
+Snapshot replication is the easiest to setup, but should be limited to smaller or relatively static larger tables since it truncates the destination table and repulls all the source data every time it is run and the source data has changed. 
 
     destinationdb=# SELECT mimeo.snapshot_maker('public.snap_test_source', 1);
     NOTICE:  Inserting record in mimeo.refresh_config
@@ -88,11 +88,10 @@ Snapshot replication is the easiest to setup, but should be limited to smaller t
     ----------------
 
 - - -
-**Snapshot** is unique, however, in that it can automatically replicate column changes (add, drop, rename, & limited changing of data type). If you have any special permissions or constraints set on the destination snap table, you'll need to use the post_script array column to store commands to be replayed if the source columns ever do change. It's actually recommended to not have the same constraints on the destination since that can slow down the replication process. As long as the constraints exist on the source, and the only thing populating the destination tables is mimeo, you shouldn't run into data inconsistancies. But if you feel the need to do this, be aware that for constraints, there are two tables underlying a view. When a snap table is refreshed, there is a view that swaps between which one it points to. This is done to keep locking at a minimum while a refresh is done. But it also means that you have to create constraints on both underlying snap tables. 
+**Snapshot** is unique, however, in that it can automatically replicate column changes (add, drop, rename, & limited changing of data type). Since this process actually recreates the tables & view from scratch, if you have any special indexes or something else set on the destination snap tables or view, you'll need to use the post_script array column to store commands to be replayed if the source columns ever do change. Indexes that exist on the source and the permissions that were set on the destination will be preserved. Source constraints won't be recreated, but it's actually recommended to not have the same constraints on the destination since that can slow down the replication process. As long as the constraints exist on the source, and the only thing populating the destination tables is mimeo, you shouldn't run into data inconsistancies. But if you do need different table settings on the destination, be aware there are two tables underlying a view. When a snap table is refreshed, there is a view that swaps between which one it points to. This is done to keep locking at a minimum while a refresh is done. But it also means that you have to have commands for both underlying snap tables. 
 
-    UPDATE mimeo.refresh_config_snap SET post_script = '{"ALTER TABLE public.snap_test_source_snap1 ADD CHECK (col1 < 100)"
-    , "ALTER TABLE public.snap_test_source_snap2 ADD CHECK (col1 < 100)"
-    , "GRANT select ON public.snap_test_source TO omniti"}' 
+    UPDATE mimeo.refresh_config_snap SET post_script = '{"CREATE INDEX ON public.snap_test_source_snap1 (col1)"
+    , "CREATE INDEX ON public.snap_test_source_snap2 (col1)"}' 
     WHERE dest_table = 'public.snap_test_source';
 
 - - -

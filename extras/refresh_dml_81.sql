@@ -1,12 +1,12 @@
 /*
 * !!!!!! READ THIS FIRST !!!!!!
-* Alternate function to provide a way to use a pre-9.1 version of PostgreSQL as the source.
+* Alternate function to provide a way to use PostgreSQL 8.1 as the source.
 * It is not installed as part of the extension so can be safely added and removed without affecting it if you don't rename the function to its original name.
 * You must do a find-and-replace to set the proper schema that mimeo is installed to on the destination database.
 * I left "@extschema@" in here from the original extension code to provide an easy string to find and replace.
 * Just search for that and replace with your installation's schema.
 */
-CREATE OR REPLACE FUNCTION @extschema@.refresh_dml_pre91(p_destination text, p_limit int default NULL, p_repull boolean DEFAULT false, p_debug boolean DEFAULT false) RETURNS void
+CREATE OR REPLACE FUNCTION @extschema@.refresh_dml_81(p_destination text, p_limit int default NULL, p_repull boolean DEFAULT false, p_debug boolean DEFAULT false) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
@@ -141,10 +141,8 @@ v_pk_counter := 1;
 WHILE v_pk_counter <= array_length(v_pk_name,1) LOOP
     IF v_pk_counter > 1 THEN
         v_pk_name_type_csv := v_pk_name_type_csv || ', ';
-        v_pk_where := v_pk_where ||' AND ';
     END IF;
     v_pk_name_type_csv := v_pk_name_type_csv ||v_pk_name[v_pk_counter]||' '||v_pk_type[v_pk_counter];
-    v_pk_where := v_pk_where || ' a.'||v_pk_name[v_pk_counter]||' = b.'||v_pk_name[v_pk_counter];
     v_pk_counter := v_pk_counter + 1;
 END LOOP;
 
@@ -155,9 +153,17 @@ PERFORM dblink_connect(v_dblink_name, auth(v_dblink));
 -- update remote entries
 v_step_id := add_step(v_job_id,'Updating remote trigger table');
 -- Not really a WITH update anymore, but just re-using variable names from original
-v_with_update := 'UPDATE '||v_control||' AS a SET processed = true 
+v_pk_counter := 1;
+v_with_update := 'UPDATE '||v_control||' SET processed = true 
     FROM (SELECT '||v_pk_name_csv||' FROM '||v_control||' ORDER BY '||v_pk_name_csv||' LIMIT '||COALESCE(v_limit::text, 'ALL')||' ) AS b 
-    WHERE '||v_pk_where;
+    WHERE ';
+    WHILE v_pk_counter <= array_length(v_pk_name,1) LOOP
+        IF v_pk_counter > 1 THEN
+            v_with_update := v_with_update ||' AND ';
+        END IF;
+        v_with_update := v_with_update ||' '||v_control||'.'||v_pk_name[v_pk_counter]||' = b.'||v_pk_name[v_pk_counter];
+        v_pk_counter := v_pk_counter + 1;
+    END LOOP;
 v_trigger_update := 'SELECT dblink_exec('||quote_literal(v_dblink_name)||','|| quote_literal(v_with_update)||')';
 PERFORM gdb(p_debug,v_trigger_update);
 EXECUTE v_trigger_update INTO v_exec_status;    
@@ -203,7 +209,15 @@ ELSE
     PERFORM gdb(p_debug,'Temp queue table row count '||v_total::text);
 
     v_step_id := add_step(v_job_id,'Deleting records from local table');
-    v_delete_sql := 'DELETE FROM '||v_dest_table||' a USING '||v_tmp_table||'_queue b WHERE '|| v_pk_where; 
+    v_pk_counter := 1;
+    v_delete_sql := 'DELETE FROM '||v_dest_table||' a USING '||v_tmp_table||'_queue WHERE ';
+        WHILE v_pk_counter <= array_length(v_pk_name,1) LOOP
+            IF v_pk_counter > 1 THEN
+                v_delete_sql := v_delete_sql ||' AND ';
+            END IF;
+            v_delete_sql := v_delete_sql ||' '||v_dest_table||'.'||v_pk_name[v_pk_counter]||' = '||v_tmp_table||'_queue.'||v_pk_name[v_pk_counter];
+            v_pk_counter := v_pk_counter + 1;
+        END LOOP;
     PERFORM gdb(p_debug,v_delete_sql);
     EXECUTE v_delete_sql; 
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;

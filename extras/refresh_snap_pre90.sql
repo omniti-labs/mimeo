@@ -112,7 +112,7 @@ IF v_filter IS NOT NULL THEN
     v_remote_sql := v_remote_sql || ' AND ARRAY[attname::text] <@ '||quote_literal(v_filter);
 END IF;
 
-v_remote_sql := 'SELECT cols, cols_n_types FROM dblink('||quote_literal(v_dblink_name)||', ' || quote_literal(v_remote_sql) || ') t (cols text[], cols_n_types text[])';
+v_remote_sql := 'SELECT cols, cols_n_types FROM dblink('||quote_literal(v_dblink_name)||', ' || quote_literal(v_remote_sql) || ') AS t (cols text[], cols_n_types text[])';
 perform gdb(p_debug,'v_remote_sql: '||v_remote_sql);
 EXECUTE v_remote_sql INTO v_cols, v_cols_n_types;  
 perform gdb(p_debug,'v_cols: {'|| array_to_string(v_cols, ',') ||'}');
