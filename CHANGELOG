@@ -1,3 +1,7 @@
+v0.11.1
+-- Bug fix: New feature for refresh snap that skips the data pull if nothing changed on the source wasn't properly setting the last_run value in the config table. Could cause the job monitor to think the refresh job had not been run.
+
+
 v0.11.0
 -- For snapshot replication, if the source's columns change and the destination tables & view are recreated, the original permissions are now automatically restored. Prior to this, the post_script array field had to be used to replay the grants. This is no longer required and you can remove any grant commands from the post_script columns.
 -- Snapshot refreshes can now detect whether the source table has had any DML changes (inserts, updates & deletes) and if there have been no changes, skip the data pull step completely. Does not work if source is a view. This can be a massive savings on system load for large tables that don't change often, but you still want to have a way to ensure you get any changes to the destination as soon as possible. The "track_counts" PostgreSQL setting must be turned on for this to work (which is the default).

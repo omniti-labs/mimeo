@@ -1,7 +1,9 @@
+-- Bug fix: New feature for refresh snap that skips the data pull if nothing changed on the source wasn't properly setting the last_run value in the config table. Could cause the job monitor to think the refresh job had not been run.
+
 /*
  *  Snap refresh to repull all table data
  */
-CREATE FUNCTION refresh_snap(p_destination text, p_index boolean DEFAULT true, p_debug boolean DEFAULT false, p_pulldata boolean DEFAULT true) RETURNS void
+CREATE OR REPLACE FUNCTION refresh_snap(p_destination text, p_index boolean DEFAULT true, p_debug boolean DEFAULT false, p_pulldata boolean DEFAULT true) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE

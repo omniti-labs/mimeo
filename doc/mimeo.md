@@ -81,7 +81,7 @@ Functions
  * Can be setup with logdel_maker(...) and removed with logdel_destroyer(...) functions.  
  * p_limit, an optional argument, can be used to change the limit on how many rows are grabbed from the source with each run of the function. Defaults to all new rows if not given here or set in configuration table. Has no affect on function performance as it does with inserter/updater.
 
-*refresh_table(p_destination text, p_truncate_cascade boolean DEFAULT NULL, p_debug boolean DEFAULT false)  
+*refresh_table(p_destination text, p_truncate_cascade boolean DEFAULT NULL, p_debug boolean DEFAULT false)*  
  * A basic replication method that simply truncates the destination and repulls all the data.
  * Not ideal for normal replication but is useful for dev systems that need to pull from a production system and should have no write access on said system. It requires no primary keys, control columns or triggers/queues on the source.
  * DOES NOT use pg_jobmon to log refreshes so cannot be monitored at this time.
