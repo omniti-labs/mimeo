@@ -210,12 +210,12 @@ ELSE
 
     v_step_id := add_step(v_job_id,'Deleting records from local table');
     v_pk_counter := 1;
-    v_delete_sql := 'DELETE FROM '||v_dest_table||' a USING '||v_tmp_table||'_queue WHERE ';
+    v_delete_sql := 'DELETE FROM '||v_dest_table||' AS a USING '||v_tmp_table||'_queue WHERE ';
         WHILE v_pk_counter <= array_length(v_pk_name,1) LOOP
             IF v_pk_counter > 1 THEN
                 v_delete_sql := v_delete_sql ||' AND ';
             END IF;
-            v_delete_sql := v_delete_sql ||' '||v_dest_table||'.'||v_pk_name[v_pk_counter]||' = '||v_tmp_table||'_queue.'||v_pk_name[v_pk_counter];
+            v_delete_sql := v_delete_sql ||' a.'||v_pk_name[v_pk_counter]||' = '||v_tmp_table||'_queue.'||v_pk_name[v_pk_counter];
             v_pk_counter := v_pk_counter + 1;
         END LOOP;
     PERFORM gdb(p_debug,v_delete_sql);
