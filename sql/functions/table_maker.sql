@@ -9,14 +9,14 @@ CREATE FUNCTION table_maker(
     , p_filter text[] DEFAULT NULL
     , p_condition text DEFAULT NULL
     , p_sequences text[] DEFAULT NULL
-    , p_pulldata boolean DEFAULT true) 
+    , p_pulldata boolean DEFAULT true
+    , p_debug boolean DEFAULT false) 
 RETURNS void
     LANGUAGE plpgsql
     AS $$
 DECLARE
 
 v_data_source               text;
-v_dest_check                text;
 v_dest_schema_name          text;
 v_dest_table_name           text;
 v_dst_active                boolean;
@@ -24,6 +24,7 @@ v_insert_refresh_config     text;
 v_max_timestamp             timestamptz;
 v_seq                       text;
 v_seq_max                   bigint;
+v_table_exists              boolean;
 
 BEGIN
 
@@ -43,34 +44,26 @@ ELSE
     RAISE EXCEPTION 'Source (and destination) table must be schema qualified';
 END IF;
 
--- Only create destination table if it doesn't already exist
-SELECT schemaname||'.'||tablename INTO v_dest_check FROM pg_tables WHERE schemaname = v_dest_schema_name AND tablename = v_dest_table_name;
-IF v_dest_check IS NULL THEN
-
-    v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_snap(source_table, dest_table, dblink, filter, condition) VALUES('
-        ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '||p_dblink_id||','
-        ||COALESCE(quote_literal(p_filter), 'NULL')||','||COALESCE(quote_literal(p_condition), 'NULL')||')';
-
-    RAISE NOTICE 'Snapshotting source table to pull all current source data...';
-    EXECUTE v_insert_refresh_config;	
-
-    EXECUTE 'SELECT @extschema@.refresh_snap('||quote_literal(p_dest_table)||', p_index := '||p_index||', p_pulldata := '||p_pulldata||')';
-    PERFORM @extschema@.snapshot_destroyer(p_dest_table, 'ARCHIVE');
-    	
-    RAISE NOTICE 'Snapshot complete.';
-ELSE
-    RAISE NOTICE 'Destination table % already exists. No data or indexes were pulled from source', p_dest_table;
-END IF;
-
 v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_table(source_table, dest_table, dblink, last_run, filter, condition, sequences) VALUES('
     ||quote_literal(p_src_table)||','||quote_literal(p_dest_table)||','|| p_dblink_id||','
     ||quote_literal(CURRENT_TIMESTAMP)||','||COALESCE(quote_literal(p_filter), 'NULL')||','||COALESCE(quote_literal(p_condition), 'NULL')||','||COALESCE(quote_literal(p_sequences), 'NULL')||');';
-
-RAISE NOTICE 'Inserting data into config table';
+PERFORM @extschema@.gdb(p_debug, 'v_insert_refresh_config: '||v_insert_refresh_config);
 EXECUTE v_insert_refresh_config;
 
--- Remove temp snap from config
-EXECUTE 'DELETE FROM @extschema@.refresh_config_snap WHERE source_table = '||quote_literal(p_src_table)||' AND dest_table = '||quote_literal(p_dest_table);
+SELECT p_table_exists FROM @extschema@.manage_dest_table(p_dest_table, NULL, p_debug) INTO v_table_exists;
+
+IF p_pulldata AND v_table_exists = false THEN
+    RAISE NOTICE 'Pulling all data from source...';
+    EXECUTE 'SELECT @extschema@.refresh_table('||quote_literal(p_dest_table)||', p_debug := '||p_debug||')';
+END IF;
+
+IF p_index AND v_table_exists = false THEN
+    PERFORM @extschema@.create_index(p_dest_table, NULL, p_debug);
+END IF;
+
+IF v_table_exists THEN
+    RAISE NOTICE 'Destination table % already exists. No data or indexes were pulled from source', p_dest_table;
+END IF;
 
 RAISE NOTICE 'Done';
 END

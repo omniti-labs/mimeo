@@ -2,7 +2,7 @@
  *  Refresh based on DML (Insert, Update, Delete), but logs all deletes on the destination table
  *  Destination table requires extra column: mimeo_source_deleted timestamptz
  */
-CREATE FUNCTION refresh_logdel(p_destination text, p_limit int default NULL, p_debug boolean DEFAULT false) RETURNS void
+CREATE FUNCTION refresh_logdel(p_destination text, p_limit int DEFAULT NULL, p_repull boolean DEFAULT false, p_debug boolean DEFAULT false) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
@@ -46,6 +46,7 @@ v_tmp_table             text;
 v_total                 bigint := 0;
 v_trigger_delete        text; 
 v_trigger_update        text;
+v_truncate_remote_q     text;
 v_with_update           text;
 
 BEGIN
@@ -157,27 +158,6 @@ PERFORM gdb(p_debug,v_trigger_update);
 EXECUTE v_trigger_update INTO v_exec_status;    
 PERFORM update_step(v_step_id, 'OK','Result was '||v_exec_status);
 
-EXECUTE 'CREATE TEMP TABLE '||v_tmp_table||'_queue ('||v_pk_name_type_csv||')';
-v_remote_q_sql := 'SELECT DISTINCT '||v_pk_name_csv||' FROM '||v_control||' WHERE processed = true and mimeo_source_deleted IS NULL';
-PERFORM dblink_open(v_dblink_name, 'mimeo_cursor', v_remote_q_sql);
-v_step_id := add_step(v_job_id, 'Creating local queue temp table for inserts/updates');
-v_rowcount := 0;
-LOOP
-    v_fetch_sql := 'INSERT INTO '||v_tmp_table||'_queue ('||v_pk_name_csv||') 
-        SELECT '||v_pk_name_csv||' FROM dblink_fetch('||quote_literal(v_dblink_name)||', ''mimeo_cursor'', 50000) AS ('||v_pk_name_type_csv||')';
-    EXECUTE v_fetch_sql;
-    GET DIAGNOSTICS v_rowcount = ROW_COUNT;
-    EXIT WHEN v_rowcount = 0;
-    v_total := v_total + coalesce(v_rowcount, 0);
-    PERFORM gdb(p_debug,'Fetching rows in batches: '||v_total||' done so far.');
-    PERFORM update_step(v_step_id, 'PENDING', 'Fetching rows in batches: '||v_total||' done so far.');
-END LOOP;
-PERFORM dblink_close(v_dblink_name, 'mimeo_cursor');
-EXECUTE 'CREATE INDEX ON '||v_tmp_table||'_queue ('||v_pk_name_csv||')';
-EXECUTE 'ANALYZE '||v_tmp_table||'_queue';
-PERFORM update_step(v_step_id, 'OK','Number of rows inserted: '||v_total);
-PERFORM gdb(p_debug,'Temp inserts/updates queue table row count '||v_total::text);
-
 -- create temp table for recording deleted rows
 EXECUTE 'CREATE TEMP TABLE '||v_tmp_table||'_deleted ('||v_cols_n_types||', mimeo_source_deleted timestamptz)';
 v_remote_d_sql := 'SELECT '||v_cols||', mimeo_source_deleted FROM '||v_control||' WHERE processed = true and mimeo_source_deleted IS NOT NULL';
@@ -201,26 +181,73 @@ EXECUTE 'ANALYZE '||v_tmp_table||'_deleted';
 PERFORM update_step(v_step_id, 'OK','Number of rows inserted: '||v_total);
 PERFORM gdb(p_debug,'Temp deleted queue table row count '||v_total::text);  
 
--- remove records from local table (inserts/updates)
-v_step_id := add_step(v_job_id,'Removing insert/update records from local table');
-v_delete_f_sql := 'DELETE FROM '||v_dest_table||' a USING '||v_tmp_table||'_queue b WHERE '|| v_pk_where;
-PERFORM gdb(p_debug,v_delete_f_sql);
-EXECUTE v_delete_f_sql; 
-GET DIAGNOSTICS v_rowcount = ROW_COUNT;
-PERFORM gdb(p_debug,'Insert/Update rows removed from local table before applying changes: '||v_rowcount::text);
-PERFORM update_step(v_step_id, 'OK','Removed '||v_rowcount||' records');
+IF p_repull THEN
+    -- Do delete instead of truncate like refresh_dml to avoid missing rows between the above deleted queue fetch and here.
+    PERFORM update_step(v_step_id, 'OK','Request to repull ALL data from source. This could take a while...');
+    PERFORM gdb(p_debug, 'Request to repull ALL data from source. This could take a while...');
+    v_truncate_remote_q := 'SELECT dblink_exec('||quote_literal(v_dblink_name)||','||quote_literal('DELETE FROM '||v_control||' WHERE processed = true')||')';
+    PERFORM gdb(p_debug, v_truncate_remote_q);
+    EXECUTE v_truncate_remote_q;
 
--- remove records from local table (deleted rows)
-v_step_id := add_step(v_job_id,'Removing deleted records from local table');
-v_delete_d_sql := 'DELETE FROM '||v_dest_table||' a USING '||v_tmp_table||'_deleted b WHERE '|| v_pk_where;
-PERFORM gdb(p_debug,v_delete_d_sql);
-EXECUTE v_delete_d_sql; 
-GET DIAGNOSTICS v_rowcount = ROW_COUNT;
-PERFORM gdb(p_debug,'Deleted rows removed from local table before applying changes: '||v_rowcount::text);
-PERFORM update_step(v_step_id, 'OK','Removed '||v_rowcount||' records');
+    v_step_id := add_step(v_job_id,'Removing local, undeleted rows');
+    PERFORM gdb(p_debug,'Removing local, undeleted rows');
+    EXECUTE 'DELETE FROM '||v_dest_table||' WHERE mimeo_source_deleted IS NULL';
+    PERFORM update_step(v_step_id, 'OK','Done');
+
+    -- Define cursor query
+    v_remote_f_sql := 'SELECT '||v_cols||' FROM '||v_source_table;
+    IF v_condition IS NOT NULL THEN
+        v_remote_f_sql := v_remote_f_sql || ' ' || v_condition;
+    END IF;
+ELSE
+    -- Do normal stuff here
+    EXECUTE 'CREATE TEMP TABLE '||v_tmp_table||'_queue ('||v_pk_name_type_csv||')';
+    v_remote_q_sql := 'SELECT DISTINCT '||v_pk_name_csv||' FROM '||v_control||' WHERE processed = true and mimeo_source_deleted IS NULL';
+    PERFORM dblink_open(v_dblink_name, 'mimeo_cursor', v_remote_q_sql);
+    v_step_id := add_step(v_job_id, 'Creating local queue temp table for inserts/updates');
+    v_rowcount := 0;
+    LOOP
+        v_fetch_sql := 'INSERT INTO '||v_tmp_table||'_queue ('||v_pk_name_csv||') 
+            SELECT '||v_pk_name_csv||' FROM dblink_fetch('||quote_literal(v_dblink_name)||', ''mimeo_cursor'', 50000) AS ('||v_pk_name_type_csv||')';
+        EXECUTE v_fetch_sql;
+        GET DIAGNOSTICS v_rowcount = ROW_COUNT;
+        EXIT WHEN v_rowcount = 0;
+        v_total := v_total + coalesce(v_rowcount, 0);
+        PERFORM gdb(p_debug,'Fetching rows in batches: '||v_total||' done so far.');
+        PERFORM update_step(v_step_id, 'PENDING', 'Fetching rows in batches: '||v_total||' done so far.');
+    END LOOP;
+    PERFORM dblink_close(v_dblink_name, 'mimeo_cursor');
+    EXECUTE 'CREATE INDEX ON '||v_tmp_table||'_queue ('||v_pk_name_csv||')';
+    EXECUTE 'ANALYZE '||v_tmp_table||'_queue';
+    PERFORM update_step(v_step_id, 'OK','Number of rows inserted: '||v_total);
+    PERFORM gdb(p_debug,'Temp inserts/updates queue table row count '||v_total::text);
+
+    -- remove records from local table (inserts/updates)
+    v_step_id := add_step(v_job_id,'Removing insert/update records from local table');
+    v_delete_f_sql := 'DELETE FROM '||v_dest_table||' a USING '||v_tmp_table||'_queue b WHERE '|| v_pk_where;
+    PERFORM gdb(p_debug,v_delete_f_sql);
+    EXECUTE v_delete_f_sql; 
+    GET DIAGNOSTICS v_rowcount = ROW_COUNT;
+    PERFORM gdb(p_debug,'Insert/Update rows removed from local table before applying changes: '||v_rowcount::text);
+    PERFORM update_step(v_step_id, 'OK','Removed '||v_rowcount||' records');
+
+    -- remove records from local table (deleted rows)
+    v_step_id := add_step(v_job_id,'Removing deleted records from local table');
+    v_delete_d_sql := 'DELETE FROM '||v_dest_table||' a USING '||v_tmp_table||'_deleted b WHERE '|| v_pk_where;
+    PERFORM gdb(p_debug,v_delete_d_sql);
+    EXECUTE v_delete_d_sql; 
+    GET DIAGNOSTICS v_rowcount = ROW_COUNT;
+    PERFORM gdb(p_debug,'Deleted rows removed from local table before applying changes: '||v_rowcount::text);
+    PERFORM update_step(v_step_id, 'OK','Removed '||v_rowcount||' records');
+
+    -- Remote full query for normal replication 
+    v_remote_f_sql := 'SELECT '||v_cols||' FROM '||v_source_table||' JOIN ('||v_remote_q_sql||') x USING ('||v_pk_name_csv||')';
+    IF v_condition IS NOT NULL THEN
+        v_remote_f_sql := v_remote_f_sql || ' ' || v_condition;
+    END IF;
+END IF;
 
 -- insert records to local table (inserts/updates). Have to do temp table in case destination table is partitioned (returns 0 when inserting to parent)
-v_remote_f_sql := 'SELECT '||v_cols||' FROM '||v_source_table||' JOIN ('||v_remote_q_sql||') x USING ('||v_pk_name_csv||')';
 PERFORM dblink_open(v_dblink_name, 'mimeo_cursor', v_remote_f_sql);
 v_step_id := add_step(v_job_id, 'Inserting new/updated records into local table');
 EXECUTE 'CREATE TEMP TABLE '||v_tmp_table||'_full ('||v_cols_n_types||')'; 

@@ -17,7 +17,7 @@ SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.snap_test_source (
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.snap_test_source VALUES (generate_series(1,10000), ''test''||generate_series(1,10000)::text)');
 SELECT dblink_exec('mimeo_test', 'CREATE INDEX ON mimeo_source.snap_test_source (col2)');
 SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.snap_test_source_empty (
-    col1 int,
+    col1 int UNIQUE NOT NULL,
     col2 text,
     col3 timestamptz DEFAULT clock_timestamp())');
 SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.snap_test_source_change_col (
@@ -25,6 +25,8 @@ SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.snap_test_source_cha
     col2 text,
     col3 timestamptz DEFAULT clock_timestamp())');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.snap_test_source_change_col VALUES (generate_series(1,10000), ''test''||generate_series(1,10000)::text)');
+SELECT dblink_exec('mimeo_test', 'CREATE INDEX mimeo_check_exp_index_time ON mimeo_source.snap_test_source_change_col ((col3 > ''2013-04-01 00:00:00''))');
+SELECT dblink_exec('mimeo_test', 'CREATE INDEX mimeo_check_exp_index_lower ON mimeo_source.snap_test_source_change_col (lower(col2))');
 
 SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.inserter_test_source (
     col1 int PRIMARY KEY,

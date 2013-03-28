@@ -12,7 +12,7 @@ Incremental replication comes in two forms: Insert Only and Insert/Update Only. 
 Since incremental replication is time-based, systems that do not run in UTC time can have issues during DST changes. To account for this, these maker functions check the timezone of the server and if it is anything but UTC/GMT, it sets dst_active to true in the config table. This causes all replication to pause between 12:30am and 2:30am on the morning of any DST change day. These times can be adjusted if needed using the dst_start and dst_end columns in the refresh_config_inserter or refresh_config_updater table accordingly.
 Also be aware that if you stop incremental replication permanently on a table, all of the source data may not have reached the destination due to the boundary settings and/or other methods that are used to keep incremental replication in a consistent state. Please double-check that all your source data is on the destination before destroying the source.
 
-DML replication replays on the destination every insert, update and delete that happens on the source table. The special "logdel" dml replication does not remove rows that are deleted on the source. Instead it grabs the latest data that was deleted from the source, updates that on the destination and logs a timestamp of when it was deleted from the source (special destination timestamp field is called *mimeo_source_deleted* to try and keep it from conflicting with any existing column names).
+DML replication replays on the destination every insert, update and delete that happens on the source table. The special "logdel" dml replication does not remove rows that are deleted on the source. Instead it grabs the latest data that was deleted from the source, updates that on the destination and logs a timestamp of when it was deleted from the source (special destination timestamp field is called *mimeo_source_deleted* to try and keep it from conflicting with any existing column names). Be aware that for logdel, if you delete a row and then re-use that primary/unique key value again, you will lose the preserved, deleted row on the destination. Doing otherwise would either violate the key constraint or not replicate the new data.
 
 There is also a plain table replication method that always does a truncate and refresh every time it is run, but doesn't use the view swap method that snapshot does. It just uses a normal table as the destination. It requires no primary keys, control columns or triggers on the source table. It is not recommended to use this refresh method for a regular refresh job if possible since it is much less efficient. What this is ideal for is a development database where you just want to pull data from production on an as-needed basis and be able to edit things on the destination. Since it requires no write access on the source database, you can safely connect to your production system to grab data (as long as you set permissions properly). This replication method also does not use pg_jobmon so it means tables using this method cannot be monitored. It has options available for dealing with foreign key constraints and resetting sequences on the destination.
 
@@ -53,7 +53,7 @@ Functions
 *refresh_snap(p_destination text, p_index boolean DEFAULT true, p_debug boolean DEFAULT false, p_pulldata boolean DEFAULT true)*  
  * Full table replication to the destination table given by p_destination. Automatically creates destination view and tables needed if they do not already exist. * If data has not changed on the soure (insert, update or delete), no data will be repulled. pg_jobmon still records that the job ran successfully and updates last_run, so you are still able to monitor that tables using this method are refreshed on a regular basis. It just logs that no new data was pulled.
  * Can be setup with snapshot_maker(...) and removed with snapshot_destroyer(...) functions.  
-  * p_index, an optional argument, sets whether to recreate all indexes if any of the columns on the source table change. Defaults to true. Note this only applies when the columns on the source change, not the indexes. Currently only B-trees indexes are supported.
+  * p_index, an optional argument, sets whether to recreate all indexes if any of the columns on the source table change. Defaults to true. Note this only applies when the columns on the source change, not the indexes.
  * The final parameter, p_pulldata, does not generally need to be used and in most cases can just be ignored. It is primarily for internal use by the maker functions to allow their p_pulldata parameters to work.
 
 *refresh_inserter(p_destination text, p_limit integer DEFAULT NULL, p_repull boolean DEFAULT false, p_repull_start text DEFAULT NULL, p_repull_end text DEFAULT NULL, p_debug boolean DEFAULT false)*  
@@ -76,10 +76,11 @@ Functions
  * p_limit, an optional argument, can be used to change the limit on how many rows are grabbed from the source with each run of the function. Defaults to all new rows if not given here or set in configuration table. Has no affect on function performance as it does with inserter/updater.
  * p_repull, an optional argument, sets a flag to repull data from the source instead of getting new data. Note that **ALL local data will be truncated** and the ENTIRE source table will be repulled.
 
-*refresh_logdel(p_destination text, p_limit int default NULL, p_debug boolean DEFAULT false)*  
+*refresh_logdel(p_destination text, p_limit int DEFAULT NULL, p_repull boolean DEFAULT false, p_debug boolean DEFAULT false)*
  * Replicate tables by replaying INSERTS, UPDATES and DELETES in the order they occur on the source table, but DO NOT remove deleted tables from the destination table.
  * Can be setup with logdel_maker(...) and removed with logdel_destroyer(...) functions.  
  * p_limit, an optional argument, can be used to change the limit on how many rows are grabbed from the source with each run of the function. Defaults to all new rows if not given here or set in configuration table. Has no affect on function performance as it does with inserter/updater.
+ * p_repull, an optional argument, sets a flag to repull data from the source instead of getting new data. Unlike other refresh repull options this does NOT do a TRUNCATE; it deletes all rows where mimeo_source_deleted is not null, so old deleted rows are not lost on the destination. It is highly recommended to do a manual VACUUM after this is done, possibly even a VACUUM FULL to reclaim disk space.
 
 *refresh_table(p_destination text, p_truncate_cascade boolean DEFAULT NULL, p_debug boolean DEFAULT false)*  
  * A basic replication method that simply truncates the destination and repulls all the data.
@@ -89,12 +90,12 @@ Functions
  * If the destination table has any sequences, they can be reset by adding them to the *sequences* array column in the *refresh_config_table* table or with the *p_sequences* option in the maker function. Note this will check all tables that have the given sequences set as a default at the time the refresh is run and reset the sequence to the highest value found.
  * p_truncate_cascade, an optional argument that will cascade the truncation of the given table to any tables that reference it with foreign keys. This argument is here to provide an override to the config table option. Both this parameter and the config table default to NOT doing a cascade, so doing this should be a conscious choice.
 
-*snapshot_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true)*  
+*snapshot_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_debug boolean DEFAULT false)*  
  * Function to automatically setup snapshot replication for a table. By default source and destination table will have same schema and table names.  
  * Destination table CANNOT exist first due to the way the snapshot system works (view /w two tables).
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.
  * p_dest_table, an optional argument, is to set a custom destination table. Be sure to schema qualify it if needed.
- * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated. Currently only B-trees indexes are supported.
+ * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
  * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication.
  * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
  * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
@@ -105,14 +106,14 @@ Functions
   * Most recent snap is just renamed to the old view name, so all permissions, indexes, constraints, etc should be kept.  
   * Pass any other value to completely remove everything.
 
-*inserter_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00', p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true)*  
+*inserter_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00', p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_debug boolean DEFAULT false)*  
  * Function to automatically setup inserter replication for a table. By default source and destination table will have same schema and table names.  
  * If destination table already exists, no data will be pulled from the source. You can use the refresh_inserter() 'repull' option to truncate the destination table and grab all the source data. Or you can set the config table's 'last_value' column for your specified table to designate when it should start. Otherwise last_value will default to the destination's max value for the control field or, if null, the time that the maker function was run.
  * p_control_field is the column which is used as the control field (a timestamp field that is new for every insert).  
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.  
  * p_boundary, an optional argument, is a boundary value to prevent records being missed at the upper boundary of the batch. Set this to a value that will ensure all inserts will have finished for that time period when the replication runs. Default is 10 minutes which means the destination may always be 10 minutes behind the source but that also means that all inserts on the source will have finished by the time 10 minutes has passed.  
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
- * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated. Currently only B-trees indexes are supported.
+ * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
  * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication.
  * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
  * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
@@ -121,7 +122,7 @@ Functions
  * Function to automatically remove an inserter replication table from the destination.  
  * Pass 'ARCHIVE' as p_archive_option to leave the destination table intact. Pass any other value to completely remove everything.
 
-*updater_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00', p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_pk_name text[] DEFAULT NULL, p_pk_type text[] DEFAULT NULL)*  
+*updater_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00', p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_pk_name text[] DEFAULT NULL, p_pk_type text[] DEFAULT NULL, p_debug boolean DEFAULT false)*  
  * Function to automatically setup updater replication for a table. By default source and destination table will have same schema and table names.  
  * Source table must have a primary key or unique index. Either the primary key or a unique index (first in alphabetical order if more than one) on the source table will be obtained automatically. Columns of primary/unique key cannot be arrays nor can they be an expression.  
  * If destination table already exists, no data will be pulled from the source. You can use the refresh_updater() 'repull' option to truncate the destination table and grab all the source data. Or you can set the config table's 'last_value' column for your specified table to designate when it should start. Otherwise last_value will default to the destination's max value for the control field or, if null, the time that the maker function was run.
@@ -129,7 +130,7 @@ Functions
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.  
  * p_boundary, an optional argument, is a boundary value to prevent records being missed at the upper boundary of the batch. Set this to a value that will ensure all inserts/updates will have finished for that time period when the replication runs. Default is 10 minutes which means the destination may always be 10 minutes behind the source but that also means that all inserts/updates on the source will have finished by the time 10 minutes has passed.  
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
- * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated. Currently only B-trees indexes are supported. 
+ * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
  * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication.
  * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
  * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
@@ -140,14 +141,14 @@ Functions
  * Function to automatically remove an updater replication table from the destination.  
  * Pass 'ARCHIVE' as p_archive_option to leave the destination table intact. Pass any other value to completely remove everything.
 
-*dml_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_pk_name text[] DEFAULT NULL, p_pk_type text[] DEFAULT NULL)*  
+*dml_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_pk_name text[] DEFAULT NULL, p_pk_type text[] DEFAULT NULL, p_debug boolean DEFAULT false)*  
  * Function to automatically setup dml replication for a table. See setup instructions above for permissions that are needed on source database. By default source and destination table will have same schema and table names.  
  * Source table must have a primary key or unique index. Either the primary key or a unique index (first in alphabetical order if more than one) on the source table will be obtained automatically. Columns of primary/unique key cannot be arrays nor can they be an expression.  
  * If destination table already exists, no data will be pulled from the source. You can use the refresh_dml() 'repull' option to truncate the destination table and grab all the source data.  
  * The queue table and trigger function on the source database will have permissions set to allow any current roles with write privileges on the source table to use them. If any further privileges are changed on the source table, the queue and trigger function will have to have their privileges adjusted manually.
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.  
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
- * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated. Currently only B-trees indexes are supported.
+ * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
  * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication.
   * Source table trigger will only fire on UPDATES of the given columns (uses UPDATE OF col1 [, col2...]).
  * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
@@ -160,14 +161,14 @@ Functions
  * Be aware that only the owner of a table can drop triggers, so this function will fail if the source database mimeo role does not own the source table. This is the way PostgreSQL permissions are currently setup and there's nothing I can do about it.
  * Pass 'ARCHIVE' as p_archive_option to leave the destination table intact. Pass any other value to completely remove everything.
 
-*logdel_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_pk_name text[] DEFAULT NULL, p_pk_type text[] DEFAULT NULL)*  
+*logdel_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_pk_name text[] DEFAULT NULL, p_pk_type text[] DEFAULT NULL, p_debug boolean DEFAULT false)*  
  * Function to automatically setup logdel replication for a table. See setup instructions above for permissions that are needed on source database. By default source and destination table will have same schema and table names.  
  * Source table must have a primary key or unique index. Either the primary key or a unique index (first in alphabetical order if more than one) on the source table will be obtained automatically. Columns of primary/unique key cannot be arrays nor can they be an expression.  
  * If destination table already exists, no data will be pulled from the source. You can use the refresh_logdel() 'repull' option to truncate the destination table and grab all the source data.
  * The queue table and trigger function on the source database will have permissions set to allow any current roles with write privileges on the source table to use them. If any further privileges are changed on the source table, the queue and trigger function will have to have their privileges adjusted manually.
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.  
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
- * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated. Currently only B-trees indexes are supported.
+ * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
  * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
  * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication.
   * Source table trigger will only fire on UPDATES of the given columns (uses UPDATE OF col1 [, col2...]).
@@ -180,21 +181,19 @@ Functions
  * Be aware that only the owner of a table can drop triggers, so this function will fail if the source database mimeo role does not own the source table. This is the way PostgreSQL permissions are currently setup and there's nothing I can do about it.
  * Pass 'ARCHIVE' as p_archive_option to leave the destination table intact. Pass any other value to completely remove everything.
 
-*table_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true)*  
+*table_maker(p_src_table text, p_dblink_id int, p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_sequences text[] DEFAULT NULL, p_pulldata boolean DEFAULT true, p_debug boolean DEFAULT false)*
  * Function to automatically setup plain table replication. By default source and destination table will have same schema and table names.  
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.
  * p_dest_table, an optional argument, is to set a custom destination table. Be sure to schema qualify it if needed.
- * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated. Currently only B-trees indexes are supported.
+ * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
  * p_filter, an optional argument, is a text array list that can be used to designate only specific columns that should be used for replication.
  * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
  * p_sequences, an optional argument, is a text array list of schema qualified sequences used as default values in the destination table. This maker function does NOT automatically pull sequences from the source database. If you require that sequences exist on the destination, you'll have to create them and alter the table manually. This option provides an easy way to add them if your destination table exists and already has sequences. The maker function will not reset them. Run the refresh function to have them reset.
  * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
 
-
 *table_destroyer(p_dest_table text, p_archive_option text)*  
  * Function to automatically remove a plain replication table from the destination.  
  * Pass 'ARCHIVE' as p_archive_option to leave the destination table intact. Pass any other value to completely remove everything.
-
 
 !!!!!!!!!!!!!!!!!  THIS FUNCTION IS DEPRECATED AND WILL BE EXPLICITLY DROPPED IN VERSION 1.0 !!!!!!!!!!!!!!!!!  
 *run_refresh(p_type text, p_batch int DEFAULT 4, p_debug boolean DEFAULT false)*  

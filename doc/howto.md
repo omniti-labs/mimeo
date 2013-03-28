@@ -1,4 +1,4 @@
-jimeo - How to Setup
+Mimeo - How to Setup
 ==================
 
 Overview
@@ -79,13 +79,13 @@ Each of the replication types has its own maker (and destroyer) function. The db
 Snapshot replication is the easiest to setup, but should be limited to smaller or relatively static larger tables since it truncates the destination table and repulls all the source data every time it is run and the source data has changed. 
 
     destinationdb=# SELECT mimeo.snapshot_maker('public.snap_test_source', 1);
-    NOTICE:  Inserting record in mimeo.refresh_config
-    NOTICE:  Insert successful
     NOTICE:  attempting first snapshot
     NOTICE:  attempting second snapshot
-    NOTICE:  all done
+    NOTICE:  Done
      snapshot_maker 
     ----------------
+     
+    (1 row)
 
 - - -
 **Snapshot** is unique, however, in that it can automatically replicate column changes (add, drop, rename, & limited changing of data type). Since this process actually recreates the tables & view from scratch, if you have any special indexes or something else set on the destination snap tables or view, you'll need to use the post_script array column to store commands to be replayed if the source columns ever do change. Indexes that exist on the source and the permissions that were set on the destination will be preserved. Source constraints won't be recreated, but it's actually recommended to not have the same constraints on the destination since that can slow down the replication process. As long as the constraints exist on the source, and the only thing populating the destination tables is mimeo, you shouldn't run into data inconsistancies. But if you do need different table settings on the destination, be aware there are two tables underlying a view. When a snap table is refreshed, there is a view that swaps between which one it points to. This is done to keep locking at a minimum while a refresh is done. But it also means that you have to have commands for both underlying snap tables. 
@@ -98,25 +98,12 @@ Snapshot replication is the easiest to setup, but should be limited to smaller o
 **Incremental** replication is useful when the source table has a timestamp column that is set at EVERY insert or update. Incremental also DOES NOT replicate deletes. Many other per-table replication methods rely solely on triggers on the source database (and mimeo does as well as you'll see later). But when a table has a special column like this, it's very easy to do replication without the overhead of triggers and this can greatly ease the load on the source database when a table receive a high rate of inserts (tracking web page hits for example). There's two types of incremental replication: inserter & updater. If the table only ever gets inserts (or that's all you care about replicating), the inserter replication type is best to use since it has less overhead than the updater replication. Updater will also replicate rows if that same timestamp column is set on every update in addition to when it's inserted. Updater replication requires that the source table have either a primary or unique key. Inserter replication requires no primary/unique keys.
 
     destinationdb=# SELECT mimeo.inserter_maker('public.inserter_test_source', 'insert_timestamp', 1);
-    NOTICE:  Snapshotting source table to pull all current source data...
-    NOTICE:  table "inserter_test_source_snap1" does not exist, skipping
-    CONTEXT:  SQL statement "DROP TABLE IF EXISTS mimeo_source.inserter_test_source_snap1"
-    PL/pgSQL function snapshot_destroyer(text,text) line 45 at EXECUTE statement
-    SQL statement "SELECT mimeo.snapshot_destroyer(p_dest_table, 'ARCHIVE')"
-    PL/pgSQL function inserter_maker(text,text,integer,interval,text,text[],text,boolean) line 43 at PERFORM
-    NOTICE:  table "inserter_test_source_snap2" does not exist, skipping
-    CONTEXT:  SQL statement "DROP TABLE IF EXISTS mimeo_source.inserter_test_source_snap2"
-    PL/pgSQL function snapshot_destroyer(text,text) line 46 at EXECUTE statement
-    SQL statement "SELECT mimeo.snapshot_destroyer(p_dest_table, 'ARCHIVE')"
-    PL/pgSQL function inserter_maker(text,text,integer,interval,text,text[],text,boolean) line 43 at PERFORM
-    NOTICE:  Snapshot complete.
-    NOTICE:  Getting the maximum destination timestamp...
-    NOTICE:  Inserting data into config table
+    NOTICE:  Pulling all data from source...
     NOTICE:  Done
      inserter_maker 
     ----------------
-
-You can ignore most of the output of the maker functions. As long as the *NOTICE:  Done* line shows up, everything went as planned. The maker functions all internally make use of the snapshot replication method to do the initial data pull which is why you see the above references to it.
+     
+    (1 row)
 
 The key piece of both inserter & updater replication is the "control" column which is the second argument in the maker function call (insert_timestamp in the example). This is the column that MUST be a timestamp and is set on every insert and/or update.
 
@@ -125,21 +112,12 @@ The key piece of both inserter & updater replication is the "control" column whi
 
     destinationdb=# SELECT mimeo.dml_maker('public.dml_test_source', 1, p_dest_table := 'dest_schema.dml_test_dest');
     NOTICE:  Creating objects on source database (function, trigger & queue table)...
-    NOTICE:  Snapshotting source table to pull all current source data...
-    NOTICE:  table "dml_test_dest_snap1" does not exist, skipping
-    CONTEXT:  SQL statement "DROP TABLE IF EXISTS mimeo_dest.dml_test_dest_snap1"
-    PL/pgSQL function snapshot_destroyer(text,text) line 45 at EXECUTE statement
-    SQL statement "SELECT mimeo.snapshot_destroyer(p_dest_table, 'ARCHIVE')"
-    PL/pgSQL function dml_maker(text,integer,text,text[],text,boolean,text[],text[]) line 156 at PERFORM
-    NOTICE:  table "dml_test_dest_snap2" does not exist, skipping
-    CONTEXT:  SQL statement "DROP TABLE IF EXISTS mimeo_dest.dml_test_dest_snap2"
-    PL/pgSQL function snapshot_destroyer(text,text) line 46 at EXECUTE statement
-    SQL statement "SELECT mimeo.snapshot_destroyer(p_dest_table, 'ARCHIVE')"
-    PL/pgSQL function dml_maker(text,integer,text,text[],text,boolean,text[],text[]) line 156 at PERFORM
-    NOTICE:  Inserting data into config table
+    NOTICE:  Pulling data from source...
     NOTICE:  Done
      dml_maker 
     -----------
+     
+    (1 row)
 
 In this example, I've used the option to give the destination table a different schema and name than the source. This option is available in all the replication methods. I've also shown how to use named arguments in the function call to set a specific one. This is used extensively to set different options in Mimeo, so if you're not familiar with it, please check the PostgreSQL documentation.
 

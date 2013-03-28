@@ -42,7 +42,7 @@ v_r                 text;
 v_snap              text;
 v_source_table      text;
 v_step_id           int;
-v_table_exists      int;
+v_table_exists      boolean;
 v_total             bigint := 0;
 v_tup_del           bigint;
 v_tup_ins           bigint;
@@ -109,55 +109,33 @@ IF NOT FOUND THEN
 END IF;  
 
 -- checking for current view
-
 SELECT definition INTO v_view_definition FROM pg_views where
       ((schemaname || '.') || viewname)=v_dest_table;
 
 PERFORM dblink_connect(v_dblink_name, @extschema@.auth(v_dblink));
 
-v_remote_sql := 'SELECT array_agg(attname) as cols, array_agg(attname||'' ''||format_type(atttypid, atttypmod)::text) as cols_n_types FROM pg_attribute WHERE attrelid = '||quote_literal(v_source_table)||'::regclass AND attnum > 0 AND attisdropped is false';
-
--- Apply column filters if used
-IF v_filter IS NOT NULL THEN
-    v_remote_sql := v_remote_sql || ' AND ARRAY[attname::text] <@ '||quote_literal(v_filter);
-END IF;
-
-v_remote_sql := 'SELECT cols, cols_n_types FROM dblink('||quote_literal(v_dblink_name)||', ' || quote_literal(v_remote_sql) || ') t (cols text[], cols_n_types text[])';
-PERFORM gdb(p_debug,'v_remote_sql: '||v_remote_sql);
-EXECUTE v_remote_sql INTO v_cols, v_cols_n_types;  
-PERFORM gdb(p_debug,'v_cols: {'|| array_to_string(v_cols, ',') ||'}');
-PERFORM gdb(p_debug,'v_cols_n_types: {'|| array_to_string(v_cols_n_types, ',') ||'}');
-
 PERFORM update_step(v_step_id, 'OK','Done');
-
 v_step_id := add_step(v_job_id,'Truncate non-active snap table');
 
 v_exists := strpos(v_view_definition, 'snap1');
   IF v_exists > 0 THEN
-    v_snap := '_snap2';
-    v_old_snap := '_snap1';
+    v_snap := 'snap2';
+    v_old_snap := 'snap1';
     ELSE
-    v_snap := '_snap1';
-    v_old_snap := '_snap2';
+    v_snap := 'snap1';
+    v_old_snap := 'snap2';
  END IF;
-v_refresh_snap := v_dest_table||v_snap;
-v_old_snap_table := v_dest_table||v_old_snap;
+v_refresh_snap := v_dest_table||'_'||v_snap;
+v_old_snap_table := v_dest_table||'_'||v_old_snap;
 PERFORM gdb(p_debug,'v_refresh_snap: '||v_refresh_snap::text);
 
-SELECT string_to_array(v_refresh_snap, '.') AS oparts INTO v_parts;
-
 -- Create snap table if it doesn't exist
-SELECT INTO v_table_exists count(1) FROM pg_tables WHERE schemaname ||'.'|| tablename = v_refresh_snap;
-IF v_table_exists = 0 THEN
-    PERFORM gdb(p_debug,'Snap table does not exist. Creating... ');    
-    v_create_sql := 'CREATE TABLE ' || v_refresh_snap || ' (' || array_to_string(v_cols_n_types, ',') || ')';
-    perform gdb(p_debug,'v_create_sql: '||v_create_sql::text);
-    EXECUTE v_create_sql;
-ELSE 
+PERFORM gdb(p_debug, 'Getting table columns and creating destination table if it doesn''t exist');
+SELECT p_table_exists, p_cols, p_cols_n_types FROM manage_dest_table(v_dest_table, v_snap, p_debug) INTO v_table_exists, v_cols, v_cols_n_types;
+IF v_table_exists THEN 
 /* Check local column definitions against remote and recreate table if different. Allows automatic recreation of
         snap tables if columns change (add, drop type change)  */  
     v_local_sql := 'SELECT array_agg(attname||'' ''||format_type(atttypid, atttypmod)::text) as cols_n_types FROM pg_attribute WHERE attnum > 0 AND attisdropped is false AND attrelid = ' || quote_literal(v_refresh_snap) || '::regclass'; 
-        
     PERFORM gdb(p_debug, v_local_sql);
 
     EXECUTE v_local_sql INTO v_lcols_array;
@@ -191,9 +169,8 @@ ELSE
 
         EXECUTE 'DROP TABLE ' || v_refresh_snap;
         EXECUTE 'DROP VIEW ' || v_dest_table;
-        v_create_sql := 'CREATE TABLE ' || v_refresh_snap || ' (' || array_to_string(v_cols_n_types, ',') || ')';
-        PERFORM gdb(p_debug,'v_create_sql: '||v_create_sql::text);
-        EXECUTE v_create_sql;
+        PERFORM manage_dest_table(v_dest_table, v_snap, p_debug);
+
         v_step_id := add_step(v_job_id,'Source table structure changed.');
         PERFORM update_step(v_step_id, 'OK','Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc');
         PERFORM gdb(p_debug,'Source table structure changed. Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc)');
@@ -206,7 +183,7 @@ END IF;
 
 -- Only check the remote data if there have been no column changes and snap table actually exists. 
 -- Otherwise maker functions won't work if source is empty & view switch won't happen properly.
-IF  v_table_exists > 0 AND v_match THEN
+IF  v_table_exists AND v_match THEN
     v_remote_sql := 'SELECT n_tup_ins, n_tup_upd, n_tup_del FROM pg_catalog.pg_stat_all_tables WHERE relid::regclass = '||quote_literal(v_source_table)||'::regclass';
     v_remote_sql := 'SELECT n_tup_ins, n_tup_upd, n_tup_del FROM dblink('||quote_literal(v_dblink_name)||', ' || quote_literal(v_remote_sql) || ') t (n_tup_ins bigint, n_tup_upd bigint, n_tup_del bigint)';
     perform gdb(p_debug,'v_remote_sql: '||v_remote_sql);
@@ -224,7 +201,7 @@ IF  v_table_exists > 0 AND v_match THEN
 END IF;
 
 v_remote_sql := 'SELECT '|| array_to_string(v_cols, ',') ||' FROM '||v_source_table;
--- Used by p_pull options in all maker functions to be able to create a replication job but pull no data
+-- Used by p_pulldata parameter in maker function
 IF p_pulldata = false THEN
     v_remote_sql := v_remote_sql || ' LIMIT 0';
 ELSIF v_condition IS NOT NULL THEN
@@ -250,44 +227,12 @@ PERFORM dblink_close(v_dblink_name, 'mimeo_cursor');
 PERFORM update_step(v_step_id, 'OK','Inserted '||v_total||' rows');
 
 -- Create indexes if new table was created
-IF  (v_table_exists = 0 OR v_match = 'f') AND p_index = true THEN
-    v_remote_index_sql := 'SELECT 
-        CASE
-            WHEN i.indisprimary IS true THEN ''primary''
-            WHEN i.indisunique IS true THEN ''unique''
-            ELSE ''index''
-        END AS key_type,
-        ( SELECT array_agg( a.attname ORDER by x.r ) 
-            FROM pg_attribute a 
-            JOIN ( SELECT k, row_number() over () as r 
-                    FROM unnest(i.indkey) k ) as x 
-            ON a.attnum = x.k AND a.attrelid = i.indrelid ';
-    IF v_filter IS NOT NULL THEN
-        v_remote_index_sql := v_remote_index_sql || ' WHERE ARRAY[a.attname::text] <@ '||quote_literal(v_filter);
-    END IF;
-    v_remote_index_sql := v_remote_index_sql || ') AS indkey_names
-        FROM pg_index i
-        WHERE i.indrelid = '||quote_literal(v_source_table)||'::regclass';
-
-    FOR v_row IN EXECUTE 'SELECT key_type, indkey_names FROM dblink('||quote_literal(v_dblink_name)||', '||quote_literal(v_remote_index_sql)||') t (key_type text, indkey_names text[])' LOOP
-        IF v_row.indkey_names IS NOT NULL THEN   -- If column filter is used, indkey_name column may be null
-            IF v_row.key_type = 'primary' THEN
-                RAISE NOTICE 'Creating primary key...';
-                EXECUTE 'ALTER TABLE '||v_refresh_snap||' ADD CONSTRAINT '||v_parts.oparts[2]||'_'||array_to_string(v_row.indkey_names, '_')||'_idx PRIMARY KEY ('||array_to_string(v_row.indkey_names, ',')||')';
-            ELSIF v_row.key_type = 'unique' THEN
-                RAISE NOTICE 'Creating unique index...';
-                EXECUTE 'CREATE UNIQUE INDEX '||v_parts.oparts[2]||'_'||array_to_string(v_row.indkey_names, '_')||'_idx ON '||v_refresh_snap|| '('||array_to_string(v_row.indkey_names, ',')||')';
-            ELSE
-                RAISE NOTICE 'Creating index...';
-                EXECUTE 'CREATE INDEX '||v_parts.oparts[2]||'_'||array_to_string(v_row.indkey_names, '_')||'_idx ON '||v_refresh_snap|| '('||array_to_string(v_row.indkey_names, ',')||')';
-            END IF;
-        END IF;
-    END LOOP;
+IF (v_table_exists = false OR v_match = 'f') AND p_index = true THEN
+    PERFORM gdb(p_debug, 'Creating indexes');
+    PERFORM create_index(v_dest_table, v_snap, p_debug);
 END IF;
 
 EXECUTE 'ANALYZE ' ||v_refresh_snap;
-
---SET statement_timeout='30 min';  
 
 -- swap view
 v_step_id := add_step(v_job_id,'Swap view to '||v_refresh_snap);
@@ -313,8 +258,13 @@ IF v_match = false THEN
     END IF;
 END IF;
 
-SELECT INTO v_table_exists count(1) FROM pg_tables WHERE schemaname ||'.'|| tablename = v_old_snap_table;
-IF v_table_exists > 0 THEN
+SELECT 
+    CASE    
+        WHEN count(1) > 0 THEN true
+        ELSE false 
+    END
+INTO v_table_exists FROM pg_tables WHERE schemaname ||'.'|| tablename = v_old_snap_table;
+IF v_table_exists THEN
     v_step_id := add_step(v_job_id,'Truncating old snap table');
     EXECUTE 'TRUNCATE TABLE '||v_old_snap_table;
     PERFORM update_step(v_step_id, 'OK','Done');

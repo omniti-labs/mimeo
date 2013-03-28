@@ -2,7 +2,7 @@
 
 SELECT set_config('search_path','mimeo, dblink, tap',false);
 
-SELECT plan(48);
+SELECT plan(51);
 
 SELECT pass('Re-running refresh functions. This may take a bit...');
 
@@ -79,6 +79,8 @@ SELECT columns_are('mimeo_dest', 'snap_test_dest_change_col_snap1', ARRAY['col1'
 SELECT columns_are('mimeo_dest', 'snap_test_dest_change_col_snap2', ARRAY['col1', 'col3', 'col4'], 'Check that column change propagated for mimeo_dest.snap_test_dest_change_col_snap2');
 SELECT col_is_pk('mimeo_dest','snap_test_dest_change_col_snap1', ARRAY['col1'],'Check primary key for: mimeo_dest.snap_test_dest_change_col_snap1');
 SELECT col_is_pk('mimeo_dest','snap_test_dest_change_col_snap2', ARRAY['col1'],'Check primary key for: mimeo_dest.snap_test_dest_change_col_snap2');
+SELECT has_index('mimeo_dest', 'snap_test_dest_change_col_snap1', 'snap1_mimeo_check_exp_index_time', '((col3 > ''2013-04-01 00:00:00-04''::timestamp with time zone))', 'Check time expression index on mimeo_dest.snap_test_dest_change_col_snap1'); 
+SELECT has_index('mimeo_dest', 'snap_test_dest_change_col_snap2', 'snap2_mimeo_check_exp_index_time', '((col3 > ''2013-04-01 00:00:00-04''::timestamp with time zone))', 'Check time expression index on mimeo_dest.snap_test_dest_change_col_snap2'); 
 SELECT table_privs_are('mimeo_dest', 'snap_test_dest_change_col', 'mimeo_dumb_role', ARRAY['SELECT'], 'Checking mimeo_dumb_role privileges for mimeo_dest.snap_test_dest_change_col');
 SELECT table_privs_are('mimeo_dest', 'snap_test_dest_change_col_snap1', 'mimeo_dumb_role', ARRAY['SELECT'], 'Checking mimeo_dumb_role privileges for mimeo_dest.snap_test_dest_change_col_snap1');
 SELECT table_privs_are('mimeo_dest', 'snap_test_dest_change_col_snap2', 'mimeo_dumb_role', ARRAY['SELECT'], 'Checking mimeo_dumb_role privileges for mimeo_dest.snap_test_dest_change_col_snap2');
@@ -179,13 +181,18 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.logdel_test_source 
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.logdel_test_dest WHERE (col1 < 12500 or col1 > 12520) AND (col1 < 45500 or col1 > 45520) ORDER BY col1, col2 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.logdel_test_source2 ORDER BY col1, col2 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.logdel_test_dest');
+-- Ensure originally deleted rows are still there after repull test
+SELECT results_eq('SELECT col2 FROM mimeo_dest.logdel_test_dest WHERE (col1 between 12500 and 12520) AND mimeo_source_deleted IS NOT NULL order by col2',
+    ARRAY['test12500','test12501','test12502','test12503','test12504','test12505','test12506','test12507','test12508','test12509','test12510',
+        'test12511','test12512','test12513','test12514','test12515','test12516','test12517','test12518','test12519','test12520'],
+    'Check that deleted rows are logged in mimeo_dest.logdel_test_dest');
 SELECT results_eq('SELECT col2 FROM mimeo_dest.logdel_test_dest WHERE (col1 between 45500 and 45520) AND mimeo_source_deleted IS NOT NULL order by col2',
     ARRAY['test45500','test45501','test45502','test45503','test45504','test45505','test45506','test45507','test45508','test45509','test45510',
         'test45511','test45512','test45513','test45514','test45515','test45516','test45517','test45518','test45519','test45520'],
     'Check that deleted rows are logged in mimeo_dest.logdel_test_dest');
 
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.logdel_test_dest_nodata ORDER BY col1 ASC',
-    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.logdel_test_source_nodata WHERE col1 > 10000 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.logdel_test_source_nodata ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.logdel_test_dest_nodata');
 
 SELECT results_eq('SELECT col1, col2 FROM mimeo_dest.logdel_test_dest_filter ORDER BY col1 ASC',

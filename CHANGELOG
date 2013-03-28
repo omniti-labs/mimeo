@@ -1,8 +1,19 @@
-v0.11.1
+0.12.0
+-- Now supports creating GIN, GiST, and other expression indexes on the destination table as they exist on the source table. Previously, all indexes were recreated as b-tree (if at all) no matter what kind of index they were on the source.
+-- Above change led to major rewriting of the underlying code for the maker functions. Previously they all used the refresh_snap() function as the basis for doing initial, full data pull of the source. This lead to indexes being named a bit oddly (they all had "snap1" in the name). This is no longer the case and destination table index names should match closely to what they were on the source. This is only applied to newly created replication sets and no existing indexes on the destination will be changed.
+-- Logdel refresh function now has a "repull" option to do a complete refresh of data from the source. Note that it will NOT delete the rows on the destination that were previously deleted from the source (only deletes rows on the destination where mimeo_source_deleted column is null). Since a TRUNCATE cannot be done as is done with the other replication repulls, it is highly recommended to do a manual VACUUM of destination table after this is done, possibly even a VACUUM FULL to reclaim disk space.
+-- To help the above repull process be more efficient, an index is now created on the "mimeo_source_deleted" destination column of all newly created logdel replication tables. Existing replication tables will not have this index added. Recommend adding one if you need to do this repull method on old setups.
+-- DML & Logdel replication source queue tables now have indexes created on the "processed" and "processed, mimeo_source_deleted" columns respectively. This should help replication be more efficient for higher traffic tables that create larger queues. Existing replication sets will not have their source queue table modified to add this index. Recommend going back and manually adding it if you notice performance problems.
+-- Exception messages if dml/logdel maker functions fail are clearer about what has happened reguarding objects created on the source.
+-- Added p_debug option to maker functions. Also made debugging a little cleaner and have it provide more information in many cases.
+-- Bug Fix: WHERE condition of logdel replication wasn't working properly. 
+
+
+0.11.1
 -- Bug fix: New feature for refresh snap that skips the data pull if nothing changed on the source wasn't properly setting the last_run value in the config table. Could cause the job monitor to think the refresh job had not been run.
 
 
-v0.11.0
+0.11.0
 -- For snapshot replication, if the source's columns change and the destination tables & view are recreated, the original permissions are now automatically restored. Prior to this, the post_script array field had to be used to replay the grants. This is no longer required and you can remove any grant commands from the post_script columns.
 -- Snapshot refreshes can now detect whether the source table has had any DML changes (inserts, updates & deletes) and if there have been no changes, skip the data pull step completely. Does not work if source is a view. This can be a massive savings on system load for large tables that don't change often, but you still want to have a way to ensure you get any changes to the destination as soon as possible. The "track_counts" PostgreSQL setting must be turned on for this to work (which is the default).
 -- Truncate the old snapshot table as well after the view swap to avoid storing data twice. Thanks to Raghavendra for the suggestion.
