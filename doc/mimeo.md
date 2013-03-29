@@ -96,7 +96,7 @@ Functions
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.
  * p_dest_table, an optional argument, is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
- * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication.
+ * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication. Be aware that if this option is used, indexes cannot be replicated from the source because there is currently no easy way to determine all types of indexes that may be affected by the columns that are excluded.
  * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
  * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
 
@@ -114,7 +114,7 @@ Functions
  * p_boundary, an optional argument, is a boundary value to prevent records being missed at the upper boundary of the batch. Set this to a value that will ensure all inserts will have finished for that time period when the replication runs. Default is 10 minutes which means the destination may always be 10 minutes behind the source but that also means that all inserts on the source will have finished by the time 10 minutes has passed.  
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
- * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication.
+ * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication. Be aware that if this option is used, indexes cannot be replicated from the source because there is currently no easy way to determine all types of indexes that may be affected by the columns that are excluded.
  * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
  * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
     
@@ -131,7 +131,7 @@ Functions
  * p_boundary, an optional argument, is a boundary value to prevent records being missed at the upper boundary of the batch. Set this to a value that will ensure all inserts/updates will have finished for that time period when the replication runs. Default is 10 minutes which means the destination may always be 10 minutes behind the source but that also means that all inserts/updates on the source will have finished by the time 10 minutes has passed.  
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
- * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication.
+ * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication. Be aware that if this option is used, indexes cannot be replicated from the source because there is currently no easy way to determine all types of indexes that may be affected by the columns that are excluded. The primary/unique key used to determine row identity will still be replicated, however, because there are checks in place to ensure those columns are not excluded.
  * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
  * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
  * p_pk_name, an optional argument, is an array of the columns that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source.
@@ -149,7 +149,7 @@ Functions
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.  
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
- * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication.
+ * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication. Be aware that if this option is used, indexes cannot be replicated from the source because there is currently no easy way to determine all types of indexes that may be affected by the columns that are excluded. The primary/unique key used to determine row identity will still be replicated, however, because there are checks in place to ensure those columns are not excluded.
   * Source table trigger will only fire on UPDATES of the given columns (uses UPDATE OF col1 [, col2...]).
  * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
  * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
@@ -170,7 +170,7 @@ Functions
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
  * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
- * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication.
+ * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication. Be aware that if this option is used, indexes cannot be replicated from the source because there is currently no easy way to determine all types of indexes that may be affected by the columns that are excluded. The primary/unique key used to determine row identity will still be replicated, however, because there are checks in place to ensure those columns are not excluded.
   * Source table trigger will only fire on UPDATES of the given columns (uses UPDATE OF col1 [, col2...]).
  * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
  * p_pk_name, an optional argument, is an array of the columns that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source.
@@ -186,7 +186,7 @@ Functions
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.
  * p_dest_table, an optional argument, is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
- * p_filter, an optional argument, is a text array list that can be used to designate only specific columns that should be used for replication.
+ * p_filter, an optional argument, is a text array list that can be used to designate only specific columns that should be used for replication. Be aware that if this option is used, indexes cannot be replicated from the source because there is currently no easy way to determine all types of indexes that may be affected by the columns that are excluded. 
  * p_condition, an optional argument, is used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
  * p_sequences, an optional argument, is a text array list of schema qualified sequences used as default values in the destination table. This maker function does NOT automatically pull sequences from the source database. If you require that sequences exist on the destination, you'll have to create them and alter the table manually. This option provides an easy way to add them if your destination table exists and already has sequences. The maker function will not reset them. Run the refresh function to have them reset.
  * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
