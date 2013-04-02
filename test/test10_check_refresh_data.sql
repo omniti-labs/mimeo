@@ -1,3 +1,6 @@
+\set ON_ERROR_ROLLBACK 1
+\set ON_ERROR_STOP true
+
 -- Check refresh functions again with batches larger than a single cursor fetch and also make sure they work after a data repull
 
 SELECT set_config('search_path','mimeo, dblink, tap',false);

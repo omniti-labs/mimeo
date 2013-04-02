@@ -16,6 +16,7 @@ v_dblink_schema         text;
 v_dest_table            text;
 v_fetch_sql             text;
 v_filter                text;
+v_link_exists           boolean;
 v_old_search_path       text;
 v_post_script           text[];
 v_remote_sql            text;
@@ -31,6 +32,8 @@ v_truncate_sql          text;
 BEGIN
 
 SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
+
+v_dblink_name := 'mimeo_table_refresh_'||p_destination;
 
 SELECT current_setting('search_path') INTO v_old_search_path;
 EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_dblink_schema||',public'',''false'')';
@@ -59,10 +62,8 @@ INTO v_source_table
 FROM refresh_config_table
 WHERE dest_table = p_destination; 
 IF NOT FOUND THEN
-   RAISE EXCEPTION 'ERROR: This table is not set up for plain table replication: %',p_destination; 
+   RAISE EXCEPTION 'No configuration found for Refresh Table: %',p_destination; 
 END IF;
-
-v_dblink_name := 'mimeo_table_refresh_'||v_dest_table;
 
 IF p_truncate_cascade IS NOT NULL THEN
     v_truncate_cascade := p_truncate_cascade;
@@ -121,21 +122,12 @@ PERFORM pg_advisory_unlock(hashtext('refresh_table'), hashtext(p_destination));
 EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
 
 EXCEPTION
-    WHEN QUERY_CANCELED THEN
-        EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_dblink_schema||',public'',''false'')';
-        IF dblink_get_connections() @> ARRAY[v_dblink_name] THEN
-            PERFORM dblink_disconnect(v_dblink_name);
+    WHEN QUERY_CANCELED OR OTHERS THEN
+        EXECUTE 'SELECT '||v_dblink_schema||'.dblink_get_connections() @> ARRAY['||quote_literal(v_dblink_name)||']' INTO v_link_exists;
+        IF v_link_exists THEN
+            EXECUTE 'SELECT '||v_dblink_schema||'.dblink_disconnect('||quote_literal(v_dblink_name)||')';
         END IF;
         PERFORM pg_advisory_unlock(hashtext('refresh_table'), hashtext(p_destination));
-        EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
         RAISE EXCEPTION '%', SQLERRM;
-    WHEN OTHERS THEN
-        EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_dblink_schema||',public'',''false'')';
-        IF dblink_get_connections() @> ARRAY[v_dblink_name] THEN
-            PERFORM dblink_disconnect(v_dblink_name);
-        END IF;
-        PERFORM pg_advisory_unlock(hashtext('refresh_table'), hashtext(p_destination));
-        EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
-        RAISE EXCEPTION '%', SQLERRM;  
 END
 $$;

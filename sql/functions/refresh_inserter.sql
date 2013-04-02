@@ -32,8 +32,8 @@ v_jobmon_schema         text;
 v_job_name              text;
 v_last_fetched          timestamptz;
 v_last_value            timestamptz;
---v_last_value_new      timestamptz;
 v_limit                 int;
+v_link_exists           boolean;
 v_now                   timestamptz := now();
 v_old_search_path       text;
 v_remote_sql            text;
@@ -59,12 +59,10 @@ SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.
 SELECT current_setting('search_path') INTO v_old_search_path;
 EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||',public'',''false'')';
 
-v_job_id := add_job(v_job_name);
-PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
-
 -- Take advisory lock to prevent multiple calls to function overlapping
 v_adv_lock := pg_try_advisory_lock(hashtext('refresh_inserter'), hashtext(v_job_name));
 IF v_adv_lock = 'false' THEN
+    v_job_id := add_job(v_job_name);
     v_step_id := add_step(v_job_id,'Obtaining advisory lock for job: '||v_job_name);
     PERFORM gdb(p_debug,'Obtaining advisory lock FAILED for job: '||v_job_name);
     PERFORM update_step(v_step_id, 'WARNING','Found concurrent job. Exiting gracefully');
@@ -72,6 +70,9 @@ IF v_adv_lock = 'false' THEN
     EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
     RETURN;
 END IF;
+
+v_job_id := add_job(v_job_name);
+PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
 
 SELECT source_table
     , dest_table
@@ -101,7 +102,7 @@ INTO v_source_table
     , v_dst_end
     , v_limit; 
 IF NOT FOUND THEN
-   RAISE EXCEPTION 'ERROR: no configuration found for %',v_job_name; 
+   RAISE EXCEPTION 'No configuration found for %',v_job_name; 
 END IF;  
 
 -- Do not allow this function to run during DST time change if config option is true. Otherwise will miss data from source
@@ -276,30 +277,28 @@ PERFORM pg_advisory_unlock(hashtext('refresh_inserter'), hashtext(v_job_name));
 
 EXCEPTION
     WHEN QUERY_CANCELED THEN
-        PERFORM pg_advisory_unlock(hashtext('refresh_inserter'), hashtext(v_job_name));
-        EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
-        IF dblink_get_connections() @> ARRAY[v_dblink_name] THEN
-            PERFORM dblink_disconnect(v_dblink_name);
+        EXECUTE 'SELECT '||v_dblink_schema||'.dblink_get_connections() @> ARRAY['||quote_literal(v_dblink_name)||']' INTO v_link_exists;
+        IF v_link_exists THEN
+            EXECUTE 'SELECT '||v_dblink_schema||'.dblink_disconnect('||quote_literal(v_dblink_name)||')';
         END IF;
-        EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
+        PERFORM pg_advisory_unlock(hashtext('refresh_inserter'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;    
     WHEN OTHERS THEN
-        EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
         IF v_job_id IS NULL THEN
-            v_job_id := add_job('Refresh Inserter: '||p_destination);
-            v_step_id := add_step(v_job_id, 'EXCEPTION before job logging started');
+            EXECUTE 'SELECT '||v_jobmon_schema||'.add_job(''Refresh Inserter: '||p_destination||''')' INTO v_job_id;
+            EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||', ''EXCEPTION before job logging started'')' INTO v_step_id;
         END IF;
         IF v_step_id IS NULL THEN
-            v_step_id := add_step(v_job_id, 'EXCEPTION before first step logged');
+            EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||', ''EXCEPTION before first step logged'')' INTO v_step_id;
         END IF;
-        IF dblink_get_connections() @> ARRAY[v_dblink_name] THEN
-            PERFORM dblink_disconnect(v_dblink_name);
+        EXECUTE 'SELECT '||v_dblink_schema||'.dblink_get_connections() @> ARRAY['||quote_literal(v_dblink_name)||']' INTO v_link_exists;
+        IF v_link_exists THEN
+            EXECUTE 'SELECT '||v_dblink_schema||'.dblink_disconnect('||quote_literal(v_dblink_name)||')';
         END IF;
-        PERFORM update_step(v_step_id, 'CRITICAL', 'ERROR: '||coalesce(SQLERRM,'unknown'));
-        PERFORM fail_job(v_job_id);
-
-        EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
+        EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_step_id||', ''CRITICAL'', ''ERROR: '||COALESCE(SQLERRM,'unknown')||''')';
+        EXECUTE 'SELECT '||v_jobmon_schema||'.fail_job('||v_job_id||')';
         PERFORM pg_advisory_unlock(hashtext('refresh_inserter'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;    
 END
 $$;
+

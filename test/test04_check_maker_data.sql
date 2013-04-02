@@ -1,3 +1,6 @@
+\set ON_ERROR_ROLLBACK 1
+\set ON_ERROR_STOP true
+
 SELECT set_config('search_path','mimeo, dblink, tap',false);
 
 SELECT plan(117);

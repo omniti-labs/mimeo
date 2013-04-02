@@ -1,3 +1,6 @@
+\set ON_ERROR_ROLLBACK 1
+\set ON_ERROR_STOP true
+
 -- This should be the last batch of tests since I don't feel like resetting the batch limits for any to come after them
 
 SELECT set_config('search_path','mimeo, dblink, tap',false);

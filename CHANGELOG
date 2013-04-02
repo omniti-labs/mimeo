@@ -1,3 +1,9 @@
+0.12.1
+-- Moved the attempt at taking an advisory lock to the earliest point possible in the refresh jobs to avoid edge case of overlapping jobs causing errors instead of exiting gracefully.
+-- Simplified exception blocks and made some error messages clearer in refresh functions.
+-- Added some simple exception block pgTAP tests.
+
+
 0.12.0
 -- Now supports creating GIN, GiST, and other expression indexes on the destination table as they exist on the source table. Previously, all indexes were recreated as b-tree (if at all) no matter what kind of index they were on the source.
 -- Above change led to major rewriting of the underlying code for the maker functions. Previously they all used the refresh_snap() function as the basis for doing initial, full data pull of the source. This lead to indexes being named a bit oddly (they all had "snap1" in the name). This is no longer the case and destination table index names should match closely to what they were on the source. This is only applied to newly created replication sets and no existing indexes on the destination will be changed.

@@ -1,4 +1,5 @@
--- Add some tests for archive option. Have it test for the table still existing after it runs. Then drop that table.
+\set ON_ERROR_ROLLBACK 1
+\set ON_ERROR_STOP true
 
 SELECT set_config('search_path','mimeo, dblink, tap',false);
 

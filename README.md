@@ -1,7 +1,7 @@
 Mimeo
 =====
 
-Mimeo is an extension that provides specialized, per-table replication between PostgreSQL instances. It currently provides snapshot (whole table copy), incremental (based on an incrementing value like timestamp, serial (coming soon), etc), and DML (inserts, updates and deletes).
+Mimeo is an extension that provides specialized, per-table replication between PostgreSQL instances. It currently provides snapshot (whole table copy), incremental (based on an incrementing timestamp), etc), and DML (inserts, updates and deletes).
 
 It currently requires the pg_jobmon extension (see other repositories in omniti-labs) to log all replication activity and provide monitoring. 
 
