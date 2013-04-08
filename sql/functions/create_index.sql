@@ -18,6 +18,7 @@ v_repl_index        oid;
 v_remote_index_sql  text;
 v_row               record;
 v_source_table      text;
+v_src_table_name    text;
 v_statement         text;
 v_type              text;
 
@@ -52,52 +53,34 @@ PERFORM dblink_connect(v_dblink_name, @extschema@.auth(v_dblink));
 
 v_dest_table := v_dest_table;
 v_dest_table_name := split_part(v_dest_table, '.', 2);
+v_src_table_name := split_part(v_source_table, '.', 2);
 
--- Gets primary key or unique index used by updater/dml/logdel replication. 
--- Ordering by statement should produce the same order as maker function since ALTER comes before CREATE.
--- Maker function already checks that columns needed by this index aren't filtered out.
-v_remote_index_sql := 'SELECT indexrelid AS repl_index,
-    relname AS src_table,
-    CASE WHEN indisprimary THEN
-        ''ALTER TABLE '||v_dest_table || COALESCE('_'||p_snap, '')||' ADD CONSTRAINT '||
-            COALESCE(p_snap||'_', '')|| v_dest_table_name ||'_''||array_to_string(indkey_names, ''_'')||''_pk 
-            PRIMARY KEY (''||array_to_string(indkey_names, '','')||'')''
-        WHEN indisunique THEN
-        pg_get_indexdef(indexrelid)
-    END AS statement
-    FROM ( 
-        SELECT i.indexrelid, i.indisprimary, i.indisunique, c.relname, (
-            SELECT array_agg( a.attname ORDER by x.r ) 
-            FROM pg_catalog.pg_attribute a
-            JOIN ( SELECT k, row_number() over () as r 
-                    FROM unnest(i.indkey) k ) as x 
-            ON a.attnum = x.k AND a.attrelid = i.indrelid
-            WHERE a.attnotnull
-        ) AS indkey_names
-        FROM pg_catalog.pg_index i
-        JOIN pg_catalog.pg_class c ON i.indrelid = c.oid 
-        WHERE i.indrelid = '||quote_literal(v_source_table)||'::regclass
-        AND (i.indisprimary OR i.indisunique)
-        AND i.indisvalid
-    ) AS x 
-    ORDER BY statement
-    LIMIT 1';
+-- Gets primary key or unique index used by updater/dml/logdel replication (same function is called in their makers). 
+-- Should only loop once, but just easier to keep code consistent with below method
+FOR v_row IN SELECT indexrelid, key_type, indkey_names, statement FROM fetch_replication_key(v_source_table, v_dblink_name)
+LOOP
 
-PERFORM gdb(p_debug, 'v_remote_index_sql: '||v_remote_index_sql);
-FOR v_row IN EXECUTE 'SELECT repl_index, src_table, statement FROM dblink('||quote_literal(v_dblink_name)||', '||quote_literal(v_remote_index_sql)||') t (repl_index oid, src_table text, statement text)' LOOP
-    v_statement := v_row.statement;
-    -- Replace source table name with destination
-    v_statement := replace(v_statement, ' ON '||v_source_table, ' ON '||v_dest_table || COALESCE('_'||p_snap, ''));
-    -- If source index name contains the table name, replace it with the destination table. Not perfect, but good enough for now.
-    v_statement := replace(v_statement, v_row.src_table, v_dest_table_name);
-    -- If it's a snap table, prepend to ensure unique index name. 
-    -- This is done separately from above replace because it must always be done even if the index name doesn't contain the source table
-    IF p_snap IS NOT NULL THEN
-        v_statement := replace(v_statement, 'UNIQUE INDEX ' , 'UNIQUE INDEX '||p_snap||'_');
+    EXIT WHEN v_row.indexrelid IS NULL; -- function still returns a row full of nulls when nothing found
+
+    IF v_row.key_type = 'primary' THEN
+        v_statement := 'ALTER TABLE '||v_dest_table || COALESCE('_'||p_snap, '')||' ADD CONSTRAINT '||
+            COALESCE(p_snap||'_', '')|| v_dest_table_name ||'_'||array_to_string(v_row.indkey_names, '_')||'_pk 
+            PRIMARY KEY ('||array_to_string(v_row.indkey_names, ',')||')';
+    ELSIF v_row.key_type = 'unique' THEN
+        v_statement := v_row.statement;
+        -- Replace source table name with destination
+        v_statement := replace(v_statement, ' ON '||v_source_table, ' ON '||v_dest_table || COALESCE('_'||p_snap, ''));
+        -- If source index name contains the table name, replace it with the destination table. Not perfect, but good enough for now.
+        v_statement := replace(v_statement, v_src_table_name, v_dest_table_name);
+        -- If it's a snap table, prepend to ensure unique index name. 
+        -- This is done separately from above replace because it must always be done even if the index name doesn't contain the source table
+        IF p_snap IS NOT NULL THEN
+            v_statement := replace(v_statement, 'UNIQUE INDEX ' , 'UNIQUE INDEX '||p_snap||'_');
+        END IF;
     END IF;
     PERFORM gdb(p_debug, 'statement: ' || v_statement);
-    v_repl_index := v_row.repl_index;
-    EXECUTE v_statement;        
+    EXECUTE v_statement;
+    v_repl_index = v_row.indexrelid;
 END LOOP;
 
 -- Get all indexes other than one obtained above. 
@@ -143,4 +126,3 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM; 
 END
 $$;
-

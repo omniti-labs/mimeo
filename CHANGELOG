@@ -1,3 +1,8 @@
+0.12.2
+-- Separated process that determines source primary/unique key to use for replication into its own function. This was done to make some future work easier and simplify code.
+-- Maker functions that require primary/unique key (updater/dml/logdel) redone to use this new function.
+
+
 0.12.1
 -- Moved the attempt at taking an advisory lock to the earliest point possible in the refresh jobs to avoid edge case of overlapping jobs causing errors instead of exiting gracefully.
 -- Simplified exception blocks and made some error messages clearer in refresh functions.

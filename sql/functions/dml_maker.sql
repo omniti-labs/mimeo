@@ -73,34 +73,9 @@ v_src_table_name := substring(replace(p_src_table, '.', '_') for 61);
 
 PERFORM dblink_connect('mimeo_dml', @extschema@.auth(p_dblink_id));
 
+-- Automatically get source primary/unique key if none given
 IF p_pk_name IS NULL AND p_pk_type IS NULL THEN
-    -- Either gets the primary key or it gets the first unique index in alphabetical order by index name. 
-    v_remote_key_sql := 'SELECT 
-        CASE
-            WHEN i.indisprimary IS true THEN ''primary''
-            WHEN i.indisunique IS true THEN ''unique''
-        END AS key_type,
-        ( SELECT array_agg( a.attname ORDER by x.r ) 
-            FROM pg_attribute a 
-            JOIN ( SELECT k, row_number() over () as r 
-                    FROM unnest(i.indkey) k ) as x 
-            ON a.attnum = x.k AND a.attrelid = i.indrelid
-            WHERE a.attnotnull
-        ) AS indkey_names,
-        ( SELECT array_agg( a.atttypid::regtype::text ORDER by x.r ) 
-            FROM pg_attribute a 
-            JOIN ( SELECT k, row_number() over () as r 
-                    FROM unnest(i.indkey) k ) as x 
-            ON a.attnum = x.k AND a.attrelid = i.indrelid
-            WHERE a.attnotnull 
-        ) AS indkey_types
-        FROM pg_index i
-        WHERE i.indrelid = '||quote_literal(p_src_table)||'::regclass
-            AND (i.indisprimary OR i.indisunique)
-        ORDER BY key_type LIMIT 1';
-
-    EXECUTE 'SELECT key_type, indkey_names, indkey_types FROM dblink(''mimeo_dml'', '||quote_literal(v_remote_key_sql)||') t (key_type text, indkey_names text[], indkey_types text[])' 
-        INTO v_key_type, v_pk_name, v_pk_type;
+    SELECT v_key_type, indkey_names, indkey_types INTO v_key_type, v_pk_name, v_pk_type FROM fetch_replication_key(p_src_table, 'mimeo_dml');
 END IF;
 
 PERFORM gdb(p_debug, 'v_key_type: '||v_key_type);
