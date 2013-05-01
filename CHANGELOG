@@ -1,3 +1,7 @@
+0.12.3
+-- Fixed function that determines replication key to always get the oldest unique key when no primary key is available (lowest index oid value). Ensures it's more consistent when it is reused elsewhere to determine which key to use.
+
+
 0.12.2
 -- Separated process that determines source primary/unique key to use for replication into its own function. This was done to make some future work easier and simplify code.
 -- Maker functions that require primary/unique key (updater/dml/logdel) redone to use this new function.
