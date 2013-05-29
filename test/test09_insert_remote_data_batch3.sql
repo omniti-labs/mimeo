@@ -3,7 +3,7 @@
 
 SELECT set_config('search_path','mimeo, dblink, tap',false);
 
-SELECT plan(2);
+SELECT plan(1);
 
 SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test password=mimeo_test');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established');
@@ -46,7 +46,7 @@ SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.logdel_test_source_conditi
 SELECT dblink_disconnect('mimeo_test');
 --SELECT is_empty('SELECT dblink_get_connections() @> ''{mimeo_test}''', 'Close remote database connection');
 
-SELECT pass('Completed 3rd batch of data inserts/updates/deletes for remote tables. Sleeping for 10 seconds to ensure gap for incremental tests...');
+SELECT diag('Completed 3rd batch of data inserts/updates/deletes for remote tables. Sleeping for 10 seconds to ensure gap for incremental tests...');
 SELECT pg_sleep(10);
 
 SELECT * FROM finish();

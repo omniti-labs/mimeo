@@ -5,7 +5,7 @@
 
 SELECT set_config('search_path','mimeo, dblink, tap',false);
 
-SELECT plan(14);
+SELECT plan(13);
 
 SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test password=mimeo_test');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established');
@@ -29,7 +29,7 @@ SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.updater_test_source (
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source (col1, col2, col3) VALUES (generate_series(100001,110000), ''test''||generate_series(100001,110000)::text, now())');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source (col1, col2, col3) VALUES (generate_series(100001,110000), ''test''||generate_series(100001,110000)::text, now())');
 
-SELECT pass('Sleeping for 10 seconds to ensure gap for incremental tests...');
+SELECT diag('Sleeping for 10 seconds to ensure gap for incremental tests...');
 SELECT pg_sleep(10);
 
 SELECT refresh_inserter('mimeo_source.inserter_test_source');

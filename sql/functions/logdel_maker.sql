@@ -29,6 +29,7 @@ v_dest_table_name           text;
 v_exists                    int := 0;
 v_field                     text;
 v_insert_refresh_config     text;
+v_jobmon                    boolean;
 v_key_type                  text;
 v_old_search_path           text;
 v_pk_name                   text[] := p_pk_name;
@@ -99,10 +100,37 @@ IF p_filter IS NOT NULL THEN
     END LOOP;
 END IF;
 
-v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_logdel(source_table, dest_table, dblink, control, pk_name, pk_type, last_run, filter, condition) VALUES('
-    ||quote_literal(p_src_table)||', '||quote_literal(p_dest_table)||', '|| p_dblink_id||', '||quote_literal('@extschema@.'||v_src_table_name||'_q')||', '
-    ||quote_literal(v_pk_name)||', '||quote_literal(v_pk_type)||', '||quote_literal(CURRENT_TIMESTAMP)||','||COALESCE(quote_literal(p_filter), 'NULL')||','
-    ||COALESCE(quote_literal(p_condition), 'NULL')||')';
+SELECT 
+    CASE 
+        WHEN count(nspname) > 0 THEN true
+        ELSE false
+    END AS jobmon_schema
+INTO v_jobmon 
+FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
+
+-- Unlike dml, config table insertion has to go first so that remote queue table creation step can have full column list
+v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_logdel(
+        source_table
+        , dest_table
+        , dblink
+        , control
+        , pk_name
+        , pk_type
+        , last_run
+        , filter
+        , condition
+        , jobmon ) 
+    VALUES('
+        ||quote_literal(p_src_table)
+        ||', '||quote_literal(p_dest_table)
+        ||', '|| p_dblink_id
+        ||', '||quote_literal('@extschema@.'||v_src_table_name||'_q')
+        ||', '||quote_literal(v_pk_name)
+        ||', '||quote_literal(v_pk_type)
+        ||', '||quote_literal(CURRENT_TIMESTAMP)
+        ||', '||COALESCE(quote_literal(p_filter), 'NULL')
+        ||', '||COALESCE(quote_literal(p_condition), 'NULL')
+        ||', '||v_jobmon||')';
 RAISE NOTICE 'Inserting data into config table';
 PERFORM gdb(p_debug, 'v_insert_refresh_config: '||v_insert_refresh_config);
 EXECUTE v_insert_refresh_config;

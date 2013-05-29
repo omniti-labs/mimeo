@@ -1,7 +1,7 @@
 /*
  *  Refresh insert/update only table based on timestamp control field
  */
-CREATE FUNCTION refresh_updater(p_destination text, p_limit integer DEFAULT NULL, p_repull boolean DEFAULT false, p_repull_start text DEFAULT NULL, p_repull_end text DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
+CREATE FUNCTION refresh_updater(p_destination text, p_limit integer DEFAULT NULL, p_repull boolean DEFAULT false, p_repull_start text DEFAULT NULL, p_repull_end text DEFAULT NULL, p_jobmon boolean DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
@@ -30,6 +30,7 @@ v_filter                text[];
 v_full_refresh          boolean := false;
 v_insert_sql            text;
 v_job_id                int;
+v_jobmon                boolean;
 v_jobmon_schema         text;
 v_job_name              text;
 v_last_fetched          timestamptz;
@@ -63,22 +64,7 @@ SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.
 
 -- Set custom search path to allow easier calls to other functions, especially job logging
 SELECT current_setting('search_path') INTO v_old_search_path;
-EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||',public'',''false'')';
-
--- Take advisory lock to prevent multiple calls to function overlapping
-v_adv_lock := pg_try_advisory_lock(hashtext('refresh_updater'), hashtext(v_job_name));
-IF v_adv_lock = 'false' THEN
-    v_job_id := add_job(v_job_name);
-    v_step_id := add_step(v_job_id,'Obtaining advisory lock for job: '||v_job_name);
-    PERFORM gdb(p_debug,'Obtaining advisory lock FAILED for job: '||v_job_name);
-    PERFORM update_step(v_step_id, 'WARNING','Found concurrent job. Exiting gracefully');
-    PERFORM fail_job(v_job_id, 2);
-    EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
-    RETURN;
-END IF;
-
-v_job_id := add_job(v_job_name);
-PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
+EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||COALESCE(v_jobmon_schema||',', '')||v_dblink_schema||',public'',''false'')';
 
 SELECT source_table
     , dest_table
@@ -94,9 +80,8 @@ SELECT source_table
     , dst_start
     , dst_end
     , batch_limit  
-FROM refresh_config_updater
-WHERE dest_table = p_destination INTO 
-    v_source_table
+    , jobmon
+INTO v_source_table
     , v_dest_table
     , v_tmp_table
     , v_dblink
@@ -109,9 +94,34 @@ WHERE dest_table = p_destination INTO
     , v_dst_active
     , v_dst_start
     , v_dst_end
-    , v_limit;
+    , v_limit
+    , v_jobmon
+FROM refresh_config_updater
+WHERE dest_table = p_destination;
 IF NOT FOUND THEN
    RAISE EXCEPTION 'No configuration found for %',v_job_name;
+END IF;
+
+-- Allow override with parameter
+v_jobmon := COALESCE(p_jobmon, v_jobmon);
+
+-- Take advisory lock to prevent multiple calls to function overlapping
+v_adv_lock := pg_try_advisory_lock(hashtext('refresh_updater'), hashtext(v_job_name));
+IF v_adv_lock = 'false' THEN
+    IF v_jobmon THEN
+        v_job_id := add_job(v_job_name);
+        v_step_id := add_step(v_job_id,'Obtaining advisory lock for job: '||v_job_name);
+        PERFORM update_step(v_step_id, 'WARNING','Found concurrent job. Exiting gracefully');
+        PERFORM fail_job(v_job_id, 2);
+    END IF;
+    PERFORM gdb(p_debug,'Obtaining advisory lock FAILED for job: '||v_job_name);
+    EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
+    RETURN;
+END IF;
+
+IF v_jobmon THEN
+    v_job_id := add_job(v_job_name);
+    PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
 END IF;
 
 -- Do not allow this function to run during DST time change if config option is true. Otherwise will miss data from source
@@ -119,10 +129,12 @@ IF v_dst_active THEN
     v_dst_check := @extschema@.dst_change(v_now);
     IF v_dst_check THEN 
         IF to_number(to_char(v_now, 'HH24MM'), '0000') > v_dst_start AND to_number(to_char(v_now, 'HH24MM'), '0000') < v_dst_end THEN
-            v_step_id := add_step( v_job_id, 'DST Check');
-            PERFORM update_step(v_step_id, 'OK', 'Job CANCELLED - Does not run during DST time change');
+            IF v_jobmon THEN
+                v_step_id := add_step( v_job_id, 'DST Check');
+                PERFORM update_step(v_step_id, 'OK', 'Job CANCELLED - Does not run during DST time change');
+                PERFORM close_job(v_job_id);
+            END IF;
             UPDATE refresh_config_updater SET last_run = CURRENT_TIMESTAMP WHERE dest_table = p_destination;  
-            PERFORM close_job(v_job_id);
             PERFORM gdb(p_debug, 'Cannot run during DST time change');
             EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
             PERFORM pg_advisory_unlock(hashtext('refresh_updater'), hashtext(v_job_name));
@@ -131,7 +143,9 @@ IF v_dst_active THEN
     END IF;
 END IF;
 
-v_step_id := add_step(v_job_id,'Building SQL');
+IF v_jobmon THEN
+    v_step_id := add_step(v_job_id,'Building SQL');
+END IF;
 
 -- determine column list, column type list
 IF v_filter IS NULL THEN 
@@ -162,14 +176,18 @@ END IF;
 IF p_repull THEN
     -- Repull ALL data if no start and end values set
     IF p_repull_start IS NULL AND p_repull_end IS NULL THEN
-        PERFORM update_step(v_step_id, 'OK','Request to repull ALL data from source. This could take a while...');
+        IF v_jobmon THEN
+            PERFORM update_step(v_step_id, 'OK','Request to repull ALL data from source. This could take a while...');
+        END IF;
         EXECUTE 'TRUNCATE '||v_dest_table;
         v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table;
         IF v_condition IS NOT NULL THEN
             v_remote_sql := v_remote_sql || ' ' || v_condition;
         END IF;
     ELSE
-        PERFORM update_step(v_step_id, 'OK','Request to repull data from '||p_repull_start||' to '||p_repull_end);
+        IF v_jobmon THEN
+            PERFORM update_step(v_step_id, 'OK','Request to repull data from '||p_repull_start||' to '||p_repull_end);
+        END IF;
         PERFORM gdb(p_debug,'Request to repull data from '||p_repull_start||' to '||p_repull_end);
         v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table;
         IF v_condition IS NOT NULL THEN
@@ -203,7 +221,9 @@ ELSE
         v_pk_counter := v_pk_counter + 1;
     END LOOP;
 
-    PERFORM update_step(v_step_id, 'OK','Grabbing rows from '||v_last_value::text||' to '||v_boundary::text);
+    IF v_jobmon THEN
+        PERFORM update_step(v_step_id, 'OK','Grabbing rows from '||v_last_value::text||' to '||v_boundary::text);
+    END IF;
     PERFORM gdb(p_debug,'Grabbing rows from '||v_last_value::text||' to '||v_boundary::text);
 END IF;
 
@@ -211,7 +231,9 @@ v_insert_sql := 'INSERT INTO '||v_dest_table||' ('||v_cols||') SELECT '||v_cols|
 
 PERFORM gdb(p_debug,v_remote_sql);
 PERFORM dblink_open(v_dblink_name, 'mimeo_cursor', v_remote_sql);
-v_step_id := add_step(v_job_id, 'Inserting new/updated records into local table');
+IF v_jobmon THEN
+    v_step_id := add_step(v_job_id, 'Inserting new/updated records into local table');
+END IF;
 v_rowcount := 0;
 
 EXECUTE 'CREATE TEMP TABLE '||v_tmp_table||' ('||v_cols_n_types||')'; 
@@ -231,61 +253,87 @@ LOOP
     END IF;
     EXIT WHEN v_rowcount = 0;
     PERFORM gdb(p_debug,'Fetching rows in batches: '||v_total||' done so far. Last fetched: '||v_last_fetched);
-    PERFORM update_step(v_step_id, 'PENDING', 'Fetching rows in batches: '||v_total||' done so far. Last fetched: '||v_last_fetched);
+    IF v_jobmon THEN
+        PERFORM update_step(v_step_id, 'PENDING', 'Fetching rows in batches: '||v_total||' done so far. Last fetched: '||v_last_fetched);
+    END IF;
 END LOOP;
 PERFORM dblink_close(v_dblink_name, 'mimeo_cursor');
-PERFORM update_step(v_step_id, 'OK','Rows fetched: '||v_total);     
+IF v_jobmon THEN
+    PERFORM update_step(v_step_id, 'OK','Rows fetched: '||v_total);     
+END IF;
     
 IF v_limit IS NULL THEN
     -- nothing else to do
 ELSE 
     -- When using batch limits, entire batch must be pulled to temp table before inserting to real table to catch edge cases 
-    v_step_id := add_step(v_job_id,'Checking for batch limit issues');     
+    IF v_jobmon THEN
+        v_step_id := add_step(v_job_id,'Checking for batch limit issues');     
+    END IF;
     -- Not recommended that the batch actually equal the limit set if possible.
     IF v_total >= v_limit THEN
-        PERFORM update_step(v_step_id, 'WARNING','Row count fetched equal to or greater than limit set: '||v_limit||'. Recommend increasing batch limit if possible.');
         PERFORM gdb(p_debug, 'Row count fetched equal to or greater than limit set: '||v_limit||'. Recommend increasing batch limit if possible.'); 
+        IF v_jobmon THEN
+            PERFORM update_step(v_step_id, 'WARNING','Row count fetched equal to or greater than limit set: '||v_limit||'. Recommend increasing batch limit if possible.');
+            v_step_id := add_step(v_job_id, 'Removing high boundary rows from this batch to avoid missing data');       
+        END IF;
         EXECUTE 'SELECT max('||v_control||') FROM '||v_tmp_table INTO v_last_value;
-        v_step_id := add_step(v_job_id, 'Removing high boundary rows from this batch to avoid missing data');       
         EXECUTE 'DELETE FROM '||v_tmp_table||' WHERE '||v_control||' = '||quote_literal(v_last_value);
         GET DIAGNOSTICS v_rowcount = ROW_COUNT;
-        PERFORM update_step(v_step_id, 'OK', 'Removed '||v_rowcount||' rows. Batch now contains '||v_limit - v_rowcount||' records');
+        IF v_jobmon THEN
+            PERFORM update_step(v_step_id, 'OK', 'Removed '||v_rowcount||' rows. Batch now contains '||v_limit - v_rowcount||' records');
+        END IF;
         PERFORM gdb(p_debug, 'Removed '||v_rowcount||' rows from batch. Batch table now contains '||v_limit - v_rowcount||' records');
         v_batch_limit_reached := 2;
         IF (v_limit - v_rowcount) < 1 THEN
-            v_step_id := add_step(v_job_id, 'Reached inconsistent state');
-            PERFORM update_step(v_step_id, 'CRITICAL', 'Batch contained max rows ('||v_limit||') or greater and all contained the same timestamp value. Unable to guarentee rows will ever be replicated consistently. Increase row limit parameter to allow a consistent batch.');
+            IF v_jobmon THEN
+                v_step_id := add_step(v_job_id, 'Reached inconsistent state');
+                PERFORM update_step(v_step_id, 'CRITICAL', 'Batch contained max rows ('||v_limit||') or greater and all contained the same timestamp value. Unable to guarentee rows will ever be replicated consistently. Increase row limit parameter to allow a consistent batch.');
+            END IF;
             PERFORM gdb(p_debug, 'Batch contained max rows ('||v_limit||') or greater and all contained the same timestamp value. Unable to guarentee rows will be replicated consistently. Increase row limit parameter to allow a consistent batch.');
             v_batch_limit_reached := 3;
         END IF;
     ELSE
-        PERFORM update_step(v_step_id, 'OK','No issues found');
+        IF v_jobmon THEN
+            PERFORM update_step(v_step_id, 'OK','No issues found');
+        END IF;
         PERFORM gdb(p_debug, 'No issues found');
     END IF;
 
     IF v_batch_limit_reached <> 3 THEN
         EXECUTE 'CREATE INDEX ON '||v_tmp_table||' ('||array_to_string(v_pk_name, ',')||')'; -- incase of large batch limit
         EXECUTE 'ANALYZE '||v_tmp_table;       
-        v_step_id := add_step(v_job_id,'Deleting records marked for update in local table');
-        perform gdb(p_debug,v_delete_sql);
-        execute v_delete_sql; 
+        IF v_jobmon THEN
+            v_step_id := add_step(v_job_id,'Deleting records marked for update in local table');
+        END IF;
+        PERFORM gdb(p_debug,v_delete_sql);
+        EXECUTE v_delete_sql; 
         GET DIAGNOSTICS v_rowcount = ROW_COUNT;
-        PERFORM update_step(v_step_id, 'OK','Deleted '||v_rowcount||' records');
+        IF v_jobmon THEN
+            PERFORM update_step(v_step_id, 'OK','Deleted '||v_rowcount||' records');
+        END IF;
 
-        v_step_id := add_step(v_job_id,'Inserting new records into local table');
+        IF v_jobmon THEN
+            v_step_id := add_step(v_job_id,'Inserting new records into local table');
+        END IF;
         perform gdb(p_debug,v_insert_sql);
         EXECUTE v_insert_sql; 
         GET DIAGNOSTICS v_rowcount = ROW_COUNT;
-        PERFORM update_step(v_step_id, 'OK','Inserted '||v_rowcount||' records');
+        IF v_jobmon THEN
+            PERFORM update_step(v_step_id, 'OK','Inserted '||v_rowcount||' records');
+        END IF;
     END IF;
 
 END IF; -- end v_limit IF
 
 IF v_batch_limit_reached <> 3 THEN
-    v_step_id := add_step(v_job_id, 'Setting next lower boundary');
+    IF v_jobmon THEN
+        v_step_id := add_step(v_job_id, 'Setting next lower boundary');
+    END IF;
     EXECUTE 'SELECT max('||v_control||') FROM '|| v_dest_table INTO v_last_value;
     UPDATE refresh_config_updater set last_value = coalesce(v_last_value, CURRENT_TIMESTAMP), last_run = CURRENT_TIMESTAMP WHERE dest_table = p_destination;  
-    PERFORM update_step(v_step_id, 'OK','Lower boundary value is: '||coalesce(v_last_value, CURRENT_TIMESTAMP));
+    IF v_jobmon THEN
+        PERFORM update_step(v_step_id, 'OK','Lower boundary value is: '||coalesce(v_last_value, CURRENT_TIMESTAMP));
+    END IF;
     PERFORM gdb(p_debug, 'Lower boundary value is: '||coalesce(v_last_value, CURRENT_TIMESTAMP));
 END IF;
 
@@ -293,15 +341,17 @@ EXECUTE 'DROP TABLE IF EXISTS '||v_tmp_table;
 
 PERFORM dblink_disconnect(v_dblink_name);
 
-IF v_batch_limit_reached = 0 THEN
-    PERFORM close_job(v_job_id);
-ELSIF v_batch_limit_reached = 2 THEN
-    -- Set final job status to level 2 (WARNING) to bring notice that the batch limit was reached and may need adjusting.
-    -- Preventive warning to keep replication from falling behind.
-    PERFORM fail_job(v_job_id, 2);
-ELSIF v_batch_limit_reached = 3 THEN
-    -- Really bad. Critical alert!
-    PERFORM fail_job(v_job_id);
+IF v_jobmon THEN
+    IF v_batch_limit_reached = 0 THEN
+        PERFORM close_job(v_job_id);
+    ELSIF v_batch_limit_reached = 2 THEN
+        -- Set final job status to level 2 (WARNING) to bring notice that the batch limit was reached and may need adjusting.
+        -- Preventive warning to keep replication from falling behind.
+        PERFORM fail_job(v_job_id, 2);
+    ELSIF v_batch_limit_reached = 3 THEN
+        -- Really bad. Critical alert!
+        PERFORM fail_job(v_job_id);
+    END IF;
 END IF;
 
 -- Ensure old search path is reset for the current session
@@ -318,20 +368,21 @@ EXCEPTION
         PERFORM pg_advisory_unlock(hashtext('refresh_updater'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;  
     WHEN OTHERS THEN
-        EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||''',''false'')';
-        IF v_job_id IS NULL THEN
-            EXECUTE 'SELECT '||v_jobmon_schema||'.add_job(''Refresh Updater: '||p_destination||''')' INTO v_job_id;
-            EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||', ''EXCEPTION before job logging started'')' INTO v_step_id;
-        END IF;
-        IF v_step_id IS NULL THEN
-            EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||', ''EXCEPTION before first step logged'')' INTO v_step_id;
-        END IF;
         EXECUTE 'SELECT '||v_dblink_schema||'.dblink_get_connections() @> ARRAY['||quote_literal(v_dblink_name)||']' INTO v_link_exists;
         IF v_link_exists THEN
             EXECUTE 'SELECT '||v_dblink_schema||'.dblink_disconnect('||quote_literal(v_dblink_name)||')';
         END IF;
-        EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_step_id||', ''CRITICAL'', ''ERROR: '||COALESCE(SQLERRM,'unknown')||''')';
-        EXECUTE 'SELECT '||v_jobmon_schema||'.fail_job('||v_job_id||')';
+        IF v_jobmon THEN
+            IF v_job_id IS NULL THEN
+                EXECUTE 'SELECT '||v_jobmon_schema||'.add_job(''Refresh Updater: '||p_destination||''')' INTO v_job_id;
+                EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||', ''EXCEPTION before job logging started'')' INTO v_step_id;
+            END IF;
+            IF v_step_id IS NULL THEN
+                EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||', ''EXCEPTION before first step logged'')' INTO v_step_id;
+            END IF;
+            EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_step_id||', ''CRITICAL'', ''ERROR: '||COALESCE(SQLERRM,'unknown')||''')';
+            EXECUTE 'SELECT '||v_jobmon_schema||'.fail_job('||v_job_id||')';
+        END IF;
         PERFORM pg_advisory_unlock(hashtext('refresh_updater'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;
 END

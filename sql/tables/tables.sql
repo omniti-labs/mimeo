@@ -24,7 +24,8 @@ CREATE TABLE refresh_config (
     filter text[],
     condition text,
     period interval,
-    batch_limit int
+    batch_limit int,
+    jobmon boolean DEFAULT false
 );
 SELECT pg_catalog.pg_extension_config_dump('refresh_config', '');
 CREATE RULE refresh_config_parent_nodata AS ON INSERT TO @extschema@.refresh_config DO INSTEAD NOTHING;

@@ -3,7 +3,7 @@
 
 SELECT set_config('search_path','mimeo, dblink, tap',false);
 
-SELECT plan(2);
+SELECT plan(1);
 
 -- Setup remote tables for replication testing
 SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test password=mimeo_test');
@@ -132,6 +132,6 @@ SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.logdel_test_source_e
 SELECT dblink_disconnect('mimeo_test');
 --SELECT is('SELECT dblink_get_connections() @> ''{mimeo_test}''','{}', 'Close remote database connection');
 
-SELECT pass('Completed remote table setup');
+SELECT diag('Completed remote table setup');
 
 SELECT * FROM finish();

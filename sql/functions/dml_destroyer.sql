@@ -1,10 +1,9 @@
 /*
- *  DML destroyer function. Pass ARCHIVE to keep table intact.
+ *  DML destroyer function. 
  */
-CREATE FUNCTION dml_destroyer(p_dest_table text, p_archive_option text) RETURNS void
+CREATE FUNCTION dml_destroyer(p_dest_table text, p_keep_table boolean DEFAULT true) RETURNS void
     LANGUAGE plpgsql
     AS $$
-    
 DECLARE
 
 v_dblink            int;
@@ -41,11 +40,11 @@ ELSE
     PERFORM dblink_exec('mimeo_dml_destroy', v_drop_q_table);
     PERFORM dblink_disconnect('mimeo_dml_destroy');
 
-    IF p_archive_option != 'ARCHIVE' THEN 
+    IF p_keep_table THEN 
+        RAISE NOTICE 'Destination table NOT destroyed: %', v_dest_table; 
+    ELSE
         RAISE NOTICE 'Destination table destroyed: %', v_dest_table;
         EXECUTE 'DROP TABLE IF EXISTS ' || v_dest_table;
-    ELSE
-        RAISE NOTICE 'Archive option set. Destination table NOT destroyed: %', v_dest_table; 
     END IF;
 
     RAISE NOTICE 'Removing config data';

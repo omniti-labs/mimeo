@@ -21,6 +21,7 @@ v_dest_schema_name          text;
 v_dest_table_name           text;
 v_dst_active                boolean;
 v_insert_refresh_config     text;
+v_jobmon                    boolean;
 v_max_timestamp             timestamptz;
 v_seq                       text;
 v_seq_max                   bigint;
@@ -44,9 +45,33 @@ ELSE
     RAISE EXCEPTION 'Source (and destination) table must be schema qualified';
 END IF;
 
-v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_table(source_table, dest_table, dblink, last_run, filter, condition, sequences) VALUES('
-    ||quote_literal(p_src_table)||','||quote_literal(p_dest_table)||','|| p_dblink_id||','
-    ||quote_literal(CURRENT_TIMESTAMP)||','||COALESCE(quote_literal(p_filter), 'NULL')||','||COALESCE(quote_literal(p_condition), 'NULL')||','||COALESCE(quote_literal(p_sequences), 'NULL')||');';
+-- Determine if pg_jobmon is installed to set config table option below
+SELECT 
+    CASE 
+        WHEN count(nspname) > 0 THEN true
+        ELSE false
+    END AS jobmon_schema
+INTO v_jobmon 
+FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
+
+v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_table(
+        source_table
+        , dest_table
+        , dblink
+        , last_run
+        , filter
+        , condition
+        , sequences 
+        , jobmon)
+    VALUES('
+    ||quote_literal(p_src_table)
+    ||', '||quote_literal(p_dest_table)
+    ||', '|| p_dblink_id
+    ||', '||quote_literal(CURRENT_TIMESTAMP)
+    ||', '||COALESCE(quote_literal(p_filter), 'NULL')
+    ||', '||COALESCE(quote_literal(p_condition), 'NULL')
+    ||', '||COALESCE(quote_literal(p_sequences), 'NULL')
+    ||', '||v_jobmon||')';
 PERFORM @extschema@.gdb(p_debug, 'v_insert_refresh_config: '||v_insert_refresh_config);
 EXECUTE v_insert_refresh_config;
 

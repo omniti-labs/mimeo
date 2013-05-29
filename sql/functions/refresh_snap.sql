@@ -1,7 +1,7 @@
 /*
  *  Snap refresh to repull all table data
  */
-CREATE FUNCTION refresh_snap(p_destination text, p_index boolean DEFAULT true, p_debug boolean DEFAULT false, p_pulldata boolean DEFAULT true) RETURNS void
+CREATE FUNCTION refresh_snap(p_destination text, p_index boolean DEFAULT true, p_pulldata boolean DEFAULT true, p_jobmon boolean DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
@@ -20,6 +20,7 @@ v_fetch_sql         text;
 v_filter            text[];
 v_insert_sql        text;
 v_job_id            int;
+v_jobmon            boolean;
 v_jobmon_schema     text;
 v_job_name          text;
 v_lcols_array       text[];
@@ -67,24 +68,7 @@ SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.
 
 -- Set custom search path to allow easier calls to other functions, especially job logging
 SELECT current_setting('search_path') INTO v_old_search_path;
-EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_jobmon_schema||','||v_dblink_schema||',public'',''false'')';
-
--- Take advisory lock to prevent multiple calls to function overlapping and causing possible deadlock
-v_adv_lock := pg_try_advisory_lock(hashtext('refresh_snap'), hashtext(v_job_name));
-IF v_adv_lock = 'false' THEN
-    v_job_id := add_job(v_job_name);
-    v_step_id := add_step(v_job_id,'Obtaining advisory lock for job: '||v_job_name);
-    PERFORM gdb(p_debug,'Obtaining advisory lock FAILED for job: '||v_job_name);
-    PERFORM update_step(v_step_id, 'WARNING','Found concurrent job. Exiting gracefully');
-    PERFORM fail_job(v_job_id, 2);
-    EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
-    RETURN;
-END IF;
-
-v_job_id := add_job(v_job_name);
-PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
-
-v_step_id := add_step(v_job_id,'Grabbing Mapping, Building SQL');
+EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||COALESCE(v_jobmon_schema||',', '')||v_dblink_schema||',public'',''false'')';
 
 SELECT source_table
     , dest_table
@@ -95,6 +79,7 @@ SELECT source_table
     , n_tup_upd
     , n_tup_del
     , post_script 
+    , jobmon
 INTO v_source_table
     , v_dest_table
     , v_dblink
@@ -104,11 +89,35 @@ INTO v_source_table
     , v_tup_upd
     , v_tup_del
     , v_post_script 
+    , v_jobmon
 FROM refresh_config_snap
 WHERE dest_table = p_destination; 
 IF NOT FOUND THEN
    RAISE EXCEPTION 'No configuration found for %',v_job_name; 
 END IF;  
+
+-- Allow override with parameter
+v_jobmon := COALESCE(p_jobmon, v_jobmon);
+
+-- Take advisory lock to prevent multiple calls to function overlapping and causing possible deadlock
+v_adv_lock := pg_try_advisory_lock(hashtext('refresh_snap'), hashtext(v_job_name));
+IF v_adv_lock = 'false' THEN
+    IF v_jobmon THEN
+        v_job_id := add_job(v_job_name);
+        v_step_id := add_step(v_job_id,'Obtaining advisory lock for job: '||v_job_name);
+        PERFORM update_step(v_step_id, 'WARNING','Found concurrent job. Exiting gracefully');
+        PERFORM fail_job(v_job_id, 2);
+    END IF;
+    PERFORM gdb(p_debug,'Obtaining advisory lock FAILED for job: '||v_job_name);
+    EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
+    RETURN;
+END IF;
+
+IF v_jobmon THEN
+    v_job_id := add_job(v_job_name);
+    PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
+    v_step_id := add_step(v_job_id,'Grabbing Mapping, Building SQL');
+END IF;
 
 -- checking for current view
 SELECT definition INTO v_view_definition FROM pg_views where
@@ -116,8 +125,10 @@ SELECT definition INTO v_view_definition FROM pg_views where
 
 PERFORM dblink_connect(v_dblink_name, @extschema@.auth(v_dblink));
 
-PERFORM update_step(v_step_id, 'OK','Done');
-v_step_id := add_step(v_job_id,'Truncate non-active snap table');
+IF v_jobmon THEN
+    PERFORM update_step(v_step_id, 'OK','Done');
+    v_step_id := add_step(v_job_id,'Truncate non-active snap table');
+END IF;
 
 v_exists := strpos(v_view_definition, 'snap1');
   IF v_exists > 0 THEN
@@ -173,14 +184,18 @@ IF v_table_exists THEN
         EXECUTE 'DROP VIEW ' || v_dest_table;
         PERFORM manage_dest_table(v_dest_table, v_snap, p_debug);
 
-        v_step_id := add_step(v_job_id,'Source table structure changed.');
-        PERFORM update_step(v_step_id, 'OK','Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc');
+        IF v_jobmon THEN
+            v_step_id := add_step(v_job_id,'Source table structure changed.');
+            PERFORM update_step(v_step_id, 'OK','Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc');
+        END IF;
         PERFORM gdb(p_debug,'Source table structure changed. Tables and view dropped and recreated. Please double-check snap table attributes (permissions, indexes, etc)');
     END IF;
     -- truncate non-active snap table
     EXECUTE 'TRUNCATE TABLE ' || v_refresh_snap;
 
-    PERFORM update_step(v_step_id, 'OK','Done');
+    IF v_jobmon THEN
+        PERFORM update_step(v_step_id, 'OK','Done');
+    END IF;
 END IF;
 
 -- Only check the remote data if there have been no column changes and snap table actually exists. 
@@ -192,10 +207,14 @@ IF  v_table_exists AND v_match THEN
     EXECUTE v_remote_sql INTO v_tup_ins_new, v_tup_upd_new, v_tup_del_new;
     IF v_tup_ins_new = v_tup_ins AND v_tup_upd_new = v_tup_upd AND v_tup_del_new = v_tup_del THEN
         PERFORM gdb(p_debug,'Remote table has not had any writes. Skipping data pull');
-        PERFORM update_step(v_step_id, 'OK', 'Remote table has not had any writes. Skipping data pull');
+        IF v_jobmon THEN
+            PERFORM update_step(v_step_id, 'OK', 'Remote table has not had any writes. Skipping data pull');
+        END IF;
         UPDATE refresh_config_snap SET last_run = CURRENT_TIMESTAMP WHERE dest_table = p_destination;  
         PERFORM dblink_disconnect(v_dblink_name);
-        PERFORM close_job(v_job_id);
+        IF v_jobmon THEN
+            PERFORM close_job(v_job_id);
+        END IF;
         EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
         PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
         RETURN;
@@ -210,7 +229,9 @@ ELSIF v_condition IS NOT NULL THEN
     v_remote_sql := v_remote_sql || ' ' || v_condition;
 END IF;
 
-v_step_id := add_step(v_job_id,'Inserting records into local table');
+IF v_jobmon THEN
+    v_step_id := add_step(v_job_id,'Inserting records into local table');
+END IF;
 PERFORM dblink_open(v_dblink_name, 'mimeo_cursor', v_remote_sql);
 
 v_rowcount := 0;
@@ -222,11 +243,15 @@ LOOP
     EXIT WHEN v_rowcount = 0;
     v_total := v_total + coalesce(v_rowcount, 0);
     PERFORM gdb(p_debug,'Fetching rows in batches: '||v_total||' done so far.');
-    PERFORM update_step(v_step_id, 'PENDING', 'Fetching rows in batches: '||v_total||' done so far.');
+    IF v_jobmon THEN
+        PERFORM update_step(v_step_id, 'PENDING', 'Fetching rows in batches: '||v_total||' done so far.');
+    END IF;
 END LOOP;
 PERFORM dblink_close(v_dblink_name, 'mimeo_cursor');
 
-PERFORM update_step(v_step_id, 'OK','Inserted '||v_total||' rows');
+IF v_jobmon THEN
+    PERFORM update_step(v_step_id, 'OK','Inserted '||v_total||' rows');
+END IF;
 
 -- Create indexes if new table was created
 IF (v_table_exists = false OR v_match = 'f') AND p_index = true THEN
@@ -237,10 +262,14 @@ END IF;
 EXECUTE 'ANALYZE ' ||v_refresh_snap;
 
 -- swap view
-v_step_id := add_step(v_job_id,'Swap view to '||v_refresh_snap);
+IF v_jobmon THEN
+    v_step_id := add_step(v_job_id,'Swap view to '||v_refresh_snap);
+END IF;
 PERFORM gdb(p_debug,'Swapping view to '||v_refresh_snap);
 EXECUTE 'CREATE OR REPLACE VIEW '||v_dest_table||' AS SELECT * FROM '||v_refresh_snap;
-PERFORM update_step(v_step_id, 'OK','View Swapped');
+IF v_jobmon THEN
+    PERFORM update_step(v_step_id, 'OK','View Swapped');
+END IF;
 
 IF v_match = false THEN
     -- Actually apply the original privileges if the table was recreated
@@ -254,9 +283,13 @@ IF v_match = false THEN
 
     -- Run any special sql to fix anything that was done to destination tables (extra indexes, etc)
     IF v_post_script IS NOT NULL THEN
-        v_step_id := add_step(v_job_id,'Applying post_script sql commands due to schema change');
+        IF v_jobmon THEN
+            v_step_id := add_step(v_job_id,'Applying post_script sql commands due to schema change');
+        END IF;
         PERFORM @extschema@.post_script(v_dest_table);
-        PERFORM update_step(v_step_id, 'OK','Done');
+        IF v_jobmon THEN
+            PERFORM update_step(v_step_id, 'OK','Done');
+        END IF;
     END IF;
 END IF;
 
@@ -267,23 +300,33 @@ SELECT
     END
 INTO v_table_exists FROM pg_tables WHERE schemaname ||'.'|| tablename = v_old_snap_table;
 IF v_table_exists THEN
-    v_step_id := add_step(v_job_id,'Truncating old snap table');
+    IF v_jobmon THEN
+        v_step_id := add_step(v_job_id,'Truncating old snap table');
+    END IF;
     EXECUTE 'TRUNCATE TABLE '||v_old_snap_table;
-    PERFORM update_step(v_step_id, 'OK','Done');
+    IF v_jobmon THEN
+        PERFORM update_step(v_step_id, 'OK','Done');
+    END IF;
 END IF;
 
-v_step_id := add_step(v_job_id,'Updating last_run & tuple change values');
+IF v_jobmon THEN
+    v_step_id := add_step(v_job_id,'Updating last_run & tuple change values');
+END IF;
 UPDATE refresh_config_snap SET 
     last_run = CURRENT_TIMESTAMP 
     , n_tup_ins = v_tup_ins_new   
     , n_tup_upd = v_tup_upd_new
     , n_tup_del = v_tup_del_new
 WHERE dest_table = p_destination;  
-PERFORM update_step(v_step_id, 'OK','Done');
+IF v_jobmon THEN
+    PERFORM update_step(v_step_id, 'OK','Done');
+END IF;
 
 PERFORM dblink_disconnect(v_dblink_name);
 
-PERFORM close_job(v_job_id);
+IF v_jobmon THEN
+    PERFORM close_job(v_job_id);
+END IF;
 
 -- Ensure old search path is reset for the current session
 EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
@@ -299,21 +342,22 @@ EXCEPTION
         PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;   
     WHEN OTHERS THEN
-        IF v_job_id IS NULL THEN
-            EXECUTE 'SELECT '||v_jobmon_schema||'.add_job(''Refresh Snap: '||p_destination||''')' INTO v_job_id;
-            EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||', ''EXCEPTION before job logging started'')' INTO v_step_id;
-        END IF;
-        IF v_step_id IS NULL THEN
-            EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||', ''EXCEPTION before first step logged'')' INTO v_step_id;
-        END IF;
         EXECUTE 'SELECT '||v_dblink_schema||'.dblink_get_connections() @> ARRAY['||quote_literal(v_dblink_name)||']' INTO v_link_exists;
         IF v_link_exists THEN
             EXECUTE 'SELECT '||v_dblink_schema||'.dblink_disconnect('||quote_literal(v_dblink_name)||')';
         END IF;
-        EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_step_id||', ''CRITICAL'', ''ERROR: '||COALESCE(SQLERRM,'unknown')||''')';
-        EXECUTE 'SELECT '||v_jobmon_schema||'.fail_job('||v_job_id||')';
+        IF v_jobmon THEN
+            IF v_job_id IS NULL THEN
+                EXECUTE 'SELECT '||v_jobmon_schema||'.add_job(''Refresh Snap: '||p_destination||''')' INTO v_job_id;
+                EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||', ''EXCEPTION before job logging started'')' INTO v_step_id;
+            END IF;
+            IF v_step_id IS NULL THEN
+                EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||', ''EXCEPTION before first step logged'')' INTO v_step_id;
+            END IF;
+            EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_step_id||', ''CRITICAL'', ''ERROR: '||COALESCE(SQLERRM,'unknown')||''')';
+            EXECUTE 'SELECT '||v_jobmon_schema||'.fail_job('||v_job_id||')';
+        END IF;
         PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
-

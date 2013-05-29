@@ -1,7 +1,7 @@
 /*
- *  Logdel destroyer function. Pass ARCHIVE to keep table intact.
+ *  Logdel destroyer function. 
  */
-CREATE FUNCTION logdel_destroyer(p_dest_table text, p_archive_option text) RETURNS void
+CREATE FUNCTION logdel_destroyer(p_dest_table text, p_keep_table boolean DEFAULT true) RETURNS void
     LANGUAGE plpgsql
     AS $$
     
@@ -41,11 +41,11 @@ ELSE
     PERFORM dblink_exec('mimeo_logdel_destroy', v_drop_q_table);
     PERFORM dblink_disconnect('mimeo_logdel_destroy');
 
-    IF p_archive_option != 'ARCHIVE' THEN 
+    IF p_keep_table THEN 
+        RAISE NOTICE 'Destination table NOT destroyed: %', v_dest_table; 
+    ELSE
         RAISE NOTICE 'Destination table destroyed: %', v_dest_table;
         EXECUTE 'DROP TABLE IF EXISTS ' || v_dest_table;
-    ELSE
-        RAISE NOTICE 'Archive option set. Destination table NOT destroyed: %', v_dest_table; 
     END IF;
 
     RAISE NOTICE 'Removing config data';
@@ -64,6 +64,5 @@ EXCEPTION
         END IF;
         EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
         RAISE EXCEPTION '%', SQLERRM;    
-
 END
 $$;

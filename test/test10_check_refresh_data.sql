@@ -5,9 +5,9 @@
 
 SELECT set_config('search_path','mimeo, dblink, tap',false);
 
-SELECT plan(51);
+SELECT plan(57);
 
-SELECT pass('Re-running refresh functions. This may take a bit...');
+SELECT diag('Re-running refresh functions. This may take a bit...');
 
 SELECT refresh_snap('mimeo_source.snap_test_source');
 SELECT refresh_snap('mimeo_dest.snap_test_dest');
@@ -89,6 +89,7 @@ SELECT table_privs_are('mimeo_dest', 'snap_test_dest_change_col_snap1', 'mimeo_d
 SELECT table_privs_are('mimeo_dest', 'snap_test_dest_change_col_snap2', 'mimeo_dumb_role', ARRAY['SELECT'], 'Checking mimeo_dumb_role privileges for mimeo_dest.snap_test_dest_change_col_snap2');
 SELECT view_owner_is ('mimeo_dest', 'snap_test_dest_change_col', 'mimeo_test', 'Check ownership for view mimeo_dest.snap_test_dest_change_col');
 
+SELECT results_eq('SELECT match FROM validate_rowcount(''mimeo_dest.snap_test_dest'')', ARRAY[true], 'Check validate_rowcount match');
 
 -- ########## PLAIN TABLE TESTS ##########
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.table_test_dest ORDER BY col1 ASC',
@@ -110,6 +111,7 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.table_test_dest_condi
 
 SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_dest.table_test_dest_empty ORDER BY col1 ASC', 'Check data for: mimeo_dest.table_test_dest_empty');
 
+SELECT results_eq('SELECT match FROM validate_rowcount(''mimeo_dest.table_test_dest'')', ARRAY[true], 'Check validate_rowcount match');
 
 -- ########## INSERTER TESTS ##########
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source ORDER BY col1 ASC',
@@ -132,6 +134,8 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.inserter_test_dest_co
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source WHERE col1 > 9000 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.inserter_test_dest_condition');
 
+SELECT results_eq('SELECT match FROM validate_rowcount(''mimeo_dest.inserter_test_dest'')', ARRAY[true], 'Check validate_rowcount match');
+
 -- ########## UPDATER TESTS ##########
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.updater_test_source ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.updater_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
@@ -152,6 +156,8 @@ SELECT results_eq('SELECT col1, col3 FROM mimeo_dest.updater_test_dest_filter OR
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.updater_test_dest_condition ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.updater_test_source WHERE col1 > 9000 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.updater_test_dest_condition');
+
+SELECT results_eq('SELECT match FROM validate_rowcount(''mimeo_dest.updater_test_dest'')', ARRAY[true], 'Check validate_rowcount match');
 
 -- ########## DML TESTS ##########
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.dml_test_source ORDER BY col1 ASC',
@@ -175,6 +181,8 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.dml_test_dest_conditi
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.dml_test_source_condition WHERE col1 > 9000 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.dml_test_dest_condition');
 SELECT is_empty('SELECT * FROM mimeo_dest.dml_test_dest_condition WHERE col1 <= 10000', 'Check that deleted row is gone from mimeo_dest.dml_test_dest_condition');
+
+SELECT results_eq('SELECT match FROM validate_rowcount(''mimeo_dest.dml_test_dest'')', ARRAY[true], 'Check validate_rowcount match');
 
 -- ########## LOGDEL TESTS ##########
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.logdel_test_source ORDER BY col1 ASC',
@@ -205,6 +213,9 @@ SELECT results_eq('SELECT col1, col2 FROM mimeo_dest.logdel_test_dest_filter ORD
 SELECT results_eq('SELECT col1, col2 FROM mimeo_dest.logdel_test_dest_condition WHERE col1 <> 11 ORDER BY col1, col2 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2 FROM mimeo_source.logdel_test_source_condition WHERE col1 > 9000 ORDER BY col1, col2 ASC'') t (col1 int, col2 text)',
     'Check data for: mimeo_dest.logdel_test_dest_condition');
+
+SELECT results_eq('SELECT match FROM validate_rowcount(''mimeo_source.logdel_test_source'')', ARRAY[true], 'Check validate_rowcount match');
+SELECT results_eq('SELECT match FROM validate_rowcount(''mimeo_dest.logdel_test_dest'')', ARRAY[false], 'Check validate_rowcount match');
 
 SELECT dblink_disconnect('mimeo_test');
 --SELECT is('SELECT dblink_get_connections() @> ''{mimeo_test}''','', 'Close remote database connection');

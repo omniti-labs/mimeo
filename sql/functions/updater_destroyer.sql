@@ -1,7 +1,7 @@
 /*
- *  Updater destroyer function. Pass archive to keep table intact.
+ *  Updater destroyer function. 
  */
-CREATE FUNCTION updater_destroyer(p_dest_table text, p_archive_option text) RETURNS void
+CREATE FUNCTION updater_destroyer(p_dest_table text, p_keep_table boolean DEFAULT true) RETURNS void
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -15,12 +15,11 @@ SELECT dest_table INTO v_dest_table
 IF NOT FOUND THEN
     RAISE NOTICE 'This table is not set up for updater replication: %', v_dest_table;
 ELSE
-    -- Keep destination table
-    IF p_archive_option != 'ARCHIVE' THEN 
-        EXECUTE 'DROP TABLE IF EXISTS ' || v_dest_table;
+    IF p_keep_table THEN 
+        RAISE NOTICE 'Destination table NOT destroyed: %', v_dest_table; 
+    ELSE
         RAISE NOTICE 'Destination table destroyed: %', v_dest_table;
-    ELSE 
-        RAISE NOTICE 'Archive option set. Destination table NOT destroyed: %', v_dest_table; 
+        EXECUTE 'DROP TABLE IF EXISTS ' || v_dest_table;
     END IF;
 
     EXECUTE 'DELETE FROM @extschema@.refresh_config_updater WHERE dest_table = ' || quote_literal(v_dest_table);

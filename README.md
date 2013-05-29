@@ -3,12 +3,14 @@ Mimeo
 
 Mimeo is an extension that provides specialized, per-table replication between PostgreSQL instances. It currently provides snapshot (whole table copy), incremental (based on an incrementing timestamp), etc), and DML (inserts, updates and deletes).
 
-It currently requires the pg_jobmon extension (see other repositories in omniti-labs) to log all replication activity and provide monitoring. 
+Also installing the pg_jobmon extension (see other repositories in omniti-labs) to log all replication activity and provide monitoring is highly recommended. 
 
 INSTALLATION
 ------------
 
-Requirements: dblink & pg_jobmon (>= v1.0.0) extensions (https://github.com/omniti-labs/pg_jobmon)
+Requirements: dblink extension 
+
+Recommendations: pg_jobmon (>= 1.0.0) extension (https://github.com/omniti-labs/pg_jobmon)
 
 In directory where you downloaded mimeo to run
 

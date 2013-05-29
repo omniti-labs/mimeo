@@ -21,6 +21,7 @@ v_data_source               text;
 v_dest_schema_name          text;
 v_dest_table_name           text;
 v_dst_active                boolean;
+v_jobmon                    boolean;
 v_insert_refresh_config     text;
 v_max_timestamp             timestamptz;
 v_table_exists              boolean;
@@ -43,12 +44,41 @@ ELSE
     RAISE EXCEPTION 'Source (and destination) table must be schema qualified';
 END IF;
 
+-- Determine if pg_jobmon is installed to set config table option below
+SELECT 
+    CASE 
+        WHEN count(nspname) > 0 THEN true
+        ELSE false
+    END AS jobmon_schema
+INTO v_jobmon 
+FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
+
 v_dst_active := @extschema@.dst_utc_check();
 
-v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_inserter(source_table, dest_table, dblink, control, boundary, last_value, last_run, dst_active, filter, condition) VALUES('
-    ||quote_literal(p_src_table)||','||quote_literal(p_dest_table)||','|| p_dblink_id||','||quote_literal(p_control_field)||','
-    ||quote_literal(p_boundary)||',''0001-01-01''::date,'||quote_literal(CURRENT_TIMESTAMP)||','||v_dst_active||','
-    ||COALESCE(quote_literal(p_filter), 'NULL')||','||COALESCE(quote_literal(p_condition), 'NULL')||');';
+v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_inserter(
+        source_table
+        , dest_table
+        , dblink
+        , control
+        , boundary
+        , last_value
+        , last_run
+        , dst_active
+        , filter
+        , condition
+        , jobmon ) 
+    VALUES('
+        ||quote_literal(p_src_table)
+        ||', '||quote_literal(p_dest_table)
+        ||', '|| p_dblink_id
+        ||', '||quote_literal(p_control_field)
+        ||', '||quote_literal(p_boundary)
+        ||', ''0001-01-01''::date, '
+              ||quote_literal(CURRENT_TIMESTAMP)
+        ||', '||v_dst_active
+        ||', '||COALESCE(quote_literal(p_filter), 'NULL')
+        ||', '||COALESCE(quote_literal(p_condition), 'NULL')
+        ||', '||v_jobmon||')';
 
 PERFORM @extschema@.gdb(p_debug, 'v_insert_refresh_config: '||v_insert_refresh_config);
 EXECUTE v_insert_refresh_config;
@@ -76,4 +106,3 @@ EXECUTE 'UPDATE @extschema@.refresh_config_inserter SET last_value = '||quote_li
 RAISE NOTICE 'Done';
 END
 $$;
-

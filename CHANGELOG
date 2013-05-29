@@ -1,3 +1,10 @@
+0.13.0
+-- Made the pg_jobmon extension optional. It can be turned on or off on a per replication table basis using the new "jobmon" boolean column in the config table. If pg_jobmon is installed it will be set to true by default for all replication types, otherwise it will be set false. You can also set whether it is used at runtime with the "p_jobmon" parameter to the refresh functions.
+-- Jobmon logging has been added to the table replication method.
+-- Added row count validation function. Just does a basic row count comparison between the source and destination. Snapshot & incremental should match rows exactly. DML/Logdel most likely will not match exactly due to the nature of their replication methods, but they should be close.
+-- Changed the parameter in the destroyer functions for keeping/destroying the destination. It is now a boolean and defaults to true for KEEPING the table. Before, that parameter would default to destroying the table unless you passed a specific value. This should hopefully be safer stop accidentally destroying the destination table unless you specifically ask to do that. 
+
+
 0.12.3
 -- Fixed function that determines replication key to always get the oldest unique key when no primary key is available (lowest index oid value). Ensures it's more consistent when it is reused elsewhere to determine which key to use.
 
