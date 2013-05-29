@@ -12,7 +12,7 @@
         "runtime": {
             "requires": {
                 "PostgreSQL": "9.1.0",
-                "dblink": "1.0.0",
+                "dblink": "1.0.0"
             },
             "recommends": { 
                 "pg_jobmon": "1.0.0"
