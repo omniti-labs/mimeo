@@ -1,0 +1,3 @@
+-- No changes to SQL code. This file must still be present in extensions folder when updating to anything higher than 0.13.1.
+-- Added --jobs (-j) option to run_refresh.py to allow parallel refresh runs using multiple cores (if available). Uses multiprocessing library, not threading.
+-- Fixed update scripts for upgrades from 0.11.1 to 0.12.0 and 0.12.3 to 0.13.0 on version 9.1.x of PostgreSQL. Inconsistencies in the way default privileges are stored between 9.1 and 9.2 lead to an update failure when trying to preserve existing privileges. I had only previously tested the updates on 9.2. 

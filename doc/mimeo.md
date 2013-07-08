@@ -308,10 +308,12 @@ Extras
 *run_refresh.py*
  * A python script to automatically run replication for tables that have their ''period'' set in the config table.
  * This script can be run as often as needed and refreshes will only fire if their interval period has passed.
+ * By default, refreshes are run sequentially in ascending order of their last_run value. Parallel option is available.
  * --connection (-c)  Option to set the psycopg connection string to the database. Default is "host=localhost".
  * --schema (-s)  Option to set the schema that mimeo is installed to. Defaults to "mimeo".
  * --type (-t)  Option to set which type of replication to run (snap, inserter, updater, dml, logdel, table). Default is all types.
  * --batch_limit (-b)  Option to set how many tables to replicate in a single run of the script. Default is all jobs scheduled to run at time script is run.
+ * --jobs (-j) Allows parallel running of replication jobs. Set this equal to the number of processors you want to use to allow that many jobs to start simultaneously. (this uses multiprocessing library, not threading)
  * Please see the howto.md file for some examples.
 
 *refresh_snap_pre90.sql*

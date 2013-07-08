@@ -60,7 +60,9 @@ DECLARE
 v_row   record;
 BEGIN
     FOR v_row IN SELECT statement FROM mimeo_preserve_privs_temp LOOP
-        EXECUTE v_row.statement;
+        IF v_row.statement IS NOT NULL THEN
+            EXECUTE v_row.statement;
+        END IF;
     END LOOP;
 END
 $$;
