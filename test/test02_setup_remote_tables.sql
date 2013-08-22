@@ -71,6 +71,7 @@ SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source2 VALU
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source2 VALUES (4, ''test44'')');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source2 VALUES (44, ''test444'')');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source2 VALUES (444, ''test4444'')');
+SELECT dblink_exec('mimeo_test', 'GRANT SELECT, INSERT, UPDATE, DELETE ON mimeo_source.dml_test_source2 TO mimeo_dumb_role');
 SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.dml_test_source_nodata (
     col1 int UNIQUE NOT NULL,
     col2 text,
@@ -109,6 +110,7 @@ SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source2 V
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source2 VALUES (4, ''test44'')');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source2 VALUES (44, ''test4444'')');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source2 VALUES (444, ''test4444'')');
+SELECT dblink_exec('mimeo_test', 'GRANT SELECT, INSERT, UPDATE, DELETE ON mimeo_source.logdel_test_source2 TO mimeo_dumb_role');
 SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.logdel_test_source_nodata (
     col1 int UNIQUE NOT NULL,
     col2 text UNIQUE NOT NULL,

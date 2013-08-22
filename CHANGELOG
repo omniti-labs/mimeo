@@ -1,3 +1,8 @@
+0.13.2
+-- BugFix: Fixed dml_maker & logdel_maker to set permissions on queue table and trigger function properly. If source and destination table names did not match, the roles that had write privileges on the source table did not get the needed privileges on the mimeo trigger function and queue tables that are created on the source table. This lead to permission errors on the source table after mimeo setup. This update will not fix any existing replication setups.
+-- Added pgtap tests to check permissions on queue table and function
+
+
 0.13.1
 -- No changes to SQL code. 
 -- Added --jobs (-j) option to run_refresh.py to allow parallel refresh runs using multiple cores (if available). Uses multiprocessing library, not threading.

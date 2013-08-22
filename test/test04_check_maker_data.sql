@@ -3,7 +3,7 @@
 
 SELECT set_config('search_path','mimeo, dblink, tap',false);
 
-SELECT plan(117);
+SELECT plan(125);
 
 SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test password=mimeo_test');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established');
@@ -157,11 +157,16 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.dml_test_source ORD
     'Check data for: mimeo_source.dml_test_source');
 SELECT col_is_pk('mimeo_source','dml_test_source', 'col1', 'Check primary key for: mimeo_source.dml_test_source');
 SELECT has_index('mimeo_source','dml_test_source','dml_test_source_col2_idx','col2','Check index for: mimeo_source.dml_test_source');
+SELECT results_eq('SELECT * FROM dblink(''mimeo_test'', ''SELECT privilege_type FROM information_schema.table_privileges WHERE table_schema = ''''mimeo'''' AND table_name = ''''mimeo_source_dml_test_source_q'''' AND grantee = ''''mimeo_dumb_role'''''') t (privilege_type text)', ARRAY['INSERT'], 'Check privileges on source queue table');
+SELECT results_eq('SELECT * FROM dblink(''mimeo_test'', ''SELECT privilege_type FROM information_schema.routine_privileges WHERE routine_schema = ''''mimeo'''' AND routine_name = ''''mimeo_source_dml_test_source_mimeo_queue'''' AND grantee = ''''mimeo_dumb_role'''''') t (privilege_type text)', ARRAY['EXECUTE'], 'Check privileges on source trigger function');
 
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.dml_test_dest ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.dml_test_source2 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.dml_test_dest');
 SELECT col_is_pk('mimeo_dest','dml_test_dest',ARRAY['col2','col1'],'Check primary key for: mimeo_dest.dml_test_dest');
+SELECT results_eq('SELECT * FROM dblink(''mimeo_test'', ''SELECT privilege_type FROM information_schema.table_privileges WHERE table_schema = ''''mimeo'''' AND table_name = ''''mimeo_source_dml_test_source2_q'''' AND grantee = ''''mimeo_dumb_role'''''') t (privilege_type text)', ARRAY['INSERT'], 'Check privileges on source queue table');
+SELECT results_eq('SELECT * FROM dblink(''mimeo_test'', ''SELECT privilege_type FROM information_schema.routine_privileges WHERE routine_schema = ''''mimeo'''' AND routine_name = ''''mimeo_source_dml_test_source2_mimeo_queue'''' AND grantee = ''''mimeo_dumb_role'''''') t (privilege_type text)', ARRAY['EXECUTE'], 'Check privileges on source trigger function');
+
 
 SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_dest.dml_test_dest_nodata ORDER BY col1 ASC',
     'Check data for: mimeo_dest.dml_test_dest_nodata');
@@ -188,12 +193,18 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.logdel_test_source 
 SELECT col_is_pk('mimeo_source', 'logdel_test_source', 'col1', 'Check primary key for: mimeo_source.logdel_test_source');
 SELECT has_index('mimeo_source', 'logdel_test_source','logdel_test_source_col2_idx','col2','Check index for: mimeo_source.logdel_test_source');
 SELECT has_index('mimeo_source', 'logdel_test_source', 'logdel_test_source_mimeo_source_deleted','mimeo_source_deleted', 'Check for special column index in: mimeo_source.logdel_test_source');
+SELECT results_eq('SELECT * FROM dblink(''mimeo_test'', ''SELECT privilege_type FROM information_schema.table_privileges WHERE table_schema = ''''mimeo'''' AND table_name = ''''mimeo_source_logdel_test_source_q'''' AND grantee = ''''mimeo_dumb_role'''''') t (privilege_type text)', ARRAY['INSERT'], 'Check privileges on source queue table');
+SELECT results_eq('SELECT * FROM dblink(''mimeo_test'', ''SELECT privilege_type FROM information_schema.routine_privileges WHERE routine_schema = ''''mimeo'''' AND routine_name = ''''mimeo_source_logdel_test_source_mimeo_queue'''' AND grantee = ''''mimeo_dumb_role'''''') t (privilege_type text)', ARRAY['EXECUTE'], 'Check privileges on source trigger function');
+
 
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.logdel_test_dest ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.logdel_test_source2 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.logdel_test_dest');
 SELECT col_is_pk('mimeo_dest','logdel_test_dest',ARRAY['col2','col1'],'Check primary key for: mimeo_dest.logdel_test_dest');
 SELECT has_index('mimeo_dest', 'logdel_test_dest', 'logdel_test_dest_mimeo_source_deleted','mimeo_source_deleted', 'Check for special column index in: mimeo_dest.logdel_test_dest');
+SELECT results_eq('SELECT * FROM dblink(''mimeo_test'', ''SELECT privilege_type FROM information_schema.table_privileges WHERE table_schema = ''''mimeo'''' AND table_name = ''''mimeo_source_logdel_test_source2_q'''' AND grantee = ''''mimeo_dumb_role'''''') t (privilege_type text)', ARRAY['INSERT'], 'Check privileges on source queue table');
+SELECT results_eq('SELECT * FROM dblink(''mimeo_test'', ''SELECT privilege_type FROM information_schema.routine_privileges WHERE routine_schema = ''''mimeo'''' AND routine_name = ''''mimeo_source_logdel_test_source2_mimeo_queue'''' AND grantee = ''''mimeo_dumb_role'''''') t (privilege_type text)', ARRAY['EXECUTE'], 'Check privileges on source trigger function');
+
 
 SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_dest.logdel_test_dest_nodata ORDER BY col1 ASC',
     'Check data for: mimeo_dest.logdel_test_dest_nodata');

@@ -161,7 +161,7 @@ PERFORM dblink_exec('mimeo_dml', v_remote_q_index);
 PERFORM gdb(p_debug, 'v_trigger_func: '||v_trigger_func);
 PERFORM dblink_exec('mimeo_dml', v_trigger_func);
 -- Grant any current role with write privileges on source table INSERT on the queue table before the trigger is actually created
-v_remote_grants_sql := 'SELECT DISTINCT grantee FROM information_schema.table_privileges WHERE table_schema ||''.''|| table_name = '||quote_literal(p_dest_table)||' and privilege_type IN (''INSERT'',''UPDATE'',''DELETE'')';
+v_remote_grants_sql := 'SELECT DISTINCT grantee FROM information_schema.table_privileges WHERE table_schema ||''.''|| table_name = '||quote_literal(p_src_table)||' and privilege_type IN (''INSERT'',''UPDATE'',''DELETE'')';
 FOR v_row IN SELECT grantee FROM dblink('mimeo_dml', v_remote_grants_sql) t (grantee text)
 LOOP
     PERFORM dblink_exec('mimeo_dml', 'GRANT USAGE ON SCHEMA @extschema@ TO '||v_row.grantee);
