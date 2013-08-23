@@ -24,8 +24,8 @@ SELECT results_eq ('SELECT batch_limit FROM refresh_config_dml WHERE dest_table 
 SELECT results_eq ('SELECT batch_limit FROM refresh_config_logdel WHERE dest_table = ''mimeo_source.logdel_test_source''', ARRAY[500], 
     'Check that batch_limit got set for logdel');
 
-SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.inserter_test_source (col1, col2, col3) VALUES (generate_series(100001,110000), ''test''||generate_series(100001,110000)::text, now())');
-SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.updater_test_source (col1, col2, col3) VALUES (generate_series(100001,110000), ''test''||generate_series(100001,110000)::text, now())');
+SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.inserter_test_source (col1, col2, col3) VALUES (generate_series(100031,110000), ''test''||generate_series(100031,110000)::text, now())');
+SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.updater_test_source (col1, col2, col3) VALUES (generate_series(100031,110000), ''test''||generate_series(100031,110000)::text, now())');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source (col1, col2, col3) VALUES (generate_series(100001,110000), ''test''||generate_series(100001,110000)::text, now())');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source (col1, col2, col3) VALUES (generate_series(100001,110000), ''test''||generate_series(100001,110000)::text, now())');
 
@@ -37,12 +37,13 @@ SELECT refresh_updater('mimeo_source.updater_test_source');
 SELECT refresh_dml('mimeo_source.dml_test_source');
 SELECT refresh_logdel('mimeo_source.logdel_test_source');
 
--- #### INSERTER & UPDATER should have gotten no rows due to all column values having the same timestamp
-SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source ORDER BY col1 ASC',
+-- #### INSERTER & UPDATER should have gotten no rows due to all new column values having the same timestamp
+-- Make sure to exclude the repull test rows from the destination query since they have an odd timestamp value
+SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source WHERE col1 <= 100000 ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source WHERE col1 <= 100000 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_source.inserter_test_source');
 
-SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.updater_test_source ORDER BY col1 ASC',
+SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.updater_test_source WHERE col1 <= 100000 ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.updater_test_source WHERE col1 <= 100000 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_source.updater_test_source');
 
