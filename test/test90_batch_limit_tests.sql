@@ -3,7 +3,7 @@
 
 -- This should be the last batch of tests since I don't feel like resetting the batch limits for any to come after them
 
-SELECT set_config('search_path','mimeo, dblink, tap',false);
+SELECT set_config('search_path','mimeo, dblink, public',false);
 
 SELECT plan(13);
 

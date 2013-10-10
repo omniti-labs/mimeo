@@ -4,10 +4,7 @@
 DROP DATABASE IF EXISTS mimeo_source;
 CREATE DATABASE mimeo_source;
 
--- Load the TAP functions. (only need to do this with final version that ships with mimeo
--- \i pgtap.sql
-
-SELECT set_config('search_path','mimeo, dblink, tap',false);
+SELECT set_config('search_path','mimeo, dblink, public',false);
 
 -- Plan the tests.
 SELECT plan(6);

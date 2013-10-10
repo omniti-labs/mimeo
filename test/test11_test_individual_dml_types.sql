@@ -3,7 +3,7 @@
 
 -- Test when there are only inserts, updates or deletes in a single refresh batch in dml/logdel. Catches bug found in 0.9.2
 
-SELECT set_config('search_path','mimeo, dblink, tap',false);
+SELECT set_config('search_path','mimeo, dblink, public',false);
 
 SELECT plan(9);
 

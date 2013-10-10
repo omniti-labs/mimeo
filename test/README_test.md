@@ -9,11 +9,11 @@ Since mimeo uses dblink, testing cannot be done as recommended in the pgTAP docu
 
     dblink: dblink
     mimeo: mimeo
-    pgTAP: tap
+    pgTAP: public 
 
 If you've installed any of the above extensions in a different schema and would like to run the test suite, simply change the configuration option found at the top of each testing file to match your setup.
 
-    SELECT set_config('search_path','mimeo, dblink, tap',false);
+    SELECT set_config('search_path','mimeo, dblink, public',false);
 
 You will also need to ensure your pg_hba.conf file has a trust or md5 entry for the **mimeo_test** role connecting via the localhost. One or all of the entries below should work.
     
