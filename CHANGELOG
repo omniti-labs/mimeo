@@ -1,3 +1,10 @@
+1.0.1
+-- Fix "make install" to work in PostgreSQL 9.3.x without throwing an error.
+-- "make install" now installs run_refresh.py to <postgresql_install_prefix>/bin
+-- Updated run_refresh.py to use argparse instead of getopt
+-- Removed --schema (-s) option from run_refresh.py. Script gets the mimeo schema automatically now.
+
+
 1.0.0
 -- Update version number to 1.0.0. First stable release. No code changes.
 -- Update pgtap tests to evaluate more functionality and handle edge cases that had resulted from bug reports in the past.

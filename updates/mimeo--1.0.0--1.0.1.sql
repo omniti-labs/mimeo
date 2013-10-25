@@ -1,0 +1,5 @@
+-- Fix "make install" to work in PostgreSQL 9.3.x without throwing an error.
+-- "make install" now installs run_refresh.py to <postgresql_install_prefix>/bin
+-- Updated run_refresh.py to use argparse instead of getopt
+-- Removed --schema (-s) option from run_refresh.py. Script gets the mimeo schema automatically now.
+-- No code changes, however this file is required to update to mimeo 1.0.1 and higher
