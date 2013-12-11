@@ -25,6 +25,8 @@ Mimeo uses the **pg_jobmon** extension to provide an audit trail and monitoring 
 
 All refresh functions use the advisory lock system to ensure that jobs do not run concurrently. If a job is found to already be running, it will cleanly exit immediately and record that another job was already running in pg_jobmon. It will also log a level 2 (WARNING) status for the job so you can monitor for a refresh job running concurrently too many times which may be an indication that replication is falling behind.
 
+To aid in automatically running refresh jobs more easily, a python script is included (see run_refresh.py in **Scripts** section below) and should be installed to the same location as your postgresql binaries (psql, pg_dump, etc). This will automatically run any refresh jobs that have a period set in their config. Jobs can be run sequentially or in parallel. The only thing to be aware of is that there may be some time drift in when a refresh job actually runs. It will still run within the designated time period, but the exact time it runs can change depending on the batch sizes you set for how many jobs can run in a single call of the script. If you require a refresh job to run at a specific time, please call that job individually via cron (or similar tools).
+
 The p_debug argument for any function that has it will output more verbose feedback to show what that job is doing. Most of this is also logged with pg_jobmon, but this is a quick way to see detailed info immediately.
 
 
@@ -150,6 +152,7 @@ Functions
  * Source table must have a primary key or unique index. Either the primary key or a unique index (first in alphabetical order if more than one) on the source table will be obtained automatically. Columns of primary/unique key cannot be arrays nor can they be an expression.  
  * If destination table already exists, no data will be pulled from the source. You can use the refresh_dml() 'repull' option to truncate the destination table and grab all the source data.  
  * The queue table and trigger function on the source database will have permissions set to allow any current roles with write privileges on the source table to use them. If any further privileges are changed on the source table, the queue and trigger function will have to have their privileges adjusted manually.
+ * Multiple destinations are supported with for a single source table but there is a hard limit of 100 destinations. Be aware that doing so places multiple triggers on the source table which will in turn be writing to multiple queue tables to track changes. This can cause noticable performance penalties depending on the level of write traffic on the source table.
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.  
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
@@ -170,6 +173,7 @@ Functions
  * Source table must have a primary key or unique index. Either the primary key or a unique index (first in alphabetical order if more than one) on the source table will be obtained automatically. Columns of primary/unique key cannot be arrays nor can they be an expression.  
  * If destination table already exists, no data will be pulled from the source. You can use the refresh_logdel() 'repull' option to truncate the destination table and grab all the source data.
  * The queue table and trigger function on the source database will have permissions set to allow any current roles with write privileges on the source table to use them. If any further privileges are changed on the source table, the queue and trigger function will have to have their privileges adjusted manually.
+ * Multiple destinations are supported with for a single source table but there is a hard limit of 100 destinations. Be aware that doing so places multiple triggers on the source table which will in turn be writing to multiple queue tables to track changes. This can cause noticable performance penalties depending on the level of write traffic on the source table.
  * p_dblink_id is the data_source_id from the dblink_mapping table for where the source table is located.  
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
@@ -207,18 +211,6 @@ Functions
  * For dml & logdel replication, the row counts may not match due to the nature of the replicaton method.
  * Note that replication will be stopped on the designated table when this function is run with any replication method other than inserter/updater to try and ensure an accurate count.
  * p_src_incr_less, an optional argument, can be set when the source table is known to have fewer rows than the destination. This is only really useful with incremental replication (hence "incr" in the name) and when you are purging the source but keeping the data on the destination.
-
-!!!!!!!!!!!!!!!!!  THIS FUNCTION IS DEPRECATED AND WILL BE EXPLICITLY DROPPED IN VERSION 1.0 !!!!!!!!!!!!!!!!!  
-*run_refresh(p_type text, p_batch int DEFAULT 4, p_debug boolean DEFAULT false)*  
- * This function will run the refresh function for all tables the tables listed in refresh_config for the type given by p_type. Note that the jobs within a batch are run sequentially, not concurrently (working to try and see if I can get it working concurrently).  
- * p_batch sets how many of each type of refresh job will be kicked off each time run_refresh is called.
-
-This function is no longer installed as of 0.10.0, but may still be around if you started using it before then. It was not dropped from the database in the 0.10.0 update to avoid breaking scheduled replication, but it will be explicitly droped when version 1.0 is released.
-
-Using this function, a single failure of a replication job when running batches greater than one would cause ALL replication jobs that ran before it in the same batch to roll back. This could continue without knowing that the other jobs were never running successfully on time since pg_jobmon's log entries are not rolled back and the jobs were assumed to have completed successfully.
-
-Please use the external python script of the same name instead for more reliable batch runs (see **Extras** below). With that script each job is commited individually.
-!!!!!!!!!!!!!!!!!  THIS FUNCTION IS DEPRECATED AND WILL BE EXPLICITLY DROPPED IN VERSION 1.0 !!!!!!!!!!!!!!!!!  
 
 Tables
 ------
@@ -302,19 +294,21 @@ Tables
     sequences           - An optional text array that can contain the schema qualified names of any sequences used as default values in the destination table. 
                           These sequences will be reset every time the refresh function is run, checking all tables that use the sequence as a default value.
     
-Extras
-------
-
+Scripts
+-------
 *run_refresh.py*
  * A python script to automatically run replication for tables that have their ''period'' set in the config table.
  * This script can be run as often as needed and refreshes will only fire if their interval period has passed.
  * By default, refreshes are run sequentially in ascending order of their last_run value. Parallel option is available.
  * --connection (-c)  Option to set the psycopg connection string to the database. Default is "host=localhost".
- * --schema (-s)  Option to set the schema that mimeo is installed to. Defaults to "mimeo".
  * --type (-t)  Option to set which type of replication to run (snap, inserter, updater, dml, logdel, table). Default is all types.
  * --batch_limit (-b)  Option to set how many tables to replicate in a single run of the script. Default is all jobs scheduled to run at time script is run.
- * --jobs (-j) Allows parallel running of replication jobs. Set this equal to the number of processors you want to use to allow that many jobs to start simultaneously. (this uses multiprocessing library, not threading)
+ * --jobs (-j) Allows parallel running of replication jobs. Set this equal to the number of processors you want to use to allow that many jobs to start simultaneously (uses multiprocessing library, not threading).
  * Please see the howto.md file for some examples.
+
+Extras
+------
+Note that items here are not kept up to date as frequently as the main extension functions. If you attempt to use these and have any issues, please report them on github and they will be fixed ASAP.
 
 *refresh_snap_pre90.sql*
  * Alternate function for refresh_snap to provide a way to use a pre-9.0 version of PostgreSQL as the source database.

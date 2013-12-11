@@ -38,6 +38,9 @@ BEGIN
 
 SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
 SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
+IF p_jobmon IS TRUE AND v_jobmon_schema IS NULL THEN
+    RAISE EXCEPTION 'p_jobmon parameter set to TRUE, but unable to determine if pg_jobmon extension is installed';
+END IF;
 
 v_dblink_name := 'mimeo_table_refresh_'||p_destination;
 v_job_name := 'Refresh Table: '||p_destination;

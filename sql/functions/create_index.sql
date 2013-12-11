@@ -1,7 +1,7 @@
 /*
  * Create index(es) on destination table
  */
-CREATE FUNCTION create_index(p_destination text, p_snap text DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
+CREATE OR REPLACE FUNCTION create_index(p_destination text, p_snap text DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
@@ -27,7 +27,7 @@ BEGIN
 SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
 v_dblink_name := 'create_index_dblink_'||p_destination;
 SELECT current_setting('search_path') INTO v_old_search_path;
-EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_dblink_schema||',public'',''false'')';
+EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_dblink_schema||''',''false'')';
 
 SELECT dest_table
     , type
@@ -51,9 +51,9 @@ END IF;
 
 PERFORM dblink_connect(v_dblink_name, @extschema@.auth(v_dblink));
 
-v_dest_table := v_dest_table;
 v_dest_table_name := split_part(v_dest_table, '.', 2);
-v_src_table_name := split_part(v_source_table, '.', 2);
+SELECT tablename INTO v_src_table_name 
+    FROM dblink(v_dblink_name, 'SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname ||''.''|| tablename = '||quote_literal(v_source_table)) t (tablename text);
 
 -- Gets primary key or unique index used by updater/dml/logdel replication (same function is called in their makers). 
 -- Should only loop once, but just easier to keep code consistent with below method
@@ -70,8 +70,8 @@ LOOP
         v_statement := v_row.statement;
         -- Replace source table name with destination
         v_statement := replace(v_statement, ' ON '||v_source_table, ' ON '||v_dest_table || COALESCE('_'||p_snap, ''));
-        -- If source index name contains the table name, replace it with the destination table. Not perfect, but good enough for now.
-        v_statement := replace(v_statement, v_src_table_name, v_dest_table_name);
+        -- If source index name contains the table name, replace it with the destination table.
+        v_statement := regexp_replace(v_statement, '(INDEX \w*)'||v_src_table_name||'(\w* ON)', '\1'||v_dest_table_name||'\2');
         -- If it's a snap table, prepend to ensure unique index name. 
         -- This is done separately from above replace because it must always be done even if the index name doesn't contain the source table
         IF p_snap IS NOT NULL THEN
@@ -100,8 +100,8 @@ IF v_filter IS NULL THEN
         v_statement := v_row.statement;
         -- Replace source table name with destination
         v_statement := replace(v_statement, ' ON '||v_source_table, ' ON '||v_dest_table || COALESCE('_'||p_snap, ''));
-        -- If source index name contains the table name, replace it with the destination table. Not perfect, but good enough for now.
-        v_statement := replace(v_statement, v_row.src_table, v_dest_table_name);
+        -- If source index name contains the table name, replace it with the destination table.
+        v_statement := regexp_replace(v_statement, '(INDEX \w*)'||v_src_table_name||'(\w* ON)', '\1'||v_dest_table_name||'\2');
         -- If it's a snap table, prepend to ensure unique index name. 
         -- This is done separately from above replace because it must always be done even if the index name doesn't contain the source table
         IF p_snap IS NOT NULL THEN

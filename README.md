@@ -5,6 +5,8 @@ Mimeo is an extension that provides specialized, per-table replication between P
 
 Also installing the pg_jobmon extension (see other repositories in omniti-labs) to log all replication activity and provide monitoring is highly recommended. 
 
+In addition to the documentaion, some additional information about this extension is discussed on the author's blog http://www.keithf4.com/tag/mimeo/
+
 INSTALLATION
 ------------
 

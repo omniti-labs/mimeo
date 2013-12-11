@@ -3,7 +3,7 @@
 
 SELECT set_config('search_path','mimeo, dblink, public',false);
 
-SELECT plan(58);
+SELECT plan(60);
 
 -- ########## SNAPSHOT DESTROYER ##########
 SELECT snapshot_destroyer('mimeo_dest.snap_test_dest');
@@ -102,6 +102,8 @@ SELECT has_table('mimeo_dest', 'dml_test_dest', 'Check dml_destroyer kept destin
 DROP TABLE mimeo_dest.dml_test_dest;
 SELECT hasnt_table('mimeo_dest', 'dml_test_dest', 'Check table dropped: mimeo_dest.dml_test_dest');
 
+SELECT dml_destroyer('mimeo_dest.dml_test_dest_multi', false);
+SELECT hasnt_table('mimeo_dest', 'dml_test_dest_multi', 'Check dml_destroyer dropped table: mimeo_dest.dml_test_dest_multi');
 SELECT dml_destroyer('mimeo_source.dml_test_source', false);
 SELECT hasnt_table('mimeo_source', 'dml_test_source', 'Check dml_destroyer dropped table: mimeo_source.dml_test_source');
 SELECT dml_destroyer('mimeo_dest.dml_test_dest_nodata', false);
@@ -120,6 +122,8 @@ SELECT has_table('mimeo_dest', 'logdel_test_dest', 'Check logdel_destroyer kept 
 DROP TABLE mimeo_dest.logdel_test_dest;
 SELECT hasnt_table('mimeo_dest', 'logdel_test_dest', 'Check table dropped: mimeo_dest.logdel_test_dest');
 
+SELECT logdel_destroyer('mimeo_dest.logdel_test_dest_multi', false);
+SELECT hasnt_table('mimeo_dest', 'logdel_test_dest_multi', 'Check logdel_destroyer dropped table: mimeo_dest.logdel_test_dest_multi');
 SELECT logdel_destroyer('mimeo_source.logdel_test_source', false);
 SELECT hasnt_table('mimeo_source', 'logdel_test_source', 'Check logdel_destroyer dropped table: mimeo_source.logdel_test_source');
 SELECT logdel_destroyer('mimeo_dest.logdel_test_dest_nodata', false);

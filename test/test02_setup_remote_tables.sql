@@ -21,7 +21,7 @@ SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.snap_test_source VALU
 SELECT dblink_exec('mimeo_test', 'CREATE INDEX ON mimeo_source.snap_test_source (col2)');
 SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.snap_test_source_empty (
     col1 int UNIQUE NOT NULL,
-    col2 text,
+    col2 varchar(255),
     col3 timestamptz DEFAULT clock_timestamp())');
 SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.snap_test_source_change_col (
     col1 int primary key,
@@ -63,7 +63,7 @@ SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source VALUE
 SELECT dblink_exec('mimeo_test', 'GRANT SELECT, INSERT, UPDATE, DELETE ON mimeo_source.dml_test_source TO mimeo_dumb_role');
 SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.dml_test_source2 (
     col1 int,
-    col2 text,
+    col2 varchar(255),
     col3 timestamptz DEFAULT clock_timestamp(),
     PRIMARY KEY (col2, col1) )');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source2 VALUES (generate_series(1,10000), ''test''||generate_series(1,10000)::text)');

@@ -35,6 +35,7 @@ SELECT refresh_updater('mimeo_source.updater_test_source_empty');
 
 SELECT refresh_dml('mimeo_source.dml_test_source');
 SELECT refresh_dml('mimeo_dest.dml_test_dest');
+SELECT refresh_dml('mimeo_dest.dml_test_dest_multi');
 SELECT refresh_dml('mimeo_dest.dml_test_dest_nodata', p_jobmon := false);
 SELECT refresh_dml('mimeo_dest.dml_test_dest_filter');
 SELECT refresh_dml('mimeo_dest.dml_test_dest_condition');
@@ -42,6 +43,7 @@ SELECT refresh_dml('mimeo_source.dml_test_source_empty');
 
 SELECT refresh_logdel('mimeo_source.logdel_test_source');
 SELECT refresh_logdel('mimeo_dest.logdel_test_dest');
+SELECT refresh_logdel('mimeo_dest.logdel_test_dest_multi');
 SELECT refresh_logdel('mimeo_dest.logdel_test_dest_nodata', p_jobmon := false);
 SELECT refresh_logdel('mimeo_dest.logdel_test_dest_filter');
 SELECT refresh_logdel('mimeo_dest.logdel_test_dest_condition');

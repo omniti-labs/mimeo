@@ -5,7 +5,7 @@
 
 SELECT set_config('search_path','mimeo, dblink, public',false);
 
-SELECT plan(57);
+SELECT plan(59);
 
 SELECT diag('Re-running refresh functions. This may take a bit...');
 
@@ -38,12 +38,14 @@ SELECT refresh_updater('mimeo_dest.updater_test_dest_condition');
 
 SELECT refresh_dml('mimeo_source.dml_test_source');
 SELECT refresh_dml('mimeo_dest.dml_test_dest');
+SELECT refresh_dml('mimeo_dest.dml_test_dest_multi');
 SELECT refresh_dml('mimeo_dest.dml_test_dest_nodata');
 SELECT refresh_dml('mimeo_dest.dml_test_dest_filter');
 SELECT refresh_dml('mimeo_dest.dml_test_dest_condition');
 
 SELECT refresh_logdel('mimeo_source.logdel_test_source');
 SELECT refresh_logdel('mimeo_dest.logdel_test_dest');
+SELECT refresh_logdel('mimeo_dest.logdel_test_dest_multi');
 SELECT refresh_logdel('mimeo_dest.logdel_test_dest_nodata');
 SELECT refresh_logdel('mimeo_dest.logdel_test_dest_filter');
 SELECT refresh_logdel('mimeo_dest.logdel_test_dest_condition');
@@ -165,9 +167,13 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.dml_test_source ORD
     'Check data for: mimeo_source.dml_test_source');
 
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.dml_test_dest ORDER BY col1, col2 ASC',
-    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.dml_test_source2 ORDER BY col1, col2 ASC'') t (col1 int, col2 text, col3 timestamptz)',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.dml_test_source2 ORDER BY col1, col2 ASC'') t (col1 int, col2 varchar(255), col3 timestamptz)',
     'Check data for: mimeo_dest.dml_test_dest');
 SELECT is_empty('SELECT * FROM mimeo_dest.dml_test_dest WHERE col1 between 45000 and 46000', 'Check that deleted rows are gone from mimeo_dest.dml_test_dest');
+
+SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.dml_test_dest_multi ORDER BY col1 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.dml_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
+    'Check data for: mimeo_dest.dml_test_dest_multi');
 
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.dml_test_dest_nodata ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.dml_test_source_nodata WHERE col1 >= 10001 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
@@ -201,6 +207,10 @@ SELECT results_eq('SELECT col2 FROM mimeo_dest.logdel_test_dest WHERE (col1 betw
     ARRAY['test45500','test45501','test45502','test45503','test45504','test45505','test45506','test45507','test45508','test45509','test45510',
         'test45511','test45512','test45513','test45514','test45515','test45516','test45517','test45518','test45519','test45520'],
     'Check that deleted rows are logged in mimeo_dest.logdel_test_dest');
+
+SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.logdel_test_dest_multi ORDER BY col1 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.logdel_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
+    'Check data for: mimeo_dest.logdel_test_dest_multi');
 
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.logdel_test_dest_nodata ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.logdel_test_source_nodata WHERE col1 >= 10001 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',

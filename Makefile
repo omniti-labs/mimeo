@@ -4,7 +4,7 @@ EXTVERSION = $(shell grep default_version $(EXTENSION).control | \
                
 DATA = $(filter-out $(wildcard sql/*--*.sql),$(wildcard sql/*.sql))
 DOCS = $(wildcard doc/*.md)
-SCRIPTS = extras/run_refresh.py
+SCRIPTS = bin/run_refresh.py
 PG_CONFIG = pg_config
 PG91 = $(shell $(PG_CONFIG) --version | egrep " 8\.| 9\.0" > /dev/null && echo no || echo yes)
 

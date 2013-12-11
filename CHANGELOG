@@ -1,3 +1,13 @@
+1.1.0
+-- DML replication methods (dml & logdel) now support multiple destinations from a single source table (up to a maximum of 99). Be aware that this places multiple triggers on the source table that will have to populate as many queue tables as there are destinations. This can cause noticable performance penalties.
+-- Now properly checks that long source table names do not cause unexpected name truncation of the queue tables and trigger functions for DML replication types. There may still be name truncation if the table name is long, but it is now in a predictable manner and the suffixes are guarenteed to be there.
+-- Made destination table index recreation of source table indexes more reliable
+-- Removed unique constraint on refresh_config_dml/logdel (source_table) column. It's now unique per source/destination pair.
+-- Added check to refresh functions that if p_jobmon parameter is set true, it checks that pg_jobmon is actually installed before running. 
+-- Moved python script run_refresh.py from "extras" folder to "bin" folder. Now that it's actually getting installed as part of "make install" it's not really an extra anymore.
+-- Explicitly dropped the old run_refresh() plpgsql function. Use explicit refresh type calls or the python script for running scheduled refreshes.
+
+
 1.0.1
 -- Fix "make install" to work in PostgreSQL 9.3.x without throwing an error.
 -- "make install" now installs run_refresh.py to <postgresql_install_prefix>/bin

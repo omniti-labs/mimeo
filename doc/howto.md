@@ -16,11 +16,11 @@ This document assumes the following:
 
 pg_jobmon Setup
 -------------
-Both pg_jobmon and mimeo require the dblink extension which is an additionally supplied module that PostgreSQL comes with. Neither extension requires dblink to be in any specific schema. Please see the core documentation for more information on obtaining and installing this extension - http://www.postgresql.org/docs/current/static/contrib.html
+Both pg_jobmon and mimeo require the dblink extension which is an additionally supplied module that PostgreSQL comes with. Neither extension requires dblink to be in any specific schema. Please see the postgresql documentation for more information on obtaining and installing this extension - http://www.postgresql.org/docs/current/static/contrib.html
 
 Please see the pg_jobmon docs and my blog for more information on setup and use of pg_jobmon.
 https://github.com/omniti-labs/pg_jobmon
-http://keithf4.com/pg_jobmon
+http://www.keithf4.com/tag/pg_jobmon/
 
 Mimeo Base Setup
 --------------
@@ -154,15 +154,15 @@ PostgreSQL has no internal scheduler (something that I hope someday is fixed), s
 
 This will cause the replication job to run daily at the time listed for *last_run*. You can manually change the *last_run* value to whatever you wish if you need to reschedule the job to start running at a certain time.
 
-You can now use the **run_refresh.py** script to run your refresh jobs. You can schedule it to run as often as you like and it will only run refresh jobs that have not run since their last configured period. The --type option will only run 1 of the 5 specific types given. The --batch_limit option sets how many tables to replicate in a single run of the script. Running the script with no arguments will cause all scheduled jobs of all replication types to be run in order of their last_run values.
+You can now use the **run_refresh.py** script to run your refresh jobs. You can schedule it to run as often as you like and it will only run refresh jobs that have not run since their last configured period. The --type option will only run 1 of the types given above (snap, inserter, etc). The --batch_limit option sets how many tables to replicate in a single run of the script. Running the script with no arguments will cause all scheduled jobs of all replication types to be run in order of their last_run values.
 
 An example crontab running all replication types with some different options is below
 
-    00,10,20,30,40,50 * * * *  python run_refresh.py -c "host=localhost dbname=mydb" -t snap -b 5 >/dev/null
-    01,11,21,31,41,51 * * * *  python run_refresh.py -c "host=localhost dbname=mydb" -t inserter >/dev/null
-    02,12,22,32,42,52 * * * *  python run_refresh.py -c "host=localhost dbname=mydb" -t updater >/dev/null
-    03,13,23,33,43,53 * * * *  python run_refresh.py -c "host=localhost dbname=mydb" -t dml -b 10 >/dev/null
-    04,14,24,34,44,54 * * * *  python run_refresh.py -c "host=localhost dbname=mydb" -t logdel -b 10 >/dev/null
+    00,10,20,30,40,50 * * * *  run_refresh.py -c "host=localhost dbname=mydb" -t snap -b 5 >/dev/null
+    01,11,21,31,41,51 * * * *  run_refresh.py -c "host=localhost dbname=mydb" -t inserter >/dev/null
+    02,12,22,32,42,52 * * * *  run_refresh.py -c "host=localhost dbname=mydb" -t updater >/dev/null
+    03,13,23,33,43,53 * * * *  run_refresh.py -c "host=localhost dbname=mydb" -t dml -b 10 >/dev/null
+    04,14,24,34,44,54 * * * *  run_refresh.py -c "host=localhost dbname=mydb" -t logdel -b 10 >/dev/null
 
 This sets things up to try and run a batch of each job type at least every ten minutes. It will run at most 5 snap jobs in one batch, all of the scheduled inserter & updater jobs and at most 10 dml or logdel jobs. If there are no jobs that need to run, it just does nothing. If you just want to try and run all scheduled jobs every time you can do
 

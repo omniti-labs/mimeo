@@ -1,7 +1,7 @@
 /*
  *  Fetches either the primary key or a valid, not-null unique index. Primary key is always preferred over unique key. 
  */
-CREATE FUNCTION fetch_replication_key(p_src_table text, p_dblink_name text, OUT indkey_names text[], OUT indkey_types text[], OUT key_type text, OUT indexrelid oid, OUT statement text) RETURNS record
+CREATE OR REPLACE FUNCTION fetch_replication_key(p_src_table text, p_dblink_name text, OUT indkey_names text[], OUT indkey_types text[], OUT key_type text, OUT indexrelid oid, OUT statement text) RETURNS record
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -30,7 +30,7 @@ v_remote_sql := 'SELECT indexrelid,
         ON a.attnum = x.k AND a.attrelid = i.indrelid
         WHERE a.attnotnull
     ) AS indkey_names,
-    ( SELECT array_agg( a.atttypid::regtype::text ORDER by x.r ) 
+    ( SELECT array_agg( format_type(a.atttypid, a.atttypmod)::text ORDER by x.r ) 
         FROM pg_attribute a 
         JOIN ( SELECT k, row_number() over () as r 
                 FROM unnest(i.indkey) k ) as x 
@@ -47,4 +47,3 @@ EXECUTE 'SELECT indexrelid, statement, key_type, indkey_names, indkey_types FROM
 
 END
 $$;
-

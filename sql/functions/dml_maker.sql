@@ -39,6 +39,11 @@ v_remote_key_sql            text;
 v_remote_q_index            text;
 v_remote_q_table            text;
 v_row                       record;
+v_source_queue_counter      int := 0;
+v_source_queue_exists       text;
+v_source_queue_function     text;
+v_source_queue_table        text;
+v_source_queue_trigger      text;
 v_src_table_name            text;
 v_table_exists              boolean;
 v_trigger_func              text;
@@ -69,10 +74,15 @@ ELSE
     RAISE EXCEPTION 'Source (and destination) table must be schema qualified';
 END IF;
 
--- Substring avoids some issues with tables near max length
-v_src_table_name := substring(replace(p_src_table, '.', '_') for 61);
-
 PERFORM dblink_connect('mimeo_dml', @extschema@.auth(p_dblink_id));
+
+SELECT schemaname ||'_'|| tablename 
+INTO v_src_table_name 
+FROM dblink('mimeo_dml', 'SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname ||''.''|| tablename = '||quote_literal(p_src_table)) t (schemaname text, tablename text);
+
+IF v_src_table_name IS NULL THEN
+    RAISE EXCEPTION 'Source table given (%) does not exist in configured source database', v_src_table_name;
+END IF;
 
 -- Automatically get source primary/unique key if none given
 IF p_pk_name IS NULL AND p_pk_type IS NULL THEN
@@ -97,7 +107,29 @@ IF p_filter IS NOT NULL THEN
     END LOOP;
 END IF;
 
-v_remote_q_table := 'CREATE TABLE @extschema@.'||v_src_table_name||'_q (';
+v_source_queue_table := check_name_length(v_src_table_name, '_q', '@extschema@');
+v_source_queue_function := check_name_length(v_src_table_name, '_mimeo_queue', '@extschema@')||'()';
+v_source_queue_trigger := check_name_length(v_src_table_name, '_mimeo_trig');
+
+-- Do check for existing queue table(s) to support multiple destinations
+SELECT tablename 
+    INTO v_source_queue_exists 
+FROM dblink('mimeo_dml', 'SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname||''.''||tablename = '||quote_literal(v_source_queue_table)) t (tablename text);
+WHILE v_source_queue_exists IS NOT NULL LOOP -- loop until a tablename that doesn't exist is found
+    v_source_queue_counter := v_source_queue_counter + 1;
+    IF v_source_queue_counter > 99 THEN
+        RAISE EXCEPTION 'Limit of 99 queue tables for a single source table reached. No more destination tables possible (and HIGHLY discouraged)';
+    END IF;
+    v_source_queue_table := check_name_length(v_src_table_name, '_q'||to_char(v_source_queue_counter, 'FM00'), '@extschema@');
+    SELECT tablename 
+        INTO v_source_queue_exists 
+    FROM dblink('mimeo_dml', 'SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname||''.''||tablename = '||quote_literal(v_source_queue_table)) t (tablename text);
+    
+    v_source_queue_function := check_name_length(v_src_table_name, '_mimeo_queue'||to_char(v_source_queue_counter, 'FM00'), '@extschema@')||'()';
+    v_source_queue_trigger := check_name_length(v_src_table_name, '_mimeo_trig'||to_char(v_source_queue_counter, 'FM00'));
+END LOOP;
+
+v_remote_q_table := 'CREATE TABLE '||v_source_queue_table||' (';
 WHILE v_pk_counter <= array_length(v_pk_name,1) LOOP
     v_remote_q_table := v_remote_q_table || v_pk_name[v_pk_counter]||' '||v_pk_type[v_pk_counter];
     v_pk_counter := v_pk_counter + 1;
@@ -106,21 +138,21 @@ WHILE v_pk_counter <= array_length(v_pk_name,1) LOOP
     END IF;
 END LOOP;
 v_remote_q_table := v_remote_q_table || ', processed boolean)';
-v_remote_q_index := 'CREATE INDEX '||v_src_table_name||'_q_'||array_to_string(v_pk_name, '_')||'_idx ON @extschema@.'||v_src_table_name||'_q ('||array_to_string(v_pk_name, ',')||')';
+v_remote_q_index := 'CREATE INDEX ON '||v_source_queue_table||' ('||array_to_string(v_pk_name, ',')||')';
 
 v_pk_counter := 1;
-v_trigger_func := 'CREATE FUNCTION @extschema@.'||v_src_table_name||'_mimeo_queue() RETURNS trigger LANGUAGE plpgsql AS $_$ ';
+v_trigger_func := 'CREATE FUNCTION '||v_source_queue_function||' RETURNS trigger LANGUAGE plpgsql AS $_$ ';
     v_trigger_func := v_trigger_func || ' 
         BEGIN IF TG_OP = ''INSERT'' THEN ';
     v_pk_value := array_to_string(v_pk_name, ', NEW.');
     v_pk_value := 'NEW.'||v_pk_value;
     v_trigger_func := v_trigger_func || ' 
-            INSERT INTO @extschema@.'||v_src_table_name||'_q ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
+            INSERT INTO '||v_source_queue_table||' ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
     v_trigger_func := v_trigger_func || ' 
         ELSIF TG_OP = ''UPDATE'' THEN ';
     -- UPDATE needs to insert the NEW values so reuse v_pk_value from INSERT operation
     v_trigger_func := v_trigger_func || ' 
-            INSERT INTO @extschema@.'||v_src_table_name||'_q ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
+            INSERT INTO '||v_source_queue_table||' ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
     -- Only insert the old row if the new key doesn't match the old key. This handles edge case when only one column of a composite key is updated
     v_trigger_func := v_trigger_func || ' 
             IF ';
@@ -135,22 +167,22 @@ v_trigger_func := 'CREATE FUNCTION @extschema@.'||v_src_table_name||'_mimeo_queu
     v_pk_value := array_to_string(v_pk_name, ', OLD.');
     v_pk_value := 'OLD.'||v_pk_value;
     v_trigger_func := v_trigger_func || ' 
-                INSERT INTO @extschema@.'||v_src_table_name||'_q ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
+                INSERT INTO '||v_source_queue_table||' ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
     v_trigger_func := v_trigger_func || ' 
             END IF;';
     v_trigger_func := v_trigger_func || ' 
         ELSIF TG_OP = ''DELETE'' THEN ';
     -- DELETE needs to insert the OLD values so reuse v_pk_value from UPDATE operation
     v_trigger_func := v_trigger_func || ' 
-            INSERT INTO @extschema@.'||v_src_table_name||'_q ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
+            INSERT INTO '||v_source_queue_table||' ('||array_to_string(v_pk_name, ',')||') VALUES ('||v_pk_value||'); ';
 v_trigger_func := v_trigger_func || ' 
         END IF; RETURN NULL; END $_$;';
 
-v_create_trig := 'CREATE TRIGGER '||v_src_table_name||'_mimeo_trig AFTER INSERT OR DELETE OR UPDATE';
+v_create_trig := 'CREATE TRIGGER '||v_source_queue_trigger||' AFTER INSERT OR DELETE OR UPDATE';
 IF p_filter IS NOT NULL THEN
     v_create_trig := v_create_trig || ' OF '||array_to_string(p_filter, ',');
 END IF;
-v_create_trig := v_create_trig || ' ON '||p_src_table||' FOR EACH ROW EXECUTE PROCEDURE @extschema@.'||v_src_table_name||'_mimeo_queue()';
+v_create_trig := v_create_trig || ' ON '||p_src_table||' FOR EACH ROW EXECUTE PROCEDURE '||v_source_queue_function;
 
 RAISE NOTICE 'Creating objects on source database (function, trigger & queue table)...';
 
@@ -165,8 +197,8 @@ v_remote_grants_sql := 'SELECT DISTINCT grantee FROM information_schema.table_pr
 FOR v_row IN SELECT grantee FROM dblink('mimeo_dml', v_remote_grants_sql) t (grantee text)
 LOOP
     PERFORM dblink_exec('mimeo_dml', 'GRANT USAGE ON SCHEMA @extschema@ TO '||v_row.grantee);
-    PERFORM dblink_exec('mimeo_dml', 'GRANT INSERT ON TABLE @extschema@.'||v_src_table_name||'_q TO '||v_row.grantee);
-    PERFORM dblink_exec('mimeo_dml', 'GRANT EXECUTE ON FUNCTION @extschema@.'||v_src_table_name||'_mimeo_queue() TO '||v_row.grantee);
+    PERFORM dblink_exec('mimeo_dml', 'GRANT INSERT ON TABLE '||v_source_queue_table||' TO '||v_row.grantee);
+    PERFORM dblink_exec('mimeo_dml', 'GRANT EXECUTE ON FUNCTION '||v_source_queue_function||' TO '||v_row.grantee);
 END LOOP;
 PERFORM gdb(p_debug, 'v_create_trig: '||v_create_trig);
 PERFORM dblink_exec('mimeo_dml', v_create_trig);
@@ -193,7 +225,7 @@ v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_dml(
     VALUES('||quote_literal(p_src_table)
         ||', '||quote_literal(p_dest_table)
         ||', '||p_dblink_id
-        ||', '||quote_literal('@extschema@.'||v_src_table_name||'_q')
+        ||', '||quote_literal(v_source_queue_table)
         ||', '||quote_literal(v_pk_name)
         ||', '||quote_literal(v_pk_type)
         ||', '||quote_literal(CURRENT_TIMESTAMP)
@@ -241,9 +273,9 @@ EXCEPTION
         EXECUTE 'SELECT count(*) FROM @extschema@.refresh_config_dml WHERE source_table = '||quote_literal(p_src_table) INTO v_exists;
         IF dblink_get_connections() @> '{mimeo_dml}' THEN
             IF v_exists = 0 THEN
-                PERFORM dblink_exec('mimeo_dml', 'DROP TABLE IF EXISTS @extschema@.'||v_src_table_name||'_q');
-                PERFORM dblink_exec('mimeo_dml', 'DROP TRIGGER IF EXISTS '||v_src_table_name||'_mimeo_trig ON '||p_src_table);
-                PERFORM dblink_exec('mimeo_dml', 'DROP FUNCTION IF EXISTS @extschema@.'||v_src_table_name||'_mimeo_queue()');
+                PERFORM dblink_exec('mimeo_dml', 'DROP TABLE IF EXISTS '||v_source_queue_table);
+                PERFORM dblink_exec('mimeo_dml', 'DROP TRIGGER IF EXISTS '||v_source_queue_trigger||' ON '||p_src_table);
+                PERFORM dblink_exec('mimeo_dml', 'DROP FUNCTION IF EXISTS '||v_source_queue_function);
             END IF;
             PERFORM dblink_disconnect('mimeo_dml');
         END IF;
