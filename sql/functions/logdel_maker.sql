@@ -61,7 +61,7 @@ IF (p_pk_name IS NULL AND p_pk_type IS NOT NULL) OR (p_pk_name IS NOT NULL AND p
     RAISE EXCEPTION 'Cannot manually set primary/unique key field(s) without defining type(s) or vice versa';
 END IF;
 
-SELECT data_source INTO v_data_source FROM @extschema@.dblink_mapping WHERE data_source_id = p_dblink_id; 
+SELECT data_source INTO v_data_source FROM @extschema@.dblink_mapping_mimeo WHERE data_source_id = p_dblink_id; 
 IF NOT FOUND THEN
 	RAISE EXCEPTION 'Database link ID is incorrect %', p_dblink_id; 
 END IF;
@@ -234,9 +234,9 @@ PERFORM dblink_exec('mimeo_logdel', v_trigger_func);
 v_remote_grants_sql := 'SELECT DISTINCT grantee FROM information_schema.table_privileges WHERE table_schema ||''.''|| table_name = '||quote_literal(p_src_table)||' and privilege_type IN (''INSERT'',''UPDATE'',''DELETE'')';
 FOR v_row IN SELECT grantee FROM dblink('mimeo_logdel', v_remote_grants_sql) t (grantee text)
 LOOP
-    PERFORM dblink_exec('mimeo_logdel', 'GRANT USAGE ON SCHEMA @extschema@ TO '||v_row.grantee);
-    PERFORM dblink_exec('mimeo_logdel', 'GRANT INSERT ON TABLE '||v_source_queue_table||' TO '||v_row.grantee);
-    PERFORM dblink_exec('mimeo_logdel', 'GRANT EXECUTE ON FUNCTION '||v_source_queue_function||' TO '||v_row.grantee);
+    PERFORM dblink_exec('mimeo_logdel', 'GRANT USAGE ON SCHEMA @extschema@ TO '||quote_ident(v_row.grantee));
+    PERFORM dblink_exec('mimeo_logdel', 'GRANT INSERT ON TABLE '||v_source_queue_table||' TO '||quote_ident(v_row.grantee));
+    PERFORM dblink_exec('mimeo_logdel', 'GRANT EXECUTE ON FUNCTION '||v_source_queue_function||' TO '||quote_ident(v_row.grantee));
 END LOOP;
 PERFORM gdb(p_debug, 'v_create_trig: '||v_create_trig); 
 PERFORM dblink_exec('mimeo_logdel', v_create_trig);
@@ -293,3 +293,5 @@ EXCEPTION
         END IF;
 END
 $$;
+
+

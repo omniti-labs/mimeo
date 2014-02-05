@@ -73,7 +73,7 @@ END IF;
 -- Allow override with parameter
 v_jobmon := COALESCE(p_jobmon, v_jobmon);
 
-v_adv_lock := pg_try_advisory_lock(hashtext('refresh_table'), hashtext(p_destination));
+v_adv_lock := pg_try_advisory_xact_lock(hashtext('refresh_table'), hashtext(p_destination));
 IF v_adv_lock = 'false' THEN
     IF v_jobmon THEN
         v_job_id := add_job(v_job_name);
@@ -188,8 +188,6 @@ IF v_jobmon THEN
     PERFORM close_job(v_job_id);
 END IF;
 
-PERFORM pg_advisory_unlock(hashtext('refresh_table'), hashtext(p_destination));
-
 EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
 
 EXCEPTION
@@ -198,7 +196,6 @@ EXCEPTION
         IF v_link_exists THEN
             EXECUTE 'SELECT '||v_dblink_schema||'.dblink_disconnect('||quote_literal(v_dblink_name)||')';
         END IF;
-        PERFORM pg_advisory_unlock(hashtext('refresh_dml'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;  
     WHEN OTHERS THEN
         EXECUTE 'SELECT '||v_dblink_schema||'.dblink_get_connections() @> ARRAY['||quote_literal(v_dblink_name)||']' INTO v_link_exists;
@@ -216,7 +213,8 @@ EXCEPTION
             EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_step_id||', ''CRITICAL'', ''ERROR: '||coalesce(SQLERRM,'unknown')||''')';
             EXECUTE 'SELECT '||v_jobmon_schema||'.fail_job('||v_job_id||')';
         END IF;
-        PERFORM pg_advisory_unlock(hashtext('refresh_dml'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
+
+

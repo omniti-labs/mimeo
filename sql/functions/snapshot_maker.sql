@@ -21,9 +21,9 @@ v_jobmon                    boolean;
 
 BEGIN
 
-SELECT data_source INTO v_data_source FROM @extschema@.dblink_mapping WHERE data_source_id = p_dblink_id; 
+SELECT data_source INTO v_data_source FROM @extschema@.dblink_mapping_mimeo WHERE data_source_id = p_dblink_id; 
 IF NOT FOUND THEN
-	RAISE EXCEPTION 'ERROR: Database link ID does not exist in @extschema@.dblink_mapping: %', p_dblink_id; 
+	RAISE EXCEPTION 'ERROR: Database link ID does not exist in @extschema@.dblink_mapping_mimeo: %', p_dblink_id; 
 END IF;  
 
 IF p_dest_table IS NULL THEN
@@ -71,3 +71,5 @@ RAISE NOTICE 'Done';
 RETURN;
 END
 $$;
+
+

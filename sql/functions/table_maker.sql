@@ -29,7 +29,7 @@ v_table_exists              boolean;
 
 BEGIN
 
-SELECT data_source INTO v_data_source FROM @extschema@.dblink_mapping WHERE data_source_id = p_dblink_id; 
+SELECT data_source INTO v_data_source FROM @extschema@.dblink_mapping_mimeo WHERE data_source_id = p_dblink_id; 
 IF NOT FOUND THEN
 	RAISE EXCEPTION 'ERROR: database link ID is incorrect %', p_dblink_id; 
 END IF;  
@@ -93,3 +93,5 @@ END IF;
 RAISE NOTICE 'Done';
 END
 $$;
+
+

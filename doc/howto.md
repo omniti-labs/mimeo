@@ -56,9 +56,9 @@ If you just want to grant execute to all mimeo functions, you can do a much easi
 Source Databases
 ---------------
 
-Every source database needs to have its connection information stored in mimeo's **dblink_mapping** table on the destination database. You can have as many source databases as you need, which makes creating a central replication destination for many master databases easy. All data is pulled by the destination database, never pushed by the source.
+Every source database needs to have its connection information stored in mimeo's **dblink_mapping_mimeo** table on the destination database. You can have as many source databases as you need, which makes creating a central replication destination for many master databases easy. All data is pulled by the destination database, never pushed by the source.
 
-    INSERT INTO mimeo.dblink_mapping (data_source, username, pwd) 
+    INSERT INTO mimeo.dblink_mapping_mimeo (data_source, username, pwd) 
     VALUES ('host=remote.host port=5432 dbname=sourcedb', 'mimeo', 'password');
 
 You will also have to grant, at a minimum, SELECT privileges on all tables that will be replicated with mimeo for all replication types. For DML replication types, it is required to create a schema on the source database with the exact same name as the schema where mimeo was installed on the destination. Also grant ownership of the schema to the source database mimeo role. For each table that will be a source for DML replication, TRIGGER privileges will have to be given to the the source database mimeo role. For example, the below commands are all run on the **source** database.
@@ -74,7 +74,7 @@ Replication Setup
 ---------------
 Ensure all source databases have their pg_hba.conf file set accordingly to allow this remote connection.
 
-Each of the replication types has its own maker (and destroyer) function. The dblink_id that is created when you enter data into the dblink_mapping table is used for every maker function to tell mimeo which source database to use. For snapshot and incremental, the only permissions needed are the ones listed above and to create tables on the destination database.
+Each of the replication types has its own maker (and destroyer) function. The dblink_id that is created when you enter data into the dblink_mapping_mimeo table is used for every maker function to tell mimeo which source database to use. For snapshot and incremental, the only permissions needed are the ones listed above and to create tables on the destination database.
 
 Snapshot replication is the easiest to setup, but should be limited to smaller or relatively static larger tables since it truncates the destination table and repulls all the source data every time it is run and the source data has changed. 
 

@@ -12,7 +12,7 @@ INSTALLATION
 
 Requirements: dblink extension 
 
-Recommendations: pg_jobmon (>= 1.0.0) extension (https://github.com/omniti-labs/pg_jobmon)
+Recommendations: pg_jobmon (>= 1.2.0) extension (https://github.com/omniti-labs/pg_jobmon)
 
 In directory where you downloaded mimeo to run
 
@@ -48,7 +48,7 @@ LICENSE AND COPYRIGHT
 
 Mimeo is released under the PostgreSQL License, a liberal Open Source license, similar to the BSD or MIT licenses.
 
-Copyright (c) 2013 OmniTI, Inc.
+Copyright (c) 2014 OmniTI, Inc.
 
 Permission to use, copy, modify, and distribute this software and its documentation for any purpose, without fee, and without a written agreement is hereby granted, provided that the above copyright notice and this paragraph and the following two paragraphs appear in all copies.
 

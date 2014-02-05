@@ -1,3 +1,10 @@
+1.1.1
+-- Account for role names with special characters in them (dashes were the culprit that found this bug).
+-- Changed dblink_mapping table to an extension specific name: dblink_mapping_mimeo. Allows it to be installed in same schema as pg_jobmon if desired (github issue #4).
+-- Changed advisory lock system to use transactional advistory locks instead of explicit ones. Gets rid of errors in exception block when exception is hit before advisory lock is taken
+-- Organized documentation better
+
+
 1.1.0
 -- DML replication methods (dml & logdel) now support multiple destinations from a single source table (up to a maximum of 99). Be aware that this places multiple triggers on the source table that will have to populate as many queue tables as there are destinations. This can cause noticable performance penalties.
 -- Now properly checks that long source table names do not cause unexpected name truncation of the queue tables and trigger functions for DML replication types. There may still be name truncation if the table name is long, but it is now in a predictable manner and the suffixes are guarenteed to be there.

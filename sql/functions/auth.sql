@@ -13,7 +13,7 @@ DECLARE
     
 BEGIN
     
-SELECT data_source, username, pwd INTO v_data_source, v_username, v_pwd FROM @extschema@.dblink_mapping WHERE data_source_id = $1;
+SELECT data_source, username, pwd INTO v_data_source, v_username, v_pwd FROM @extschema@.dblink_mapping_mimeo WHERE data_source_id = $1;
 
 IF v_pwd IS NOT NULL THEN
     v_auth := v_data_source||' user='||v_username||' password='||v_pwd;
@@ -25,3 +25,5 @@ RETURN v_auth;
 
 END
 $$;
+
+

@@ -103,7 +103,7 @@ END IF;
 v_jobmon := COALESCE(p_jobmon, v_jobmon);
 
 -- Take advisory lock to prevent multiple calls to function overlapping and causing possible deadlock
-v_adv_lock := pg_try_advisory_lock(hashtext('refresh_snap'), hashtext(v_job_name));
+v_adv_lock := pg_try_advisory_xact_lock(hashtext('refresh_snap'), hashtext(v_job_name));
 IF v_adv_lock = 'false' THEN
     IF v_jobmon THEN
         v_job_id := add_job(v_job_name);
@@ -219,7 +219,6 @@ IF  v_table_exists AND v_match THEN
             PERFORM close_job(v_job_id);
         END IF;
         EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
-        PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
         RETURN;
     END IF;
 END IF;
@@ -334,15 +333,12 @@ END IF;
 -- Ensure old search path is reset for the current session
 EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
 
-PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
-
 EXCEPTION
     WHEN QUERY_CANCELED THEN
         EXECUTE 'SELECT '||v_dblink_schema||'.dblink_get_connections() @> ARRAY['||quote_literal(v_dblink_name)||']' INTO v_link_exists;
         IF v_link_exists THEN
             EXECUTE 'SELECT '||v_dblink_schema||'.dblink_disconnect('||quote_literal(v_dblink_name)||')';
         END IF;
-        PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;   
     WHEN OTHERS THEN
         EXECUTE 'SELECT '||v_dblink_schema||'.dblink_get_connections() @> ARRAY['||quote_literal(v_dblink_name)||']' INTO v_link_exists;
@@ -360,7 +356,8 @@ EXCEPTION
             EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_step_id||', ''CRITICAL'', ''ERROR: '||COALESCE(SQLERRM,'unknown')||''')';
             EXECUTE 'SELECT '||v_jobmon_schema||'.fail_job('||v_job_id||')';
         END IF;
-        PERFORM pg_advisory_unlock(hashtext('refresh_snap'), hashtext(v_job_name));
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
+
+

@@ -11,6 +11,8 @@ SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database conn
 
 SELECT dblink_exec('mimeo_test', 'CREATE SCHEMA mimeo_source');
 SELECT dblink_exec('mimeo_test', 'GRANT USAGE ON SCHEMA mimeo_source TO mimeo_dumb_role');
+-- Test special strings in role names
+SELECT dblink_exec('mimeo_test', 'GRANT USAGE ON SCHEMA mimeo_source TO "mimeo-dumber-role"');
 SELECT dblink_exec('mimeo_test', 'CREATE SCHEMA mimeo');
 
 SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.snap_test_source (
@@ -72,6 +74,8 @@ SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source2 VALU
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source2 VALUES (44, ''test444'')');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source2 VALUES (444, ''test4444'')');
 SELECT dblink_exec('mimeo_test', 'GRANT SELECT, INSERT, UPDATE, DELETE ON mimeo_source.dml_test_source2 TO mimeo_dumb_role');
+-- Test special strings in role names
+SELECT dblink_exec('mimeo_test', 'GRANT SELECT, INSERT, UPDATE, DELETE ON mimeo_source.dml_test_source2 TO "mimeo-dumber-role"');
 SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.dml_test_source_nodata (
     col1 int UNIQUE NOT NULL,
     col2 text,
@@ -111,6 +115,8 @@ SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source2 V
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source2 VALUES (44, ''test4444'')');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source2 VALUES (444, ''test4444'')');
 SELECT dblink_exec('mimeo_test', 'GRANT SELECT, INSERT, UPDATE, DELETE ON mimeo_source.logdel_test_source2 TO mimeo_dumb_role');
+-- Test special strings in role names
+SELECT dblink_exec('mimeo_test', 'GRANT SELECT, INSERT, UPDATE, DELETE ON mimeo_source.logdel_test_source2 TO "mimeo-dumber-role"');
 SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.logdel_test_source_nodata (
     col1 int UNIQUE NOT NULL,
     col2 text UNIQUE NOT NULL,

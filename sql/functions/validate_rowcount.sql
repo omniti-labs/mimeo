@@ -72,7 +72,7 @@ WHEN 'table' THEN
 END CASE;
 
 IF v_adv_lock_hash1 IS NOT NULL AND v_adv_lock_hash2 IS NOT NULL THEN
-    v_adv_lock := pg_try_advisory_lock(hashtext(v_adv_lock_hash1), hashtext(v_adv_lock_hash2));
+    v_adv_lock := pg_try_advisory_xact_lock(hashtext(v_adv_lock_hash1), hashtext(v_adv_lock_hash2));
     IF v_adv_lock = 'false' THEN
         RAISE EXCEPTION 'Validation cannot run while refresh for given table is running: %', v_dest_table;
         RETURN;
@@ -122,18 +122,11 @@ END IF;
 
 PERFORM dblink_disconnect(v_dblink_name);
 
-IF v_adv_lock_hash1 IS NOT NULL AND v_adv_lock_hash2 IS NOT NULL THEN
-    PERFORM pg_advisory_unlock(hashtext(v_adv_lock_hash1), hashtext(v_adv_lock_hash2));
-END IF;
-
 EXCEPTION
     WHEN QUERY_CANCELED OR OTHERS THEN
         EXECUTE 'SELECT '||v_dblink_schema||'.dblink_get_connections() @> ARRAY['||quote_literal(v_dblink_name)||']' INTO v_link_exists;
         IF v_link_exists THEN
             EXECUTE 'SELECT '||v_dblink_schema||'.dblink_disconnect('||quote_literal(v_dblink_name)||')';
-        END IF;
-        IF v_adv_lock_hash1 IS NOT NULL AND v_adv_lock_hash2 IS NOT NULL THEN
-            PERFORM pg_advisory_unlock(hashtext(v_adv_lock_hash1), hashtext(v_adv_lock_hash2));
         END IF;
         RAISE EXCEPTION '%', SQLERRM;
 END
