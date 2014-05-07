@@ -1,7 +1,7 @@
 /*
  *  Fetches either the primary key or a valid, not-null unique index. Primary key is always preferred over unique key. 
  */
-CREATE OR REPLACE FUNCTION fetch_replication_key(p_src_table text, p_dblink_name text, OUT indkey_names text[], OUT indkey_types text[], OUT key_type text, OUT indexrelid oid, OUT statement text) RETURNS record
+CREATE FUNCTION fetch_replication_key(p_src_table text, p_dblink_name text, OUT indkey_names text[], OUT indkey_types text[], OUT key_type text, OUT indexrelid oid, OUT statement text) RETURNS record
     LANGUAGE plpgsql
     AS $$
 DECLARE

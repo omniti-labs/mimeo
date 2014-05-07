@@ -1,3 +1,7 @@
+1.2.1
+-- Fix index creation when schema of source table is in the search path of the dblink connection. Was causing maker functions to fail at index creation time.
+
+
 1.2.0
 -- Now supports incremental replication for serial/id columns. Works the same as existing incremenetal replication for time.
     -- New p_type argument to inserter & updater maker functions to tell it which one you're using. Valid values are: "time" or "serial".

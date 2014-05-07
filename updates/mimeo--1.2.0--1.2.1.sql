@@ -1,7 +1,10 @@
+-- Fix index creation when schema of source table is in the search path of the default dblink connection. Was causing maker functions to fail at index creation time.
+
+
 /*
  * Create index(es) on destination table
  */
-CREATE FUNCTION create_index(p_destination text, p_snap text DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
+CREATE OR REPLACE FUNCTION create_index(p_destination text, p_snap text DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
