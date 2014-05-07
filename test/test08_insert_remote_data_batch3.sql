@@ -29,7 +29,7 @@ SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source_fi
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source_condition VALUES (generate_series(20001,100000), ''test''||generate_series(20001,100000)::text)');
 
 -- Data for testing updater
-SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.updater_test_source SET col2 = ''changed'', col3 = clock_timestamp() WHERE col1 between 25000 and 30000');
+SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.updater_test_source SET col2 = ''changed'', col3 = clock_timestamp(), col4 = nextval(''mimeo_source.updater_test_source_col4_seq'') WHERE col1 between 25000 and 30000');
 
 -- Data for testing dml
 SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source2 SET col2 = ''changed'' WHERE col1 between 35000 and 41000');

@@ -54,7 +54,7 @@ IF p_debug IS DISTINCT FROM true THEN
 END IF;
 
 v_job_name := 'Refresh DML: '||p_destination;
-v_dblink_name := 'mimeo_dml_refresh_'||p_destination;
+v_dblink_name := @extschema@.check_name_length('mimeo_dml_refresh_'||p_destination);
 
 SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
 SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
@@ -340,5 +340,4 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
-
 

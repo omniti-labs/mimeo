@@ -47,9 +47,11 @@ SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.inserter_test_source
 SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.updater_test_source (
     col1 int PRIMARY KEY,
     col2 text,
-    col3 timestamptz DEFAULT clock_timestamp())');
+    col3 timestamptz DEFAULT clock_timestamp(),
+    col4 serial)');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.updater_test_source VALUES (generate_series(1,10000), ''test''||generate_series(1,10000)::text)');
 SELECT dblink_exec('mimeo_test', 'CREATE INDEX ON mimeo_source.updater_test_source (col2)');
+SELECT dblink_exec('mimeo_test', 'CREATE INDEX ON mimeo_source.updater_test_source (col4)');
 SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.updater_test_source_empty (
     col1 int PRIMARY KEY,
     col2 text,

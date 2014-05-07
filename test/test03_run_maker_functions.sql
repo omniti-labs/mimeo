@@ -26,19 +26,27 @@ SELECT table_maker('mimeo_source.snap_test_source_empty', data_source_id, 'mimeo
 CREATE SEQUENCE mimeo_dest.col1_seq;    -- Add a sequence to test that sequence reset is working
 ALTER TABLE mimeo_dest.table_test_dest ALTER col1 SET DEFAULT nextval('mimeo_dest.col1_seq');
 
-SELECT inserter_maker('mimeo_source.inserter_test_source', 'col3', data_source_id, '00:00:05'::interval) FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
-SELECT inserter_maker('mimeo_source.inserter_test_source', 'col3', data_source_id,'00:00:05'::interval, 'mimeo_dest.inserter_test_dest') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
-SELECT inserter_maker('mimeo_source.inserter_test_source', 'col3', data_source_id,'00:00:05'::interval, 'mimeo_dest.inserter_test_dest_nodata', p_pulldata := false) FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
-SELECT inserter_maker('mimeo_source.inserter_test_source', 'col3', data_source_id,'00:00:05'::interval, 'mimeo_dest.inserter_test_dest_filter', p_filter := '{"col1","col3"}') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
-SELECT inserter_maker('mimeo_source.inserter_test_source', 'col3', data_source_id,'00:00:05'::interval, 'mimeo_dest.inserter_test_dest_condition', p_condition := 'WHERE col1 > 9000') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
-SELECT inserter_maker('mimeo_source.inserter_test_source_empty', 'col3', data_source_id) FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
+-- Inserter time
+SELECT inserter_maker('mimeo_source.inserter_test_source', 'time', 'col3', data_source_id, '00:00:05') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
+SELECT inserter_maker('mimeo_source.inserter_test_source', 'time', 'col3', data_source_id,'00:00:05', 'mimeo_dest.inserter_test_dest') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
+SELECT inserter_maker('mimeo_source.inserter_test_source', 'time', 'col3', data_source_id,'00:00:05', 'mimeo_dest.inserter_test_dest_nodata', p_pulldata := false) FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
+SELECT inserter_maker('mimeo_source.inserter_test_source', 'time', 'col3', data_source_id,'00:00:05', 'mimeo_dest.inserter_test_dest_filter', p_filter := '{"col1","col3"}') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
+SELECT inserter_maker('mimeo_source.inserter_test_source', 'time', 'col3', data_source_id,'00:00:05', 'mimeo_dest.inserter_test_dest_condition', p_condition := 'WHERE col1 > 9000') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
+SELECT inserter_maker('mimeo_source.inserter_test_source_empty', 'time', 'col3', data_source_id) FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
 
-SELECT updater_maker('mimeo_source.updater_test_source', 'col3', data_source_id, '00:00:05'::interval) FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
-SELECT updater_maker('mimeo_source.updater_test_source', 'col3', data_source_id, '00:00:05'::interval, 'mimeo_dest.updater_test_dest') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
-SELECT updater_maker('mimeo_source.updater_test_source', 'col3', data_source_id, '00:00:05'::interval, 'mimeo_dest.updater_test_dest_nodata', p_pulldata := false) FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
-SELECT updater_maker('mimeo_source.updater_test_source', 'col3', data_source_id, '00:00:05'::interval, 'mimeo_dest.updater_test_dest_filter', p_filter := '{"col1","col3"}') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
-SELECT updater_maker('mimeo_source.updater_test_source', 'col3', data_source_id, '00:00:05'::interval, 'mimeo_dest.updater_test_dest_condition', p_condition := 'WHERE col1 > 9000') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
-SELECT updater_maker('mimeo_source.updater_test_source_empty', 'col3', data_source_id) FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
+--Inserter serial
+SELECT inserter_maker('mimeo_source.inserter_test_source', 'serial', 'col1', data_source_id, '0', 'mimeo_dest.inserter_test_dest_serial') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
+
+-- Updater time
+SELECT updater_maker('mimeo_source.updater_test_source', 'time', 'col3', data_source_id, '00:00:05') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
+SELECT updater_maker('mimeo_source.updater_test_source', 'time', 'col3', data_source_id, '00:00:05', 'mimeo_dest.updater_test_dest') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
+SELECT updater_maker('mimeo_source.updater_test_source', 'time', 'col3', data_source_id, '00:00:05', 'mimeo_dest.updater_test_dest_nodata', p_pulldata := false) FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
+SELECT updater_maker('mimeo_source.updater_test_source', 'time', 'col3', data_source_id, '00:00:05', 'mimeo_dest.updater_test_dest_filter', p_filter := '{"col1","col3"}') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
+SELECT updater_maker('mimeo_source.updater_test_source', 'time', 'col3', data_source_id, '00:00:05', 'mimeo_dest.updater_test_dest_condition', p_condition := 'WHERE col1 > 9000') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
+SELECT updater_maker('mimeo_source.updater_test_source_empty', 'time', 'col3', data_source_id) FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
+
+-- Updater serial
+SELECT updater_maker('mimeo_source.updater_test_source', 'serial', 'col4', data_source_id, '0', 'mimeo_dest.updater_test_dest_serial') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
 
 SELECT dml_maker('mimeo_source.dml_test_source', data_source_id) FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
 SELECT dml_maker('mimeo_source.dml_test_source2', data_source_id, 'mimeo_dest.dml_test_dest') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';

@@ -3,7 +3,7 @@
 
 SELECT set_config('search_path','mimeo, dblink, public',false);
 
-SELECT plan(60);
+SELECT plan(62);
 
 -- ########## SNAPSHOT DESTROYER ##########
 SELECT snapshot_destroyer('mimeo_dest.snap_test_dest');
@@ -77,6 +77,8 @@ SELECT hasnt_table('mimeo_dest', 'inserter_test_dest_condition', 'Check inserter
 SELECT inserter_destroyer('mimeo_source.inserter_test_source_empty', false);
 SELECT hasnt_table('mimeo_source', 'inserter_test_source_empty', 'Check inserter_destroyer dropped table: mimeo_source.inserter_test_source_empty');
 
+SELECT inserter_destroyer('mimeo_dest.inserter_test_dest_serial', false);
+SELECT hasnt_table('mimeo_dest', 'inserter_test_dest_serial', 'Check inserter_destroyer dropped table: mimeo_source.inserter_test_dest_serial');
 
 -- ########## UPDATER DESTROYER ##########
 SELECT updater_destroyer('mimeo_dest.updater_test_dest');
@@ -95,6 +97,8 @@ SELECT hasnt_table('mimeo_dest', 'updater_test_dest_condition', 'Check updater_d
 SELECT updater_destroyer('mimeo_source.updater_test_source_empty', false);
 SELECT hasnt_table('mimeo_source', 'updater_test_source_empty', 'Check updater_destroyer dropped table: mimeo_source.updater_test_source_empty');
 
+SELECT updater_destroyer('mimeo_dest.updater_test_dest_serial', false);
+SELECT hasnt_table('mimeo_dest', 'updater_test_dest_serial', 'Check updater_destroyer dropped table: mimeo_dest.updater_test_dest_serial');
 
 -- ########## DML DESTROYER ##########
 SELECT dml_destroyer('mimeo_dest.dml_test_dest');

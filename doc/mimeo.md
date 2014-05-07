@@ -8,8 +8,8 @@ Mimeo is a replication extension for copying specific tables in one of several s
 
 Snapshot replication is for copying the entire table from the source to the destination every time it is run. This is the only one of the replication types that can automatically replicate column changes (add, drop, rename, new type). It can also detect if there has been no new DML (inserts, updates, deletes) on the source table and skip the data pull step entirely (does not work if source is a view). The "track_counts" PostgreSQL setting must be turned on for this to work (which is the default). Be aware that a column structure change will cause the tables and view to be recreated from scratch on the destination. Indexes as they exist on the source will be automatically recreated if the p_index parameter for the refresh_snap() function is set to true (default) and permissions as they exist on the destination will be preserved. But if you had any different indexes or constraints on the destination, you will have to use the *post_script* column in the config table to have them automatically recreated.
 
-Incremental replication comes in two forms: Insert Only and Insert/Update Only. This can only be done on a table that has a timestamp control column that is set during every insert and/or update. The update replication requires that the source has a primary key. Insert-only replication doesn't require a primary key, just the control column. If the source table ever has rows deleted, this WILL NOT be replicated to the destination.  
-Since incremental replication is time-based, systems that do not run in UTC time can have issues during DST changes. To account for this, these maker functions check the timezone of the server and if it is anything but UTC/GMT, it sets dst_active to true in the config table. This causes all replication to pause between 12:30am and 2:30am on the morning of any DST change day. These times can be adjusted if needed using the dst_start and dst_end columns in the refresh_config_inserter or refresh_config_updater table accordingly.
+Incremental replication comes in two forms: Insert Only and Insert/Update Only. This can only be done on a table that has a timestamp or serial/id control column that is set during every insert and/or update. The update replication requires that the source has a primary key. Insert-only replication doesn't require a primary key, just the control column. If the source table ever has rows deleted, this WILL NOT be replicated to the destination.
+For time-based incremental replication, systems that do not run in UTC time can have issues during DST changes. To account for this, these maker functions check the timezone of the server and if it is anything but UTC/GMT, it sets dst_active to true in the config table. This causes all replication to pause between 12:30am and 2:30am on the morning of any DST change day. These times can be adjusted if needed using the dst_start and dst_end columns in the refresh_config_inserter or refresh_config_updater table accordingly.
 Also be aware that if you stop incremental replication permanently on a table, all of the source data may not have reached the destination due to the boundary settings and/or other methods that are used to keep incremental replication in a consistent state. Please double-check that all your source data is on the destination before destroying the source.
 
 DML replication replays on the destination every insert, update and delete that happens on the source table. The special "logdel" dml replication does not remove rows that are deleted on the source. Instead it grabs the latest data that was deleted from the source, updates that on the destination and logs a timestamp of when it was deleted from the source (special destination timestamp field is called *mimeo_source_deleted* to try and keep it from conflicting with any existing column names). Be aware that for logdel, if you delete a row and then re-use that primary/unique key value again, you will lose the preserved, deleted row on the destination. Doing otherwise would either violate the key constraint or not replicate the new data.
@@ -69,12 +69,13 @@ Extension Objects
  * p_pk_name, an optional argument, is an array of the columns that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source.
  * p_pk_type, an optional argument, is an array of the column types that make up the primary/unique key on the source table. This overrides the automatic retrieval from the source. Ensure the types are in the same order as p_pk_name.
 
-*inserter_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00', p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_debug boolean DEFAULT false)*  
+*inserter_maker(p_src_table text, p_type text, p_control_field text, p_dblink_id int, p_boundary text DEFAULT NULL, p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_debug boolean DEFAULT false)*
  * Function to automatically setup inserter replication for a table. By default source and destination table will have same schema and table names.  
  * If destination table already exists, no data will be pulled from the source. You can use the refresh_inserter() 'repull' option to truncate the destination table and grab all the source data. Or you can set the config table's 'last_value' column for your specified table to designate when it should start. Otherwise last_value will default to the destination's max value for the control field or, if null, the time that the maker function was run.
- * p_control_field is the column which is used as the control field (a timestamp field that is new for every insert).  
+ * p_type determines whether it is time-based or serial-based incremental replication. Valid values are: "time" or "serial".
+ * p_control_field is the column which is used as the control field (a timestamp or integer column that is new for every insert).
  * p_dblink_id is the data_source_id from the dblink_mapping_mimeo table for where the source table is located.  
- * p_boundary, an optional argument, is a boundary value to prevent records being missed at the upper boundary of the batch. Set this to a value that will ensure all inserts will have finished for that time period when the replication runs. Default is 10 minutes which means the destination may always be 10 minutes behind the source but that also means that all inserts on the source will have finished by the time 10 minutes has passed.  
+ * p_boundary, an optional argument, is a boundary value to prevent records being missed at the upper boundary of the batch. Argument type is text, but must be able to be converted to an interval for time-based and an integer for serial-based. This is mostly only relevant for time based replication. Set this to a value that will ensure all inserts will have finished for that time period when the replication runs. For time based the default is 10 minutes which means the destination may always be 10 minutes behind the source but that also means that all inserts on the source will have finished by the time 10 minutes has passed. For serial based replication, the default is zero. If your serial column is based on a sequence you shouldn't have to change this. The upper boundary will always be one less than the max at the time replication runs. If it's not based on a sequence, you'll have to set this to a value to ensure that the source is done inserting that range of numerical values by the time replication runs. For example, if you set this to 10, the destination will always be one less than "max(source_control_col) - 10" behind the source.
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
  * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication. Be aware that if this option is used, indexes cannot be replicated from the source because there is currently no easy way to determine all types of indexes that may be affected by the columns that are excluded.
@@ -117,13 +118,14 @@ Extension Objects
  * p_sequences, an optional argument, is a text array list of schema qualified sequences used as default values in the destination table. This maker function does NOT automatically pull sequences from the source database. If you require that sequences exist on the destination, you'll have to create them and alter the table manually. This option provides an easy way to add them if your destination table exists and already has sequences. The maker function will not reset them. Run the refresh function to have them reset.
  * p_pulldata, an optional argument, allows you to control if data is pulled as part of the setup. Set to 'false' to configure replication with no initial data.
 
-*updater_maker(p_src_table text, p_control_field text, p_dblink_id int, p_boundary interval DEFAULT '00:10:00', p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_pk_name text[] DEFAULT NULL, p_pk_type text[] DEFAULT NULL, p_debug boolean DEFAULT false)*  
+*updater_maker(p_src_table text, p_type text, p_control_field text, p_dblink_id int, p_boundary text DEFAULT NULL, p_dest_table text DEFAULT NULL, p_index boolean DEFAULT true, p_filter text[] DEFAULT NULL, p_condition text DEFAULT NULL, p_pulldata boolean DEFAULT true, p_pk_name text[] DEFAULT NULL, p_pk_type text[] DEFAULT NULL, p_debug boolean DEFAULT false)*
  * Function to automatically setup updater replication for a table. By default source and destination table will have same schema and table names.  
  * Source table must have a primary key or unique index. Either the primary key or a unique index (first in alphabetical order if more than one) on the source table will be obtained automatically. Columns of primary/unique key cannot be arrays nor can they be an expression.  
  * If destination table already exists, no data will be pulled from the source. You can use the refresh_updater() 'repull' option to truncate the destination table and grab all the source data. Or you can set the config table's 'last_value' column for your specified table to designate when it should start. Otherwise last_value will default to the destination's max value for the control field or, if null, the time that the maker function was run.
- * p_control_field is the column which is used as the control field (a timestamp field that is new for every insert AND update).  
+ * p_type determines whether it is time-based or serial-based incremental replication. Valid values are: "time" or "serial".
+ * p_control_field is the column which is used as the control field (a timestamp or integer column that is new for every insert AND update).
  * p_dblink_id is the data_source_id from the dblink_mapping_mimeo table for where the source table is located.  
- * p_boundary, an optional argument, is a boundary value to prevent records being missed at the upper boundary of the batch. Set this to a value that will ensure all inserts/updates will have finished for that time period when the replication runs. Default is 10 minutes which means the destination may always be 10 minutes behind the source but that also means that all inserts/updates on the source will have finished by the time 10 minutes has passed.  
+ * p_boundary, an optional argument, is a boundary value to prevent records being missed at the upper boundary of the batch. Argument type is text, but must be able to be converted to an interval for time-based and an integer for serial-based. This is mostly only relevant for time based replication. Set this to a value that will ensure all inserts will have finished for that time period when the replication runs. For time based the default is 10 minutes which means the destination may always be 10 minutes behind the source but that also means that all inserts on the source will have finished by the time 10 minutes has passed. For serial based replication, the default is zero. If your serial column is based on a sequence you shouldn't have to change this. The upper boundary will always be one less than the max at the time replication runs. If it's not based on a sequence, you'll have to set this to a value to ensure that the source is done inserting that range of numerical values by the time replication runs. For example, if you set this to 10, the destination will always be one less than "max(source_control_col) - 10" behind the source.
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
  * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication. Be aware that if this option is used, indexes cannot be replicated from the source because there is currently no easy way to determine all types of indexes that may be affected by the columns that are excluded. The primary/unique key used to determine row identity will still be replicated, however, because there are checks in place to ensure those columns are not excluded.
@@ -142,7 +144,7 @@ Extension Objects
  * p_jobmon, an optional argument, sets whether to use jobmon for the refresh run. By default uses config table value.
 
 *refresh_inserter(p_destination text, p_limit integer DEFAULT NULL, p_repull boolean DEFAULT false, p_repull_start text DEFAULT NULL, p_repull_end text DEFAULT NULL, p_jobmon boolean DEFAULT NULL, p_debug boolean DEFAULT false)*  
- * Replication for tables that have INSERT ONLY data and contain a timestamp column that is incremented with every INSERT.
+ * Replication for tables that have INSERT ONLY data and contain a timestamp or integer column that is incremented with every INSERT.
  * Can be setup with inserter_maker(...) and removed with inserter_destroyer(...) functions.  
  * p_limit, an optional argument, can be used to change the limit on how many rows are grabbed from the source with each run of the function. Defaults to all new rows if not given here or set in configuration table. Note that this makes the refresh function slightly more expensive to run as extra checks must be run to ensure data consistency.
  * p_repull, an optional argument, sets a flag to repull data from the source instead of getting new data. If this flag is set without setting the start/end arguments as well, then **ALL local data will be truncated** and the ENTIRE source table will be repulled.
@@ -172,7 +174,7 @@ Extension Objects
  * p_jobmon, an optional argument, sets whether to use jobmon for the refresh run. By default uses config table value.
 
 *refresh_updater(p_destination text, p_limit integer DEFAULT NULL, p_repull boolean DEFAULT false, p_repull_start text DEFAULT NULL, p_repull_end text DEFAULT NULL, p_jobmon boolean DEFAULT NULL, p_debug boolean DEFAULT false)*  
- * Replication for tables that have INSERT AND/OR UPDATE ONLY data and contain a timestamp column that is incremented with every INSERT AND UPDATE
+ * Replication for tables that have INSERT AND/OR UPDATE ONLY data and contain a timestamp or integer column that is incremented with every INSERT AND UPDATE
  * Can be setup with updater_maker(...) and removed with updater_destroyer(...) functions.  
  * p_limit, an optional argument, can be used to change the limit on how many rows are grabbed from the source with each run of the function. Defaults to all new rows if not given here or set in configuration table. Note that this makes the refresh function slightly more expensive to run as extra checks must be run to ensure data consistency.
  * p_repull, an optional argument, sets a flag to repull data from the source instead of getting new data. If this flag is set without setting the start/end arguments as well, then **ALL local data will be truncated** and the ENTIRE source table will be repulled.
@@ -213,7 +215,7 @@ Extension Objects
 *validate_rowcount(p_destination text, p_src_incr_less boolean DEFAULT false, p_debug boolean DEFAULT false, OUT match boolean, OUT source_count bigint, OUT dest_count bigint, OUT min_timestamp timestamptz, OUT max_timestamp timestamptz) RETURNS record*
  * This function can be used to compare the row count of the source and destination tables of a replication set.
  * Always returns the row counts of the source and destination and a boolean that says whether they match.
- * If checking an incremental replication job, will return the min & max timestamps for the boundries of what rows were counted.
+ * If checking an incremental replication job, will return the min & max values for the boundries of what rows were counted.
  * For snapshot, table, inserter & updater replication, the rowcounts returned should match exactly.
  * For dml & logdel replication, the row counts may not match due to the nature of the replicaton method.
  * Note that replication will be stopped on the designated table when this function is run with any replication method other than inserter/updater to try and ensure an accurate count.
@@ -234,7 +236,7 @@ Extension Objects
     Parent table for all config types. All child config tables below contain these columns. No data is actually stored in this table
 
     dest_table      - Tablename on destination database. If not public, should be schema qualified
-    type            - Type of replication. Enum of one of the following values: snap, inserter, updater, dml, logdel
+    type            - Type of replication. Must of one of the following values: snap, inserter_time, inserter_serial, updater_time, updater_serial, dml, logdel
     dblink          - Foreign key on the data_source_id column from dblink_mapping_mimeo table
     last_run        - Timestamp of the last run of the job. Used by run_refresh() to know when to do the next run of a job.
     filter          - Array containing specific column names that should be used in replication.
@@ -247,33 +249,58 @@ Extension Objects
 *refresh_config_snap*  
     Child of refresh_config. Contains config info for snapshot replication jobs.
 
-    source_table    - Table name from source database. If not public, should be schema qualified
-    post_script     - Text array of commands to run should the source columns ever change. Each value in the array is run as a single command
+    source_table    - Table name from source database. If not public, should be schema qualified.
+    n_tup_ins       - Tracks the number of inserts done on the source to determine whether data needs to be repulled.
+    n_tup_upd       - Tracks the number of updates done on the source to determine whether data needs to be repulled.
+    n_tup_del       - Tracks the number of deletes done on the source to determine whether data needs to be repulled.
+    post_script     - Text array of commands to run should the source columns ever change. Each value in the array is run as a single command.
                       Should contain commands for things such as recreating indexes that are different than the source, but needed on the destination.
 
-*refresh_config_inserter*  
-    Child of refresh_config. Contains config info for inserter replication jobs.
+*refresh_config_inserter*
+    Child of refresh_config. Template table for inserter config tables.
 
     source_table    - Table name from source database. If not public, should be schema qualified
     control         - Column name that contains the timestamp that is updated on every insert
+
+*refresh_config_inserter_time*
+    Child of refresh_config_inserter. Contains config info for time-based inserter replication jobs.
+
     boundary        - Interval to adjust upper boundary max value of control field. Default is 10 minutes. See inserter_maker() for more info.
     last_value      - This is the max value of the control field from the last run and controls the time period of the batch of data pulled from the source table. 
     dst_active      - Boolean set to true of database is not running on a server in UTC/GMT time. See About for more info
     dst_start       - Integer representation of the time that DST starts. Ex: 00:30 would be 30
     dst_end         - Integer representation of the time that DST ends. Ex: 02:30 would be 230
 
-*refresh_config_updater*  
-    Child of refresh_config. Contains config info for updater replication jobs.
+*refresh_config_inserter_updater*
+    Child of refresh_config_inserter. Contains config info for serial-based inserter replication jobs.
+
+    boundary        - Integer value to adjust upper boundary max value of control field. 
+                      Default is 0, but upper boundary is always 1 less than source max at time of refresh. See inserter_maker() for more info.
+    last_value      - This is the max value of the control field from the last run and controls the range of the batch of data pulled from the source table. 
+
+*refresh_config_updater*
+    Child of refresh_config. Template table for updater config tables.
 
     source_table    - Table name from source database. If not public, should be schema qualified
     control         - Column name that contains the timestamp that is updated on every insert AND update
-    boundary        - Interval to adjust upper boundary max value of control field. Default is 10 minutes. See updater_maker() for more info.
-    last_value      - This is the max value of the control field from the last run and controls the time period of the batch of data pulled from the source table. 
     pk_name         - Text array of all the column names that make up the source table primary key
     pk_type         - Text array of all the column types that make up the source table primary key
+
+*refresh_config_updater_time*
+    Child of refresh_config_updater. Contains config info for time-based updater replication jobs.
+
+    boundary        - Interval to adjust upper boundary max value of control field. Default is 10 minutes. See updater_maker() for more info.
+    last_value      - This is the max value of the control field from the last run and controls the time period of the batch of data pulled from the source table. 
     dst_active      - Boolean set to true of database is not running on a server in UTC/GMT time. See About for more info
     dst_start       - Integer representation of the time that DST starts. Ex: 00:30 would be 30
     dst_end         - Integer representation of the time that DST ends. Ex: 02:30 would be 230
+
+*refresh_config_updater_serial*
+    Child of refresh_config_updater. Contains config info for serial-based updater replication jobs.
+
+    boundary        - Integer value to adjust upper boundary max value of control field. 
+                      Default is 0, but upper boundary is always 1 less than source max at time of refresh. See updater_maker() for more info.
+    last_value      - This is the max value of the control field from the last run and controls the range of the batch of data pulled from the source table. 
 
 *refresh_config_dml*  
     Child of refresh_config. Contains config info for dml replication jobs.

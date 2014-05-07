@@ -1,3 +1,15 @@
+1.2.0
+-- Now supports incremental replication for serial/id columns. Works the same as existing incremenetal replication for time.
+    -- New p_type argument to inserter & updater maker functions to tell it which one you're using. Valid values are: "time" or "serial".
+    -- For time based, control column must be a timestamp type. For serial based, control column must be an integer type.
+    -- Only supports integer values greater than or equal to 0.
+    -- The upper boundary for each refresh batch is always 1 less than the current max of the source at the time it ran. This means that the boundary value isn't typically going to be relevant like it is for time, especially if you're using sequences for the control column values. This also means that the destination will always be at least 1 value behind the master. 
+    -- If you are not using a sequence for the control column values, and the same value will be inserted on the source in different commit sessions, be sure and set a boundary value so that replication does not copy anything within that range when the refresh runs. Example: Set the boundary to "5" if values within (max - 5) will still be inserting when the refresh runs.
+-- The p_boundary parameter data type in inserter/updater_maker functions has changed from "interval" to "text" and now defaults to NULL. This is to allow setting a boundary for either time or serial with the same maker function. If left NULL, the default value will be based on whether you choose time or serial for the incremental type.
+-- Fixed bug with incremental repull that all data might not be repulled. This would only happen on a rare edge case where the same exact value for the upper boundary was inserted multiple times right as replication ran. Some values would make it to the destination and would be considered the lower boundary for the next run and be excluded. You can use the row count validation function to check your existing data or just run a full repull to be sure you have everything on the destination. Note this was NOT an issue during normal refresh runs (this edge case was already handled there). This was only an issue when a full repull was done or during initial table setup.
+-- Added check_name_length to all dblink connection names to avoid annoying warning messages and get more consistent connection names.
+
+
 1.1.1
 -- Account for role names with special characters in them (dashes were the culprit that found this bug).
 -- Changed dblink_mapping table to an extension specific name: dblink_mapping_mimeo. Allows it to be installed in same schema as pg_jobmon if desired (github issue #4).

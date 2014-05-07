@@ -1,11 +1,12 @@
 /*
  *  Updater maker function.
- */ 
+ */
 CREATE FUNCTION updater_maker(
     p_src_table text
+    , p_type text
     , p_control_field text
     , p_dblink_id int
-    , p_boundary interval DEFAULT '00:10:00'
+    , p_boundary text DEFAULT NULL
     , p_dest_table text DEFAULT NULL
     , p_index boolean DEFAULT true
     , p_filter text[] DEFAULT NULL
@@ -19,7 +20,10 @@ RETURNS void
     AS $$
 DECLARE
 
+v_boundary_serial           int;
+v_boundary_time             interval;
 v_data_source               text;
+v_dblink_name               text;
 v_dblink_schema             text;
 v_dest_schema_name          text;
 v_dest_table_name           text;
@@ -29,6 +33,7 @@ v_insert_refresh_config     text;
 v_jobmon                    boolean;
 v_key_type                  text;
 v_link_exists               boolean;
+v_max_id                    bigint;
 v_max_timestamp             timestamptz;
 v_old_search_path           text;
 v_pk_name                   text[] := p_pk_name;
@@ -38,6 +43,8 @@ v_table_exists              boolean;
 v_update_refresh_config     text;
 
 BEGIN
+
+v_dblink_name := @extschema@.check_name_length('mimeo_updater_maker_'||p_src_table);
 
 SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
 SELECT current_setting('search_path') INTO v_old_search_path;
@@ -63,11 +70,11 @@ ELSE
     RAISE EXCEPTION 'Source (and destination) table must be schema qualified';
 END IF;
 
-PERFORM dblink_connect('mimeo_updater', @extschema@.auth(p_dblink_id));
+PERFORM dblink_connect(v_dblink_name, @extschema@.auth(p_dblink_id));
 
 -- Automatically get source primary/unique key if none given
 IF p_pk_name IS NULL AND p_pk_type IS NULL THEN
-    SELECT v_key_type, indkey_names, indkey_types INTO v_key_type, v_pk_name, v_pk_type FROM fetch_replication_key(p_src_table, 'mimeo_updater');
+    SELECT v_key_type, indkey_names, indkey_types INTO v_key_type, v_pk_name, v_pk_type FROM fetch_replication_key(p_src_table, v_dblink_name);
 END IF;
 
 IF v_pk_name IS NULL OR v_pk_type IS NULL THEN
@@ -84,7 +91,6 @@ IF p_filter IS NOT NULL THEN
     END LOOP;
 END IF;
 
-v_dst_active := @extschema@.dst_utc_check();
 
 -- Determine if pg_jobmon is installed to set config table option below
 SELECT 
@@ -95,36 +101,82 @@ SELECT
 INTO v_jobmon 
 FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
 
-v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_updater(
-        source_table
-        , dest_table
-        , dblink
-        , control
-        , boundary
-        , pk_name
-        , pk_type
-        , last_value
-        , last_run
-        , dst_active
-        , filter
-        , condition
-        , jobmon) 
-    VALUES('
-        ||quote_literal(p_src_table)
-        ||', '||quote_literal(p_dest_table)
-        ||', '|| p_dblink_id
-        ||', '||quote_literal(p_control_field)
-        ||', '||quote_literal(p_boundary)
-        ||', '||quote_literal(v_pk_name)
-        ||', '||quote_literal(v_pk_type)
-        ||', ''0001-01-01''::date ,'
-              ||quote_literal(CURRENT_TIMESTAMP)
-        ||', '||v_dst_active
-        ||', '||COALESCE(quote_literal(p_filter), 'NULL')
-        ||', '||COALESCE(quote_literal(p_condition), 'NULL')
-        ||', '||v_jobmon||')';
-PERFORM gdb(p_debug, 'v_insert_refresh_config: '||v_insert_refresh_config);
-EXECUTE v_insert_refresh_config;
+IF p_type = 'time' THEN
+    v_dst_active := @extschema@.dst_utc_check();
+    IF p_boundary IS NULL THEN
+        v_boundary_time = '10 minutes'::interval;
+    ELSE
+        v_boundary_time = p_boundary::interval;
+    END IF;
+    v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_updater_time(
+            source_table
+            , type
+            , dest_table
+            , dblink
+            , control
+            , boundary
+            , pk_name
+            , pk_type
+            , last_value
+            , last_run
+            , dst_active
+            , filter
+            , condition
+            , jobmon) 
+        VALUES('
+            ||quote_literal(p_src_table)
+            ||', '||quote_literal('updater_time')
+            ||', '||quote_literal(p_dest_table)
+            ||', '||quote_literal(p_dblink_id)
+            ||', '||quote_literal(p_control_field)
+            ||', '||quote_literal(v_boundary_time)
+            ||', '||quote_literal(v_pk_name)
+            ||', '||quote_literal(v_pk_type)
+            ||', '||quote_literal('0001-01-01'::date)
+            ||', '||quote_literal(CURRENT_TIMESTAMP)
+            ||', '||v_dst_active
+            ||', '||COALESCE(quote_literal(p_filter), 'NULL')
+            ||', '||COALESCE(quote_literal(p_condition), 'NULL')
+            ||', '||v_jobmon||')';
+    PERFORM gdb(p_debug, 'v_insert_refresh_config: '||v_insert_refresh_config);
+    EXECUTE v_insert_refresh_config;
+ELSIF p_type = 'serial' THEN
+    IF p_boundary IS NULL THEN
+        v_boundary_serial = 10;
+    ELSE
+        v_boundary_serial = p_boundary::int;
+    END IF;
+    v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_updater_serial(
+            source_table
+            , type
+            , dest_table
+            , dblink
+            , control
+            , boundary
+            , pk_name
+            , pk_type
+            , last_value
+            , last_run
+            , filter
+            , condition
+            , jobmon) 
+        VALUES('
+            ||quote_literal(p_src_table)
+            ||', '||quote_literal('updater_serial')
+            ||', '||quote_literal(p_dest_table)
+            ||', '||quote_literal(p_dblink_id)
+            ||', '||quote_literal(p_control_field)
+            ||', '||quote_literal(v_boundary_serial)
+            ||', '||quote_literal(v_pk_name)
+            ||', '||quote_literal(v_pk_type)
+            ||', '||quote_literal(0)
+            ||', '||quote_literal(CURRENT_TIMESTAMP)
+            ||', '||COALESCE(quote_literal(p_filter), 'NULL')
+            ||', '||COALESCE(quote_literal(p_condition), 'NULL')
+            ||', '||v_jobmon||')';
+    PERFORM gdb(p_debug, 'v_insert_refresh_config: '||v_insert_refresh_config);
+    EXECUTE v_insert_refresh_config;
+END IF;
 
 SELECT p_table_exists FROM @extschema@.manage_dest_table(p_dest_table, NULL, p_debug) INTO v_table_exists;
 
@@ -149,11 +201,17 @@ IF v_table_exists THEN
     RAISE NOTICE 'Destination table % already exists. No data or indexes was pulled from source', p_dest_table;
 END IF;
 
-PERFORM dblink_disconnect('mimeo_updater');
+PERFORM dblink_disconnect(v_dblink_name);
 
-RAISE NOTICE 'Getting the maximum destination timestamp...';
-EXECUTE 'SELECT max('||p_control_field||') FROM '||p_dest_table||';' INTO v_max_timestamp;
-EXECUTE 'UPDATE @extschema@.refresh_config_updater SET last_value = '||quote_literal(COALESCE(v_max_timestamp, CURRENT_TIMESTAMP))||' WHERE dest_table = '||quote_literal(p_dest_table);
+IF p_type = 'time' THEN
+    RAISE NOTICE 'Getting the maximum destination timestamp...';
+    EXECUTE 'SELECT max('||p_control_field||') FROM '||p_dest_table||';' INTO v_max_timestamp;
+    EXECUTE 'UPDATE @extschema@.refresh_config_updater_time SET last_value = '||quote_literal(COALESCE(v_max_timestamp, CURRENT_TIMESTAMP))||' WHERE dest_table = '||quote_literal(p_dest_table);
+ELSIF p_type = 'serial' THEN
+    RAISE NOTICE 'Getting the maximum destination id...';
+    EXECUTE 'SELECT max('||p_control_field||') FROM '||p_dest_table||';' INTO v_max_id;
+    EXECUTE 'UPDATE @extschema@.refresh_config_updater_serial SET last_value = '||COALESCE(v_max_id, 0)||' WHERE dest_table = '||quote_literal(p_dest_table);
+END IF;
 
 EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
 
@@ -167,8 +225,8 @@ EXCEPTION
         IF v_link_exists THEN
             EXECUTE 'SELECT '||v_dblink_schema||'.dblink_disconnect('||quote_literal(v_dblink_name)||')';
         END IF;
-        EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
         RAISE EXCEPTION '%', SQLERRM;   
 END  
 $$;
+
 

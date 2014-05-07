@@ -42,7 +42,7 @@ IF p_jobmon IS TRUE AND v_jobmon_schema IS NULL THEN
     RAISE EXCEPTION 'p_jobmon parameter set to TRUE, but unable to determine if pg_jobmon extension is installed';
 END IF;
 
-v_dblink_name := 'mimeo_table_refresh_'||p_destination;
+v_dblink_name := @extschema@.check_name_length('mimeo_table_refresh_'||p_destination);
 v_job_name := 'Refresh Table: '||p_destination;
 
 SELECT current_setting('search_path') INTO v_old_search_path;
@@ -216,5 +216,4 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
-
 

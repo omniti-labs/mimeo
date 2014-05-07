@@ -1,7 +1,7 @@
 /*
  * Create index(es) on destination table
  */
-CREATE OR REPLACE FUNCTION create_index(p_destination text, p_snap text DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
+CREATE FUNCTION create_index(p_destination text, p_snap text DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
@@ -24,8 +24,8 @@ v_type              text;
 
 BEGIN
 
+v_dblink_name := @extschema@.check_name_length('create_index_dblink_'||p_destination);
 SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
-v_dblink_name := 'create_index_dblink_'||p_destination;
 SELECT current_setting('search_path') INTO v_old_search_path;
 EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_dblink_schema||''',''false'')';
 
@@ -126,3 +126,5 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM; 
 END
 $$;
+
+

@@ -3,7 +3,7 @@
 
 SELECT set_config('search_path','mimeo, dblink, public',false);
 
-SELECT plan(40);
+SELECT plan(42);
 
 SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test password=mimeo_test');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established');
@@ -23,17 +23,23 @@ SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.logdel_test_source_filter 
 SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.logdel_test_source_condition SET col2 = ''repull''||col2::text');
 
 SELECT diag('Running refresh functions to repull all rows. This will take a bit...');
+--time
 SELECT refresh_inserter('mimeo_source.inserter_test_source', p_repull := true);
 SELECT refresh_inserter('mimeo_dest.inserter_test_dest', p_repull := true);
 SELECT refresh_inserter('mimeo_dest.inserter_test_dest_nodata', p_repull := true);
 SELECT refresh_inserter('mimeo_dest.inserter_test_dest_filter', p_repull := true);
 SELECT refresh_inserter('mimeo_dest.inserter_test_dest_condition', p_repull := true);
+--serial
+SELECT refresh_inserter('mimeo_dest.inserter_test_dest_serial', p_repull := true);
 
+--time
 SELECT refresh_updater('mimeo_source.updater_test_source', p_repull := true);
 SELECT refresh_updater('mimeo_dest.updater_test_dest', p_repull := true);
 SELECT refresh_updater('mimeo_dest.updater_test_dest_nodata', p_repull := true);
 SELECT refresh_updater('mimeo_dest.updater_test_dest_filter');
 SELECT refresh_updater('mimeo_dest.updater_test_dest_condition', p_repull := true);
+--serial
+SELECT refresh_updater('mimeo_dest.updater_test_dest_serial', p_repull := true);
 
 SELECT refresh_dml('mimeo_source.dml_test_source', p_repull := true);
 SELECT refresh_dml('mimeo_dest.dml_test_dest', p_repull := true);
@@ -50,6 +56,7 @@ SELECT refresh_logdel('mimeo_dest.logdel_test_dest_filter', p_repull := true);
 SELECT refresh_logdel('mimeo_dest.logdel_test_dest_condition', p_repull := true);
 
 -- ########## INSERTER TESTS ##########
+--time
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_source.inserter_test_source');
@@ -70,7 +77,13 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.inserter_test_dest_co
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source WHERE col1 > 9000 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.inserter_test_dest_condition');
 
+--serial
+SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.inserter_test_dest_serial ORDER BY col1 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source WHERE col1 < (SELECT max(col1) FROM mimeo_source.inserter_test_source) ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
+    'Check data for: mimeo_dest.inserter_test_dest_serial');
+
 -- ########## UPDATER TESTS ##########
+--time
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.updater_test_source ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.updater_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_source.updater_test_source');
@@ -90,6 +103,11 @@ SELECT results_eq('SELECT col1, col3 FROM mimeo_dest.updater_test_dest_filter OR
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.updater_test_dest_condition ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.updater_test_source WHERE col1 > 9000 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.updater_test_dest_condition');
+
+-- Serial
+SELECT results_eq('SELECT col1, col2, col3, col4 FROM mimeo_dest.updater_test_dest_serial ORDER BY col4 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3, col4 FROM mimeo_source.updater_test_source WHERE col4 < (SELECT max(col4) FROM mimeo_source.updater_test_source) ORDER BY col4 ASC'') t (col1 int, col2 text, col3 timestamptz, col4 int)',
+    'Check data for: mimeo_dest.updater_test_dest_serial');
 
 -- ########## DML TESTS ##########
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.dml_test_source ORDER BY col1 ASC',
@@ -178,35 +196,35 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.updater_test_source
 
 -- Double-check that the last_value in the config matches the real control column value for incremental replication
 SELECT results_eq('SELECT max(col3) FROM mimeo_source.inserter_test_source',
-    'SELECT last_value FROM mimeo.refresh_config_inserter WHERE dest_table = ''mimeo_source.inserter_test_source''',
+    'SELECT last_value FROM mimeo.refresh_config_inserter_time WHERE dest_table = ''mimeo_source.inserter_test_source''',
     'Check last_value for mimeo_source.inserter_test_source');
 SELECT results_eq('SELECT max(col3) FROM mimeo_dest.inserter_test_dest',
-    'SELECT last_value FROM mimeo.refresh_config_inserter WHERE dest_table = ''mimeo_dest.inserter_test_dest''',
+    'SELECT last_value FROM mimeo.refresh_config_inserter_time WHERE dest_table = ''mimeo_dest.inserter_test_dest''',
     'Check last_value for mimeo_dest.inserter_test_dest');
 SELECT results_eq('SELECT max(col3) FROM mimeo_dest.inserter_test_dest_nodata',
-    'SELECT last_value FROM mimeo.refresh_config_inserter WHERE dest_table = ''mimeo_dest.inserter_test_dest_nodata''',
+    'SELECT last_value FROM mimeo.refresh_config_inserter_time WHERE dest_table = ''mimeo_dest.inserter_test_dest_nodata''',
     'Check last_value for mimeo_dest.inserter_test_dest_nodata');
 SELECT results_eq('SELECT max(col3) FROM mimeo_dest.inserter_test_dest_filter',
-    'SELECT last_value FROM mimeo.refresh_config_inserter WHERE dest_table = ''mimeo_dest.inserter_test_dest_filter''',
+    'SELECT last_value FROM mimeo.refresh_config_inserter_time WHERE dest_table = ''mimeo_dest.inserter_test_dest_filter''',
     'Check last_value for mimeo_dest.inserter_test_dest_filter');
 SELECT results_eq('SELECT max(col3) FROM mimeo_dest.inserter_test_dest_condition',
-    'SELECT last_value FROM mimeo.refresh_config_inserter WHERE dest_table = ''mimeo_dest.inserter_test_dest_condition''',
+    'SELECT last_value FROM mimeo.refresh_config_inserter_time WHERE dest_table = ''mimeo_dest.inserter_test_dest_condition''',
     'Check last_value for mimeo_dest.inserter_test_dest_condition');
 
 SELECT results_eq('SELECT max(col3) FROM mimeo_source.updater_test_source',
-    'SELECT last_value FROM mimeo.refresh_config_updater WHERE dest_table = ''mimeo_source.updater_test_source''',
+    'SELECT last_value FROM mimeo.refresh_config_updater_time WHERE dest_table = ''mimeo_source.updater_test_source''',
     'Check last_value for mimeo_source.updater_test_source');
 SELECT results_eq('SELECT max(col3) FROM mimeo_dest.updater_test_dest',
-    'SELECT last_value FROM mimeo.refresh_config_updater WHERE dest_table = ''mimeo_dest.updater_test_dest''',
+    'SELECT last_value FROM mimeo.refresh_config_updater_time WHERE dest_table = ''mimeo_dest.updater_test_dest''',
     'Check last_value for mimeo_dest.updater_test_dest');
 SELECT results_eq('SELECT max(col3) FROM mimeo_dest.updater_test_dest_nodata',
-    'SELECT last_value FROM mimeo.refresh_config_updater WHERE dest_table = ''mimeo_dest.updater_test_dest_nodata''',
+    'SELECT last_value FROM mimeo.refresh_config_updater_time WHERE dest_table = ''mimeo_dest.updater_test_dest_nodata''',
     'Check last_value for mimeo_dest.updater_test_dest_nodata');
 SELECT results_eq('SELECT max(col3) FROM mimeo_dest.updater_test_dest_filter',
-    'SELECT last_value FROM mimeo.refresh_config_updater WHERE dest_table = ''mimeo_dest.updater_test_dest_filter''',
+    'SELECT last_value FROM mimeo.refresh_config_updater_time WHERE dest_table = ''mimeo_dest.updater_test_dest_filter''',
     'Check last_value for mimeo_dest.updater_test_dest_filter');
 SELECT results_eq('SELECT max(col3) FROM mimeo_dest.updater_test_dest_condition',
-    'SELECT last_value FROM mimeo.refresh_config_updater WHERE dest_table = ''mimeo_dest.updater_test_dest_condition''',
+    'SELECT last_value FROM mimeo.refresh_config_updater_time WHERE dest_table = ''mimeo_dest.updater_test_dest_condition''',
     'Check last_value for mimeo_dest.updater_test_dest_condition');
 
 

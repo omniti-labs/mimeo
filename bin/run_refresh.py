@@ -49,7 +49,7 @@ def single_process(result, mimeo_schema):
     cur = conn.cursor()
     for i in result:
         if args.verbose:
-            print "Running " + i[1] + " replication for table: " + i[0]
+            print("Running " + i[1] + " replication for table: " + i[0])
         sql = "SELECT " + mimeo_schema + ".refresh_" + i[1] + "(%s)"
         cur.execute(sql, [i[0]])
         conn.commit()
@@ -76,7 +76,7 @@ if __name__ == "__main__":
     if args.jobs > 0:
         while len(result) > 0:
             if args.verbose:
-                print "Jobs left in queue: " + str(len(result))
+                print("Jobs left in queue: " + str(len(result)))
             if len(result) < args.jobs: # shorten the for loop if the number of tables to run is less than -j 
                 args.jobs = len(result)
             processlist = []
@@ -85,7 +85,7 @@ if __name__ == "__main__":
                 p = Process(target=refreshProc, args=(i[0], i[1], mimeo_schema))
                 p.start()
                 if args.verbose:
-                    print "Running " + i[1] + " replication for table: " + i[0]
+                    print("Running " + i[1] + " replication for table: " + i[0])
                 processlist.append(p)
             for j in processlist:
                 j.join()

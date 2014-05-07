@@ -3,7 +3,7 @@
  * For any replication type other than inserter/updater, this will fail to run if replication is currently running.
  * For any replication type other than inserter/updater, this will pause replication for the given table until validation is complete
  */
-CREATE FUNCTION validate_rowcount(p_destination text, p_src_incr_less boolean DEFAULT false, p_debug boolean DEFAULT false, OUT match boolean, OUT source_count bigint, OUT dest_count bigint, OUT min_timestamp timestamptz, OUT max_timestamp timestamptz) RETURNS record
+CREATE FUNCTION validate_rowcount(p_destination text, p_src_incr_less boolean DEFAULT false, p_debug boolean DEFAULT false, OUT match boolean, OUT source_count bigint, OUT dest_count bigint, OUT min_source_value text, OUT max_source_value text) RETURNS record
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -19,11 +19,13 @@ v_dblink_schema     text;
 v_dest_table        text;
 v_link_exists       boolean;
 v_local_sql         text;
-v_max_dest          timestamptz;
+v_max_dest_serial   bigint;
+v_max_dest_time     timestamptz;
 v_old_search_path   text;
 v_remote_sql        text;
 v_remote_min_sql    text;
-v_source_min        timestamptz;
+v_source_min_serial bigint;
+v_source_min_time   timestamptz;
 v_source_table      text;
 v_type              text;
 
@@ -53,9 +55,13 @@ WHEN 'snap' THEN
     v_adv_lock_hash1 := 'refresh_snap';
     v_adv_lock_hash2 := 'Refresh Snap: '||v_dest_table;
     SELECT source_table INTO v_source_table FROM refresh_config_snap WHERE dest_table = v_dest_table;
-WHEN 'inserter' THEN
+WHEN 'inserter_time' THEN
     SELECT source_table, control INTO v_source_table, v_control FROM refresh_config_inserter WHERE dest_table = v_dest_table;
-WHEN 'updater' THEN
+WHEN 'inserter_serial' THEN
+    SELECT source_table, control INTO v_source_table, v_control FROM refresh_config_inserter WHERE dest_table = v_dest_table;
+WHEN 'updater_time' THEN
+    SELECT source_table, control INTO v_source_table, v_control FROM refresh_config_updater WHERE dest_table = v_dest_table;
+WHEN 'updater_serial' THEN
     SELECT source_table, control INTO v_source_table, v_control FROM refresh_config_updater WHERE dest_table = v_dest_table;
 WHEN 'dml' THEN
     v_adv_lock_hash1 := 'refresh_dml';
@@ -79,7 +85,7 @@ IF v_adv_lock_hash1 IS NOT NULL AND v_adv_lock_hash2 IS NOT NULL THEN
     END IF;
 END IF;
 
-v_dblink_name := 'mimeo_data_validation_'||v_dest_table;
+v_dblink_name := @extschema@.check_name_length('mimeo_data_validation_'||v_dest_table);
 PERFORM dblink_connect(v_dblink_name, auth(v_dblink));
 
 v_remote_sql := 'SELECT count(*) as row_count FROM '||v_source_table;
@@ -90,20 +96,37 @@ IF v_control IS NOT NULL THEN
         IF v_condition IS NOT NULL THEN
             v_remote_min_sql := v_remote_min_sql ||' '||v_condition;
         END IF;
-        v_remote_min_sql := 'SELECT min_source FROM dblink('||quote_literal(v_dblink_name)||','||quote_literal(v_remote_min_sql)||') t (min_source timestamptz)';
-        PERFORM gdb(p_debug, 'v_remote_min_sql: '||v_remote_min_sql);
-        EXECUTE v_remote_min_sql INTO v_source_min;
-        v_local_sql := v_local_sql || ' WHERE '||v_control|| ' >= '||quote_literal(v_source_min);
-        min_timestamp := v_source_min;
+        IF v_type = 'inserter_time' OR v_type = 'updater_time' THEN
+            v_remote_min_sql := 'SELECT min_source FROM dblink('||quote_literal(v_dblink_name)||','||quote_literal(v_remote_min_sql)||') t (min_source timestamptz)';
+            PERFORM gdb(p_debug, 'v_remote_min_sql: '||v_remote_min_sql);
+            EXECUTE v_remote_min_sql INTO v_source_min_time;
+            v_local_sql := v_local_sql || ' WHERE '||v_control|| ' >= '||quote_literal(v_source_min_time);
+            min_source_value := v_source_min_time::text;
+        ELSIF v_type = 'inserter_serial' OR v_type = 'updater_serial' THEN
+            v_remote_min_sql := 'SELECT min_source FROM dblink('||quote_literal(v_dblink_name)||','||quote_literal(v_remote_min_sql)||') t (min_source bigint)';
+            PERFORM gdb(p_debug, 'v_remote_min_sql: '||v_remote_min_sql);
+            EXECUTE v_remote_min_sql INTO v_source_min_serial;
+            v_local_sql := v_local_sql || ' WHERE '||v_control|| ' >= '||quote_literal(v_source_min_serial);
+            min_source_value := v_source_min_serial::text;
+        END IF;
     END IF;
-    EXECUTE 'SELECT max('||quote_ident(v_control)||') FROM '||v_dest_table INTO v_max_dest;
+
     IF v_condition IS NOT NULL THEN
         v_remote_sql := v_remote_sql ||' '|| v_condition || ' AND ';
     ELSE
         v_remote_sql := v_remote_sql ||' WHERE ';
     END IF;
-    v_remote_sql := v_remote_sql ||v_control||' <= '||quote_literal(v_max_dest);
-    max_timestamp := v_max_dest;
+
+    IF v_type = 'inserter_time' OR v_type = 'updater_time' THEN
+        EXECUTE 'SELECT max('||quote_ident(v_control)||') FROM '||v_dest_table INTO v_max_dest_time;
+        v_remote_sql := v_remote_sql ||v_control||' <= '||quote_literal(v_max_dest_time);
+        max_source_value := v_max_dest_time::text;
+    ELSIF v_type = 'inserter_serial' OR v_type = 'updater_serial' THEN
+        EXECUTE 'SELECT max('||quote_ident(v_control)||') FROM '||v_dest_table INTO v_max_dest_serial;
+        v_remote_sql := v_remote_sql ||v_control||' <= '||quote_literal(v_max_dest_serial);
+        max_source_value := v_max_dest_serial::text;
+    END IF;
+    
 ELSIF v_condition IS NOT NULL THEN
     v_remote_sql := v_remote_sql ||' '|| v_condition;
 END IF;

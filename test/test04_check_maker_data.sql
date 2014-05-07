@@ -3,7 +3,7 @@
 
 SELECT set_config('search_path','mimeo, dblink, public',false);
 
-SELECT plan(138);
+SELECT plan(145);
 
 SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test password=mimeo_test');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established');
@@ -90,6 +90,7 @@ SELECT has_index('mimeo_dest','table_test_dest_condition','table_test_dest_condi
 SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_dest.table_test_dest_empty ORDER BY col1 ASC', 'Check data for: mimeo_dest.table_test_dest_empty');
 
 -- ########## INSERTER TESTS ##########
+-- Time
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_source.inserter_test_source');
@@ -120,7 +121,16 @@ SELECT has_index('mimeo_dest','inserter_test_dest_condition','inserter_test_dest
 
 SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source_empty ORDER BY col1 ASC', 'Check data for: mimeo_source.inserter_test_dest_empty');
 
+-- Serial
+SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.inserter_test_dest_serial ORDER BY col1 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source WHERE col1 < (SELECT max(col1) FROM mimeo_source.inserter_test_source) ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
+    'Check data for: mimeo_dest.inserter_test_dest_serial');
+SELECT col_is_pk('mimeo_dest','inserter_test_dest_serial', 'col1', 'Check primary key for: mimeo_dest.inserter_test_dest_serial');
+SELECT has_index('mimeo_dest','inserter_test_dest_serial','inserter_test_dest_serial_col2_idx','col2','Check index for: mimeo_dest.inserter_test_dest_serial');
+
+
 -- ########## UPDATER TESTS ##########
+-- Time
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.updater_test_source ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.updater_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_source.updater_test_source');
@@ -150,6 +160,16 @@ SELECT col_is_pk('mimeo_dest','updater_test_dest_condition', 'col1', 'Check prim
 SELECT has_index('mimeo_dest','updater_test_dest_condition','updater_test_dest_condition_col2_idx','col2','Check index for: mimeo_dest.updater_test_dest_condition');
 
 SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_source.updater_test_source_empty ORDER BY col1 ASC', 'Check data for: mimeo_source.updater_test_source_empty');
+
+-- Serial
+SELECT results_eq('SELECT col1, col2, col3, col4 FROM mimeo_dest.updater_test_dest_serial ORDER BY col4 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3, col4 FROM mimeo_source.updater_test_source WHERE col4 < (SELECT max(col4) FROM mimeo_source.updater_test_source )ORDER BY col4 ASC'') t (col1 int, col2 text, col3 timestamptz, col4 int)',
+    'Check data for: mimeo_dest.updater_test_dest_serial');
+SELECT col_is_pk('mimeo_dest','updater_test_dest', 'col1', 'Check primary key for: mimeo_dest.updater_test_dest_serial');
+SELECT has_index('mimeo_dest','updater_test_dest','updater_test_dest_col2_idx','col2','Check index for: mimeo_dest.updater_test_dest_serial (co2)');
+SELECT has_index('mimeo_dest','updater_test_dest','updater_test_dest_col4_idx','col4','Check index for: mimeo_dest.updater_test_dest_serial (col4)');
+
+
 
 -- ########## DML TESTS ##########
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.dml_test_source ORDER BY col1 ASC',

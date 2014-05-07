@@ -19,19 +19,25 @@ SELECT refresh_table('mimeo_dest.table_test_dest_filter');
 SELECT refresh_table('mimeo_dest.table_test_dest_condition');
 SELECT refresh_table('mimeo_dest.table_test_dest_empty');
 
+--time
 SELECT refresh_inserter('mimeo_source.inserter_test_source');
 SELECT refresh_inserter('mimeo_dest.inserter_test_dest');
 SELECT refresh_inserter('mimeo_dest.inserter_test_dest_nodata', p_jobmon := false);
 SELECT refresh_inserter('mimeo_dest.inserter_test_dest_filter');
 SELECT refresh_inserter('mimeo_dest.inserter_test_dest_condition');
 SELECT refresh_inserter('mimeo_source.inserter_test_source_empty');
+--serial
+SELECT refresh_inserter('mimeo_dest.inserter_test_dest_serial');
 
+--time
 SELECT refresh_updater('mimeo_source.updater_test_source');
 SELECT refresh_updater('mimeo_dest.updater_test_dest');
 SELECT refresh_updater('mimeo_dest.updater_test_dest_nodata', p_jobmon := false);
 SELECT refresh_updater('mimeo_dest.updater_test_dest_filter');
 SELECT refresh_updater('mimeo_dest.updater_test_dest_condition');
 SELECT refresh_updater('mimeo_source.updater_test_source_empty');
+--serial
+SELECT refresh_updater('mimeo_dest.updater_test_dest_serial');
 
 SELECT refresh_dml('mimeo_source.dml_test_source');
 SELECT refresh_dml('mimeo_dest.dml_test_dest');
