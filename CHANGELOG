@@ -1,3 +1,19 @@
+1.2.2
+-- New function "check_missing_source_tables()" can show tables that exist on the configured data sources that are not configured for replication.
+    -- Provides monitoring capability for situations where all tables on source should be replicated.
+    -- Optional parameter to check one specific data source. Otherwise, all sources listed in dblink_mapping_mimeo table are checked.
+    -- Returns a record value so WHERE conditions can be used to ignore tables that aren't desired.
+-- New function "check_source_columns()" can show columns that exist on source tables that do not exist on the destination
+    -- Provides monitoring capability for data source tables to see if columns have been added or types changed.
+    -- Does not check if destination has columns that source does not (therefore does not check if columns were dropped on source but not on destination).
+    -- Accounts for when the "filter" configuration option is used to only grab specific columns.
+    -- Optional parameter to check one specific data source. Otherwise, all sources listed in dblink_mapping_mimeo table are checked.
+    -- Returns a record value so WHERE conditions can be used to ignore tables and/or columns that don't matter for your situation.
+-- Fix bug during index creation when dblink is not installed in a schema called "dblink" (Github Issue #6).
+-- Added note to documentation about how to add/remove columns with DML replication and avoid errors.
+-- Added pg_tap tests for new monitoring functions & snapshot column change replication.
+
+
 1.2.1
 -- Fix index creation when schema of source table is in the search path of the dblink connection. Was causing maker functions to fail at index creation time.
 

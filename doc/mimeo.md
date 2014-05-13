@@ -6,13 +6,13 @@ About
 
 Mimeo is a replication extension for copying specific tables in one of several specialized ways from any number of source databases to a destination database where mimeo is installed. 
 
-Snapshot replication is for copying the entire table from the source to the destination every time it is run. This is the only one of the replication types that can automatically replicate column changes (add, drop, rename, new type). It can also detect if there has been no new DML (inserts, updates, deletes) on the source table and skip the data pull step entirely (does not work if source is a view). The "track_counts" PostgreSQL setting must be turned on for this to work (which is the default). Be aware that a column structure change will cause the tables and view to be recreated from scratch on the destination. Indexes as they exist on the source will be automatically recreated if the p_index parameter for the refresh_snap() function is set to true (default) and permissions as they exist on the destination will be preserved. But if you had any different indexes or constraints on the destination, you will have to use the *post_script* column in the config table to have them automatically recreated.
+**Snapshot replication** is for copying the entire table from the source to the destination every time it is run. This is the only one of the replication types that can automatically replicate column changes (add, drop, rename, new type). It can also detect if there has been no new DML (inserts, updates, deletes) on the source table and skip the data pull step entirely (does not work if source is a view). The "track_counts" PostgreSQL setting must be turned on for this to work (which is the default). Be aware that a column structure change will cause the tables and view to be recreated from scratch on the destination. Indexes as they exist on the source will be automatically recreated if the p_index parameter for the refresh_snap() function is set to true (default) and permissions as they exist on the destination will be preserved. But if you had any different indexes or constraints on the destination, you will have to use the *post_script* column in the config table to have them automatically recreated.
 
-Incremental replication comes in two forms: Insert Only and Insert/Update Only. This can only be done on a table that has a timestamp or serial/id control column that is set during every insert and/or update. The update replication requires that the source has a primary key. Insert-only replication doesn't require a primary key, just the control column. If the source table ever has rows deleted, this WILL NOT be replicated to the destination.
+**Incremental replication** comes in two forms: Insert Only and Insert/Update Only. This can only be done on a table that has a timestamp or serial/id control column that is set during every insert and/or update. The update replication requires that the source has a primary key. Insert-only replication doesn't require a primary key, just the control column. If the source table ever has rows deleted, this WILL NOT be replicated to the destination.
 For time-based incremental replication, systems that do not run in UTC time can have issues during DST changes. To account for this, these maker functions check the timezone of the server and if it is anything but UTC/GMT, it sets dst_active to true in the config table. This causes all replication to pause between 12:30am and 2:30am on the morning of any DST change day. These times can be adjusted if needed using the dst_start and dst_end columns in the refresh_config_inserter or refresh_config_updater table accordingly.
 Also be aware that if you stop incremental replication permanently on a table, all of the source data may not have reached the destination due to the boundary settings and/or other methods that are used to keep incremental replication in a consistent state. Please double-check that all your source data is on the destination before destroying the source.
 
-DML replication replays on the destination every insert, update and delete that happens on the source table. The special "logdel" dml replication does not remove rows that are deleted on the source. Instead it grabs the latest data that was deleted from the source, updates that on the destination and logs a timestamp of when it was deleted from the source (special destination timestamp field is called *mimeo_source_deleted* to try and keep it from conflicting with any existing column names). Be aware that for logdel, if you delete a row and then re-use that primary/unique key value again, you will lose the preserved, deleted row on the destination. Doing otherwise would either violate the key constraint or not replicate the new data.
+**DML replication** replays on the destination every insert, update and delete that happens on the source table. The special "logdel" dml replication does not remove rows that are deleted on the source. Instead it grabs the latest data that was deleted from the source, updates that on the destination and logs a timestamp of when it was deleted from the source (special destination timestamp field is called *mimeo_source_deleted* to try and keep it from conflicting with any existing column names). Be aware that for logdel, if you delete a row and then re-use that primary/unique key value again, you will lose the preserved, deleted row on the destination. Doing otherwise would either violate the key constraint or not replicate the new data.
 
 There is also a plain table replication method that always does a truncate and refresh every time it is run, but doesn't use the view swap method that snapshot does. It just uses a normal table as the destination. It requires no primary keys, control columns or triggers on the source table. It is not recommended to use this refresh method for a regular refresh job if possible since it is much less efficient. What this is ideal for is a development database where you just want to pull data from production on an as-needed basis and be able to edit things on the destination. Since it requires no write access on the source database, you can safely connect to your production system to grab data (as long as you set permissions properly). It has options available for dealing with foreign key constraints and resetting sequences on the destination.
 
@@ -29,6 +29,21 @@ To aid in automatically running refresh jobs more easily, a python script is inc
 
 The p_debug argument for any function that has it will output more verbose feedback to show what that job is doing. Most of this is also logged with pg_jobmon, but this is a quick way to see detailed info immediately.
 
+### Adding/Removing Columns with DML Replication
+
+Adding and/or removing columns on the source database must be done carefully, and in a specific order, with DML replication types (dml & logdel) to avoid errors.
+
+When adding a column, follow this order:
+
+1. Add to destination table
+2. Add to the source queue table 
+3. Add to the source table
+
+When removing a column, follow this order:
+
+1. Remove from source table
+2. Remove from the source queue table
+3. Remove from the destination table (if desired. It can be left for historical records with no problems.)
 
 ### Dblink Mapping Setup
 
@@ -220,6 +235,19 @@ Extension Objects
  * For dml & logdel replication, the row counts may not match due to the nature of the replicaton method.
  * Note that replication will be stopped on the designated table when this function is run with any replication method other than inserter/updater to try and ensure an accurate count.
  * p_src_incr_less, an optional argument, can be set when the source table is known to have fewer rows than the destination. This is only really useful with incremental replication (hence "incr" in the name) and when you are purging the source but keeping the data on the destination.
+
+*check_missing_source_tables(p_data_source_id int DEFAULT NULL, OUT schemaname text, OUT tablename text, OUT data_source int) RETURNS SETOF record*
+ * Provides monitoring capability for situations where all tables on source should be replicated.
+ * p_data_source_id - optional parameter to check one specific data source. Otherwise, all sources listed in dblink_mapping_mimeo table are checked.
+ * Returns a record value so WHERE conditions can be used to ignore tables that aren't desired.
+
+*check_source_columns(p_data_source_id int DEFAULT NULL, OUT dest_schemaname text, OUT dest_tablename text, OUT src_schemaname text, OUT src_tablename text, OUT missing_column_name text, OUT missing_column_type text, OUT data_source int) RETURNS SETOF record*
+ * Provides monitoring capability for source table columns changes not getting applied to the destination.
+ * Also checks if column types have changed.
+ * Accounts for when the "filter" configuration option is used to only grab specific columns.
+ * Does not check if destination has columns that source does not.
+ * p_data_source_id - optional parameter to check one specific data source. Otherwise, all sources listed in dblink_mapping_mimeo table are checked.
+ * Returns a record value so WHERE conditions can be used to ignore tables and/or columns that don't matter for your situation.
 
 ### Tables
 

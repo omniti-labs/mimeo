@@ -53,7 +53,7 @@ END IF;
 PERFORM dblink_connect(v_dblink_name, @extschema@.auth(v_dblink));
 -- Reset search_path on remote connection to ensure schema is included in table name in index creation statement
 -- set_config returns a record value, so can't just use dblink_exec
-SELECT set_config INTO v_conf FROM dblink.dblink(v_dblink_name, 'SELECT set_config(''search_path'', '''', false)::text') t (set_config text);
+SELECT set_config INTO v_conf FROM dblink(v_dblink_name, 'SELECT set_config(''search_path'', '''', false)::text') t (set_config text);
 
 v_dest_table_name := split_part(v_dest_table, '.', 2);
 SELECT tablename INTO v_src_table_name 
