@@ -172,7 +172,7 @@ SELECT p_table_exists, p_cols, p_cols_n_types FROM manage_dest_table(p_dest_tabl
 v_remote_q_table := 'CREATE TABLE '||v_source_queue_table||' ('||array_to_string(v_cols_n_types, ',')||', mimeo_source_deleted timestamptz, processed boolean)';
 -- Indexes on queue table created below so the variable can be reused
 
-v_trigger_func := 'CREATE FUNCTION '||v_source_queue_function||' RETURNS trigger LANGUAGE plpgsql AS $_$ DECLARE ';
+v_trigger_func := 'CREATE FUNCTION '||v_source_queue_function||' RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $_$ DECLARE ';
     v_trigger_func := v_trigger_func || ' 
         v_del_time timestamptz := clock_timestamp(); ';
     v_trigger_func := v_trigger_func || ' 
@@ -230,14 +230,6 @@ PERFORM gdb(p_debug, 'v_remote_q_index: '||v_remote_q_index);
 PERFORM dblink_exec('mimeo_logdel', v_remote_q_index);
 PERFORM gdb(p_debug, 'v_trigger_func: '||v_trigger_func);
 PERFORM dblink_exec('mimeo_logdel', v_trigger_func);
--- Grant any current role with write privileges on source table INSERT on the queue table before the trigger is actually created
-v_remote_grants_sql := 'SELECT DISTINCT grantee FROM information_schema.table_privileges WHERE table_schema ||''.''|| table_name = '||quote_literal(p_src_table)||' and privilege_type IN (''INSERT'',''UPDATE'',''DELETE'')';
-FOR v_row IN SELECT grantee FROM dblink('mimeo_logdel', v_remote_grants_sql) t (grantee text)
-LOOP
-    PERFORM dblink_exec('mimeo_logdel', 'GRANT USAGE ON SCHEMA @extschema@ TO '||quote_ident(v_row.grantee));
-    PERFORM dblink_exec('mimeo_logdel', 'GRANT INSERT ON TABLE '||v_source_queue_table||' TO '||quote_ident(v_row.grantee));
-    PERFORM dblink_exec('mimeo_logdel', 'GRANT EXECUTE ON FUNCTION '||v_source_queue_function||' TO '||quote_ident(v_row.grantee));
-END LOOP;
 PERFORM gdb(p_debug, 'v_create_trig: '||v_create_trig); 
 PERFORM dblink_exec('mimeo_logdel', v_create_trig);
 
@@ -293,5 +285,4 @@ EXCEPTION
         END IF;
 END
 $$;
-
 

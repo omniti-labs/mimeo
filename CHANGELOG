@@ -1,3 +1,16 @@
+1.2.3
+-- Fixed bug with dml_maker() and logdel_maker() functions where proper permissions where not being granted to the queue table and trigger function. 
+    -- This was happening if an unprivileged role was used in the dblink_mapping_mimeo table. Unprivileged in this sense meaning it could not look up 
+        the permissions in the information_schema.table_privileges view to see all the roles that had write permissions on the given source table. 
+    -- In order to fix this, all future trigger functions for DML-based replication that are put on the source table are given SECURITY DEFINER. 
+        This makes it no longer necessary to look up existing source table permissions as was done before.
+    -- This also means any future permission changes to source tables will no longer affect writing to the queue table anymore. This should make 
+        administration of DML-based replication source tables easier since additonal privileges on the queue tables no longer have to be managed 
+        manually when source table privileges change.
+    -- Trigger functions for existing DML-based replication source tables are not fixed. It is advised to edit the trigger function(s) to add 
+        the SECURITY DEFINER flag to make future administration easier.
+-- Updated pgtap tests to test when source table owner is different than the dblink_mapping role.
+
 1.2.2
 -- New function "check_missing_source_tables()" can show tables that exist on the configured data sources that are not configured for replication.
     -- Provides monitoring capability for situations where all tables on source should be replicated.

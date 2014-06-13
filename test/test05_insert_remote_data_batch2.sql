@@ -5,7 +5,8 @@ SELECT set_config('search_path','mimeo, dblink, public',false);
 
 SELECT plan(1);
 
-SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test password=mimeo_test');
+-- Test that non-dblink, non-owner roles can still insert to source tables
+SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_dumb_role password=mimeo_test');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established');
 
 -- Insert new data

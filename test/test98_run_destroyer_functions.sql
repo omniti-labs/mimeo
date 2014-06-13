@@ -3,7 +3,10 @@
 
 SELECT set_config('search_path','mimeo, dblink, public',false);
 
-SELECT plan(62);
+SELECT plan(63);
+
+SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_owner password=mimeo_owner');
+SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established');
 
 -- ########## SNAPSHOT DESTROYER ##########
 SELECT snapshot_destroyer('mimeo_dest.snap_test_dest');
@@ -101,6 +104,14 @@ SELECT updater_destroyer('mimeo_dest.updater_test_dest_serial', false);
 SELECT hasnt_table('mimeo_dest', 'updater_test_dest_serial', 'Check updater_destroyer dropped table: mimeo_dest.updater_test_dest_serial');
 
 -- ########## DML DESTROYER ##########
+-- Have to change the owner of the source tables in order to be able to drop triggers
+SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.dml_test_source OWNER TO mimeo_test');
+SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.dml_test_source2 OWNER TO mimeo_test');
+SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.dml_test_source_nodata OWNER TO mimeo_test');
+SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.dml_test_source_filter OWNER TO mimeo_test');
+SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.dml_test_source_condition OWNER TO mimeo_test');
+SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.dml_test_source_empty OWNER TO mimeo_test');
+
 SELECT dml_destroyer('mimeo_dest.dml_test_dest');
 SELECT has_table('mimeo_dest', 'dml_test_dest', 'Check dml_destroyer kept destination table: mimeo_dest.dml_test_dest');
 DROP TABLE mimeo_dest.dml_test_dest;
@@ -121,6 +132,14 @@ SELECT hasnt_table('mimeo_source', 'dml_test_source_empty', 'Check dml_destroyer
 
 
 -- ########## LOGDEL DESTROYER ##########
+-- Have to change the owner of the source tables in order to be able to drop triggers
+SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.logdel_test_source OWNER TO mimeo_test');
+SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.logdel_test_source2 OWNER TO mimeo_test');
+SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.logdel_test_source_nodata OWNER TO mimeo_test');
+SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.logdel_test_source_filter OWNER TO mimeo_test');
+SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.logdel_test_source_condition OWNER TO mimeo_test');
+SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.logdel_test_source_empty OWNER TO mimeo_test');
+
 SELECT logdel_destroyer('mimeo_dest.logdel_test_dest');
 SELECT has_table('mimeo_dest', 'logdel_test_dest', 'Check logdel_destroyer kept destination table: mimeo_dest.logdel_test_dest');
 DROP TABLE mimeo_dest.logdel_test_dest;

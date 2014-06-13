@@ -7,7 +7,7 @@ SELECT set_config('search_path','mimeo, dblink, public',false);
 
 SELECT plan(19);
 
-SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test password=mimeo_test');
+SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_owner password=mimeo_owner');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established');
 
 UPDATE refresh_config_inserter SET batch_limit = 500 WHERE dest_table = 'mimeo_source.inserter_test_source';

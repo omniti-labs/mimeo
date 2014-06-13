@@ -141,7 +141,7 @@ v_remote_q_table := v_remote_q_table || ', processed boolean)';
 v_remote_q_index := 'CREATE INDEX ON '||v_source_queue_table||' ('||array_to_string(v_pk_name, ',')||')';
 
 v_pk_counter := 1;
-v_trigger_func := 'CREATE FUNCTION '||v_source_queue_function||' RETURNS trigger LANGUAGE plpgsql AS $_$ ';
+v_trigger_func := 'CREATE FUNCTION '||v_source_queue_function||' RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $_$ ';
     v_trigger_func := v_trigger_func || ' 
         BEGIN IF TG_OP = ''INSERT'' THEN ';
     v_pk_value := array_to_string(v_pk_name, ', NEW.');
@@ -192,14 +192,6 @@ PERFORM gdb(p_debug, 'v_remote_q_index: '||v_remote_q_index);
 PERFORM dblink_exec('mimeo_dml', v_remote_q_index);
 PERFORM gdb(p_debug, 'v_trigger_func: '||v_trigger_func);
 PERFORM dblink_exec('mimeo_dml', v_trigger_func);
--- Grant any current role with write privileges on source table INSERT on the queue table before the trigger is actually created
-v_remote_grants_sql := 'SELECT DISTINCT grantee FROM information_schema.table_privileges WHERE table_schema ||''.''|| table_name = '||quote_literal(p_src_table)||' and privilege_type IN (''INSERT'',''UPDATE'',''DELETE'')';
-FOR v_row IN SELECT grantee FROM dblink('mimeo_dml', v_remote_grants_sql) t (grantee text)
-LOOP
-    PERFORM dblink_exec('mimeo_dml', 'GRANT USAGE ON SCHEMA @extschema@ TO '||quote_ident(v_row.grantee));
-    PERFORM dblink_exec('mimeo_dml', 'GRANT INSERT ON TABLE '||v_source_queue_table||' TO '||quote_ident(v_row.grantee));
-    PERFORM dblink_exec('mimeo_dml', 'GRANT EXECUTE ON FUNCTION '||v_source_queue_function||' TO '||quote_ident(v_row.grantee));
-END LOOP;
 PERFORM gdb(p_debug, 'v_create_trig: '||v_create_trig);
 PERFORM dblink_exec('mimeo_dml', v_create_trig);
 
@@ -288,3 +280,4 @@ EXCEPTION
         END IF;
 END
 $$;
+

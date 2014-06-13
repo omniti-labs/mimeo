@@ -56,7 +56,7 @@ SELECT refresh_logdel('mimeo_dest.logdel_test_dest_nodata');
 SELECT refresh_logdel('mimeo_dest.logdel_test_dest_filter');
 SELECT refresh_logdel('mimeo_dest.logdel_test_dest_condition');
 
-SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test password=mimeo_test');
+SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_owner password=mimeo_owner');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established'); 
 
 -- ########## SNAP TESTS ##########

@@ -5,7 +5,7 @@ SELECT set_config('search_path','mimeo, dblink, public',false);
 
 SELECT plan(48);
 
-SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_test password=mimeo_test');
+SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_owner password=mimeo_owner');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established'); 
 
 -- ########## SNAP TESTS ##########

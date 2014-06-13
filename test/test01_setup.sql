@@ -10,7 +10,8 @@ SELECT set_config('search_path','mimeo, dblink, public',false);
 SELECT plan(7);
 
 -- Run the tests.
-CREATE ROLE mimeo_test WITH LOGIN SUPERUSER PASSWORD 'mimeo_test';
+CREATE ROLE mimeo_owner WITH LOGIN SUPERUSER PASSWORD 'mimeo_owner';
+CREATE ROLE mimeo_test WITH LOGIN PASSWORD 'mimeo_test';
 SELECT has_role('mimeo_test', 'Create mimeo test role');
 CREATE ROLE mimeo_dumb_role WITH LOGIN PASSWORD 'mimeo_test';
 SELECT has_role('mimeo_dumb_role', 'Create mimeo dumb role');

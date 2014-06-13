@@ -12,7 +12,10 @@ SELECT snapshot_maker('mimeo_source.snap_test_source', data_source_id, 'mimeo_de
 SELECT snapshot_maker('mimeo_source.snap_test_source', data_source_id, 'mimeo_dest.snap_test_dest_condition', p_condition := 'WHERE col1 > 9000') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
 SELECT snapshot_maker('mimeo_source.snap_test_source_empty', data_source_id) FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
 SELECT snapshot_maker('mimeo_source.snap_test_source_change_col', data_source_id, 'mimeo_dest.snap_test_dest_change_col') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
+-- Change owner to view and underlying tables since view select permissions are based on the view owner
 ALTER TABLE mimeo_dest.snap_test_dest_change_col OWNER TO mimeo_test;
+ALTER TABLE mimeo_dest.snap_test_dest_change_col_snap1 OWNER TO mimeo_test;
+ALTER TABLE mimeo_dest.snap_test_dest_change_col_snap2 OWNER TO mimeo_test;
 GRANT SELECT ON TABLE mimeo_dest.snap_test_dest_change_col TO mimeo_dumb_role;
 GRANT SELECT ON TABLE mimeo_dest.snap_test_dest_change_col_snap1 TO mimeo_dumb_role;
 GRANT SELECT ON TABLE mimeo_dest.snap_test_dest_change_col_snap2 TO mimeo_dumb_role;
