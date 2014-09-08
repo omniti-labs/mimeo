@@ -13,7 +13,9 @@ v_condition             text;
 v_dblink                int;
 v_dblink_name           text;
 v_dblink_schema         text;
+v_dest_schema_name      text;
 v_dest_table            text;
+v_dest_table_name       text;
 v_fetch_sql             text;
 v_filter                text[];
 v_job_id                bigint;
@@ -29,6 +31,12 @@ v_seq                   text;
 v_seq_max               bigint;
 v_sequences             text[];
 v_source_table          text;
+v_seq_name              text;
+v_seq_oid               oid;
+v_seq_reset             text;
+v_seq_schema            text;
+v_src_schema_name       text;
+v_src_table_name        text;
 v_step_id               bigint;
 v_total                 bigint := 0;
 v_truncate_cascade      boolean;
@@ -91,6 +99,11 @@ IF v_jobmon THEN
     PERFORM gdb(p_debug,'Job ID: '||v_job_id::text);
 END IF;
 
+SELECT schemaname, tablename 
+INTO v_dest_schema_name, v_dest_table_name
+FROM pg_catalog.pg_tables
+WHERE schemaname||'.'||tablename = v_dest_table;
+
 IF p_truncate_cascade IS NOT NULL THEN
     v_truncate_cascade := p_truncate_cascade;
 END IF;
@@ -98,7 +111,7 @@ END IF;
 IF v_jobmon THEN
     v_step_id := add_step(v_job_id, 'Truncating destination table');
 END IF;
-v_truncate_sql := 'TRUNCATE TABLE '||v_dest_table;
+v_truncate_sql := format('TRUNCATE TABLE %I.%I', v_dest_schema_name, v_dest_table_name);
 IF v_truncate_cascade THEN
     v_truncate_sql := v_truncate_sql || ' CASCADE';
     RAISE NOTICE 'WARNING! If this table had foreign keys, you have just truncated all referencing tables as well!';
@@ -114,34 +127,30 @@ EXECUTE v_truncate_sql;
 
 PERFORM dblink_connect(v_dblink_name, @extschema@.auth(v_dblink));
 
+SELECT schemaname, tablename
+INTO v_src_schema_name, v_src_table_name
+FROM dblink(v_dblink_name, 'SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname ||''.''|| tablename = '||quote_literal(v_source_table)) t (schemaname text, tablename text);
+
 IF v_jobmon THEN
     v_step_id := add_step(v_job_id,'Grabbing Mapping, Building SQL');
 END IF;
 
-IF v_filter IS NULL THEN 
-    SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||format_type(atttypid, atttypmod)::text),',') 
-        INTO v_cols, v_cols_n_types
-        FROM pg_attribute WHERE attrelid = p_destination::regclass AND attnum > 0 AND attisdropped is false;
-ELSE
-    SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||format_type(atttypid, atttypmod)::text),',') 
-        INTO v_cols, v_cols_n_types
-        FROM pg_attribute WHERE attrelid = p_destination::regclass AND ARRAY[attname::text] <@ v_filter AND attnum > 0 AND attisdropped is false;
-END IF;
+SELECT array_to_string(p_cols, ','), array_to_string(p_cols_n_types, ',') FROM manage_dest_table(v_dest_table, NULL, p_debug) INTO v_cols, v_cols_n_types;
 
 IF v_jobmon THEN
     PERFORM update_step(v_step_id, 'OK', 'Done');
     v_step_id := add_step(v_job_id,'Inserting records into local table');
 END IF;
 
-v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table;
+v_remote_sql := format('SELECT '||v_cols||' FROM %I.%I', v_src_schema_name, v_src_table_name);
 IF v_condition IS NOT NULL THEN
     v_remote_sql := v_remote_sql || ' ' || v_condition;
-END IF;  
+END IF;
 PERFORM dblink_open(v_dblink_name, 'mimeo_cursor', v_remote_sql);
 v_rowcount := 0;
 LOOP
-    v_fetch_sql := 'INSERT INTO '|| v_dest_table ||' ('||v_cols||') 
-        SELECT '||v_cols||' FROM dblink_fetch('||quote_literal(v_dblink_name)||', ''mimeo_cursor'', 50000) AS ('||v_cols_n_types||')';
+    v_fetch_sql := format('INSERT INTO %I.%I ('||v_cols||')', v_dest_schema_name, v_dest_table_name)|| 
+        'SELECT '||v_cols||' FROM dblink_fetch('||quote_literal(v_dblink_name)||', ''mimeo_cursor'', 50000) AS ('||v_cols_n_types||')';
     EXECUTE v_fetch_sql;
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
     EXIT WHEN v_rowcount = 0;
@@ -166,9 +175,20 @@ IF v_sequences IS NOT NULL THEN
         v_step_id := add_step(v_job_id, 'Resetting sequences');
     END IF;
     FOREACH v_seq IN ARRAY v_sequences LOOP
-        SELECT sequence_max_value(c.oid) INTO v_seq_max FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid WHERE n.nspname ||'.'|| c.relname = v_seq;
+        SELECT n.nspname, c.relname, c.oid 
+        INTO v_seq_schema, v_seq_name, v_seq_oid
+        FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON c.relnamespace = n.oid
+        WHERE n.nspname ||'.'|| c.relname = v_seq;
+
+        IF v_seq_oid IS NOT NULL THEN
+            v_seq_max := sequence_max_value(v_seq_oid);
+        END IF;
+
         IF v_seq_max IS NOT NULL THEN
-            PERFORM setval(v_seq, v_seq_max);
+            v_seq_reset := format('SELECT setval(''%I.%I'', %L)', v_seq_schema, v_seq_name, v_seq_max);
+            PERFORM gdb(p_debug, 'v_reset_seq: '||v_seq_reset);
+            EXECUTE v_seq_reset;
         END IF;
     END LOOP;
     IF v_jobmon THEN
@@ -204,7 +224,7 @@ EXCEPTION
         END IF;
         IF v_jobmon THEN
             IF v_job_id IS NULL THEN
-                EXECUTE 'SELECT '||v_jobmon_schema||'.add_job(''Refresh DML: '||p_destination||''')' INTO v_job_id;
+                EXECUTE 'SELECT '||v_jobmon_schema||'.add_job(''Refresh Table: '||p_destination||''')' INTO v_job_id;
                 EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||', ''EXCEPTION before job logging started'')' INTO v_step_id;
             END IF;
             IF v_step_id IS NULL THEN
@@ -216,4 +236,5 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
+
 

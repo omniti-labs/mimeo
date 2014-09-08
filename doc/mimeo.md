@@ -30,20 +30,24 @@ To aid in automatically running refresh jobs more easily, a python script is inc
 
 The p_debug argument for any function that has it will output more verbose feedback to show what that job is doing. Most of this is also logged with pg_jobmon, but this is a quick way to see detailed info immediately.
 
-### Adding/Removing Columns with DML Replication
+### Adding/Removing Columns after initial setup
 
-Adding and/or removing columns on the source database must be done carefully, and in a specific order, with DML replication types (dml & logdel) to avoid errors.
+Adding and/or removing columns on the source database must be done carefully, and in a specific order, to avoid errors. Except for the snapshot replication method (which automatically replicates column changes), the columns should always be added on the destination table first and then the source. And the opposite should be done for removing a column you no longer want on either system (source first, destination last). The columns copied over during replication are always determined by what the source has, so if the source has columns the destination doesn't, replication will fail.
+Since the source database is used as the canonical schema, this means the destination can actually have columns the source does not (and logdel replication shows this in action).
+There is a function available that can help monitor for when source columns change. See check_source_columns() in Maintenance Functions.
+
+Additional consideration must be taken with with Logdel Replication:
 
 When adding a column, follow this order:
 
 1. Add to destination table
-2. Add to the source queue table 
+2. Add to the source queue table (logdel only)
 3. Add to the source table
 
 When removing a column, follow this order:
 
 1. Remove from source table
-2. Remove from the source queue table
+2. Remove from the source queue table (logdel only)
 3. Remove from the destination table (if desired. It can be left for historical records with no problems.)
 
 ### Dblink Mapping Setup
@@ -91,7 +95,7 @@ Extension Objects
  * p_type determines whether it is time-based or serial-based incremental replication. Valid values are: "time" or "serial".
  * p_control_field is the column which is used as the control field (a timestamp or integer column that is new for every insert).
  * p_dblink_id is the data_source_id from the dblink_mapping_mimeo table for where the source table is located.  
- * p_boundary, an optional argument, is a boundary value to prevent records being missed at the upper boundary of the batch. Argument type is text, but must be able to be converted to an interval for time-based and an integer for serial-based. This is mostly only relevant for time based replication. Set this to a value that will ensure all inserts will have finished for that time period when the replication runs. For time based the default is 10 minutes which means the destination may always be 10 minutes behind the source but that also means that all inserts on the source will have finished by the time 10 minutes has passed. For serial based replication, the default is zero. If your serial column is based on a sequence you shouldn't have to change this. The upper boundary will always be one less than the max at the time replication runs. If it's not based on a sequence, you'll have to set this to a value to ensure that the source is done inserting that range of numerical values by the time replication runs. For example, if you set this to 10, the destination will always be one less than "max(source_control_col) - 10" behind the source.
+ * p_boundary, an optional argument, is a boundary value to prevent records being missed at the upper boundary of the batch. Argument type is text, but must be able to be converted to an interval for time-based and an integer for serial-based. This is mostly only relevant for time based replication. Set this to a value that will ensure all inserts will have finished for that time period when the replication runs. For time based the default is 10 minutes which means the destination may always be 10 minutes behind the source but that also means that all inserts on the source will have finished by the time 10 minutes has passed. For serial based replication, the default is 10. If your serial column is based on a sequence you should be able to change this to zero safely. The upper boundary will always be one less than the max at the time replication runs. If it's not based on a sequence, you'll have to set this to a value to ensure that the source is done inserting that range of numerical values by the time replication runs. For example, if you set this to 10, the destination will always be one less than "max(source_control_col) - 10" behind the source.
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
  * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication. Be aware that if this option is used, indexes cannot be replicated from the source because there is currently no easy way to determine all types of indexes that may be affected by the columns that are excluded.
@@ -141,7 +145,7 @@ Extension Objects
  * p_type determines whether it is time-based or serial-based incremental replication. Valid values are: "time" or "serial".
  * p_control_field is the column which is used as the control field (a timestamp or integer column that is new for every insert AND update).
  * p_dblink_id is the data_source_id from the dblink_mapping_mimeo table for where the source table is located.  
- * p_boundary, an optional argument, is a boundary value to prevent records being missed at the upper boundary of the batch. Argument type is text, but must be able to be converted to an interval for time-based and an integer for serial-based. This is mostly only relevant for time based replication. Set this to a value that will ensure all inserts will have finished for that time period when the replication runs. For time based the default is 10 minutes which means the destination may always be 10 minutes behind the source but that also means that all inserts on the source will have finished by the time 10 minutes has passed. For serial based replication, the default is zero. If your serial column is based on a sequence you shouldn't have to change this. The upper boundary will always be one less than the max at the time replication runs. If it's not based on a sequence, you'll have to set this to a value to ensure that the source is done inserting that range of numerical values by the time replication runs. For example, if you set this to 10, the destination will always be one less than "max(source_control_col) - 10" behind the source.
+ * p_boundary, an optional argument, is a boundary value to prevent records being missed at the upper boundary of the batch. Argument type is text, but must be able to be converted to an interval for time-based and an integer for serial-based. This is mostly only relevant for time based replication. Set this to a value that will ensure all inserts will have finished for that time period when the replication runs. For time based the default is 10 minutes which means the destination may always be 10 minutes behind the source but that also means that all inserts on the source will have finished by the time 10 minutes has passed. For serial based replication, the default is 10. If your serial column is based on a sequence you should be able to change this to zero safely. The upper boundary will always be one less than the max at the time replication runs. If it's not based on a sequence, you'll have to set this to a value to ensure that the source is done inserting that range of numerical values by the time replication runs. For example, if you set this to 10, the destination will always be one less than "max(source_control_col) - 10" behind the source.
  * p_dest_table, an optional argument,  is to set a custom destination table. Be sure to schema qualify it if needed.
  * p_index, an optional argument, sets whether to recreate all indexes that exist on the source table on the destination. Defaults to true. Note this is only applies during replication setup. Future index changes on the source will not be propagated.
  * p_filter, an optional argument, is an array list that can be used to designate only specific columns that should be used for replication. Be aware that if this option is used, indexes cannot be replicated from the source because there is currently no easy way to determine all types of indexes that may be affected by the columns that are excluded. The primary/unique key used to determine row identity will still be replicated, however, because there are checks in place to ensure those columns are not excluded.
@@ -267,10 +271,10 @@ Extension Objects
     dest_table      - Tablename on destination database. If not public, should be schema qualified
     type            - Type of replication. Must of one of the following values: snap, inserter_time, inserter_serial, updater_time, updater_serial, dml, logdel
     dblink          - Foreign key on the data_source_id column from dblink_mapping_mimeo table
-    last_run        - Timestamp of the last run of the job. Used by run_refresh() to know when to do the next run of a job.
+    last_run        - Timestamp of the last run of the job. Used by run_refresh,py to know when to do the next run of a job.
     filter          - Array containing specific column names that should be used in replication.
     condition       - Used to set criteria for specific rows that should be replicated. See additional notes in **About** section above.
-    period          - Interval used for the run_refresh() function to indicate how often this refresh job should be run at a minimum
+    period          - Interval used for the run_refresh.py script to indicate how often this refresh job should be run at a minimum
     batch_limit     - Limit the number of rows to be processed for each run of the refresh job. If left NULL (the default), all new rows are fetched every refresh.
     jobmon          - Boolean to determine whether to use pg_jobmon extension to log replication steps. 
                       Maker functions set to true by default if it is installed. Otherwise defaults to false.
@@ -362,7 +366,7 @@ Extension Objects
  * A python script to automatically run replication for tables that have their ''period'' set in the config table.
  * This script can be run as often as needed and refreshes will only fire if their interval period has passed.
  * By default, refreshes are run sequentially in ascending order of their last_run value. Parallel option is available.
- * --connection (-c)  Option to set the psycopg connection string to the database. Default is "host=localhost".
+ * --connection (-c)  Option to set the psycopg connection string to the database. Default is "host=" (local socket).
  * --type (-t)  Option to set which type of replication to run (snap, inserter, updater, dml, logdel, table). Default is all types.
  * --batch_limit (-b)  Option to set how many tables to replicate in a single run of the script. Default is all jobs scheduled to run at time script is run.
  * --jobs (-j) Allows parallel running of replication jobs. Set this equal to the number of processors you want to use to allow that many jobs to start simultaneously (uses multiprocessing library, not threading).

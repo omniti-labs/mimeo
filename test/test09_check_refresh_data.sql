@@ -5,56 +5,110 @@
 
 SELECT set_config('search_path','mimeo, dblink, public',false);
 
-SELECT plan(61);
+SELECT plan(81);
 
-SELECT diag('Re-running refresh functions. This may take a bit...');
-
+SELECT diag('Running refresh for: mimeo_source.snap_test_source');
 SELECT refresh_snap('mimeo_source.snap_test_source');
+SELECT diag('Running refresh for: mimeo_dest.snap_test_dest');
 SELECT refresh_snap('mimeo_dest.snap_test_dest');
+SELECT diag('Running refresh for: mimeo_dest.snap_test_dest_nodata');
 SELECT refresh_snap('mimeo_dest.snap_test_dest_nodata');
+SELECT diag('Running refresh for: mimeo_dest.snap_test_dest_filter');
 SELECT refresh_snap('mimeo_dest.snap_test_dest_filter');
+SELECT diag('Running refresh for: mimeo_dest.snap_test_dest_condition');
 SELECT refresh_snap('mimeo_dest.snap_test_dest_condition');
 -- Call twice to change both snap tables
+SELECT diag('Running refresh for: mimeo_dest.snap_test_dest_change_col (1st time)');
 SELECT refresh_snap('mimeo_dest.snap_test_dest_change_col');
+SELECT diag('Running refresh for: mimeo_dest.snap_test_dest_change_col (2nd time)');
 SELECT refresh_snap('mimeo_dest.snap_test_dest_change_col');
+-- Call twice to change both snap tables
+SELECT diag('Running refresh for: mimeo_source.Snap-test-Source (1st time)');
+SELECT refresh_snap('mimeo_source.Snap-test-Source');
+SELECT diag('Running refresh for: mimeo_source.Snap-test-Source (2nd time)');
+SELECT refresh_snap('mimeo_source.Snap-test-Source');
 
+
+SELECT diag('Running refresh for: mimeo_dest.table_test_dest');
 SELECT refresh_table('mimeo_dest.table_test_dest');
+SELECT diag('Running refresh for: mimeo_dest.table_test_dest_nodata');
 SELECT refresh_table('mimeo_dest.table_test_dest_nodata');
+SELECT diag('Running refresh for: mimeo_dest.table_test_dest_filter');
 SELECT refresh_table('mimeo_dest.table_test_dest_filter');
+SELECT diag('Running refresh for: mimeo_dest.table_test_dest_condition');
 SELECT refresh_table('mimeo_dest.table_test_dest_condition');
+SELECT diag('Running refresh for: mimeo_dest.table_test_dest_empty');
 SELECT refresh_table('mimeo_dest.table_test_dest_empty');
+SELECT diag('Running refresh for: mimeo_dest.Table-test-Source');
+SELECT refresh_table('mimeo_dest.Table-test-Source');
 
 --time
+SELECT diag('Running refresh for: mimeo_source.inserter_test_source');
 SELECT refresh_inserter('mimeo_source.inserter_test_source');
+SELECT diag('Running refresh for: mimeo_dest.inserter_test_dest');
 SELECT refresh_inserter('mimeo_dest.inserter_test_dest');
+SELECT diag('Running refresh for: mimeo_dest.inserter_test_dest_nodata');
 SELECT refresh_inserter('mimeo_dest.inserter_test_dest_nodata');
+SELECT diag('Running refresh for: mimeo_dest.inserter_test_dest_filter');
 SELECT refresh_inserter('mimeo_dest.inserter_test_dest_filter');
+SELECT diag('Running refresh for: mimeo_dest.inserter_test_dest_condition');
 SELECT refresh_inserter('mimeo_dest.inserter_test_dest_condition');
+SELECT diag('Running refresh for: mimeo_source.Inserter-Test-Source');
+SELECT refresh_inserter('mimeo_source.Inserter-Test-Source');
 --serial
+SELECT diag('Running refresh for: mimeo_dest.inserter_test_dest_serial');
 SELECT refresh_inserter('mimeo_dest.inserter_test_dest_serial');
+SELECT diag('Running refresh for: mimeo_dest.Inserter-Test-Source_Serial');
+SELECT refresh_inserter('mimeo_dest.Inserter-Test-Source_Serial');
 
 --time
+SELECT diag('Running refresh for: mimeo_source.updater_test_source');
 SELECT refresh_updater('mimeo_source.updater_test_source');
+SELECT diag('Running refresh for: mimeo_dest.updater_test_dest');
 SELECT refresh_updater('mimeo_dest.updater_test_dest');
+SELECT diag('Running refresh for: mimeo_dest.updater_test_dest_nodata');
 SELECT refresh_updater('mimeo_dest.updater_test_dest_nodata');
+SELECT diag('Running refresh for: mimeo_dest.updater_test_dest_filter');
 SELECT refresh_updater('mimeo_dest.updater_test_dest_filter');
+SELECT diag('Running refresh for: mimeo_dest.updater_test_dest_condition');
 SELECT refresh_updater('mimeo_dest.updater_test_dest_condition');
+SELECT diag('Running refresh for: mimeo_source.Updater-Test-Source');
+SELECT refresh_updater('mimeo_source.Updater-Test-Source');
 --serial
+SELECT diag('Running refresh for: mimeo_dest.updater_test_dest_serial');
 SELECT refresh_updater('mimeo_dest.updater_test_dest_serial');
+SELECT diag('Running refresh for: mimeo_dest.Updater-Test-Source_Serial');
+SELECT refresh_updater('mimeo_dest.Updater-Test-Source_Serial');
 
+SELECT diag('Running refresh for: mimeo_source.dml_test_source');
 SELECT refresh_dml('mimeo_source.dml_test_source');
+SELECT diag('Running refresh for: mimeo_dest.dml_test_dest');
 SELECT refresh_dml('mimeo_dest.dml_test_dest');
+SELECT diag('Running refresh for: mimeo_dest.dml_test_dest_multi');
 SELECT refresh_dml('mimeo_dest.dml_test_dest_multi');
+SELECT diag('Running refresh for: mimeo_dest.dml_test_dest_nodata');
 SELECT refresh_dml('mimeo_dest.dml_test_dest_nodata');
+SELECT diag('Running refresh for: mimeo_dest.dml_test_dest_filter');
 SELECT refresh_dml('mimeo_dest.dml_test_dest_filter');
+SELECT diag('Running refresh for: mimeo_dest.dml_test_dest_condition');
 SELECT refresh_dml('mimeo_dest.dml_test_dest_condition');
+SELECT diag('Running refresh for: mimeo_source.Dml-Test-Source');
+SELECT refresh_dml('mimeo_source.Dml-Test-Source');
 
+SELECT diag('Running refresh for: mimeo_source.logdel_test_source');
 SELECT refresh_logdel('mimeo_source.logdel_test_source');
+SELECT diag('Running refresh for: mimeo_dest.logdel_test_dest');
 SELECT refresh_logdel('mimeo_dest.logdel_test_dest');
+SELECT diag('Running refresh for: mimeo_dest.logdel_test_dest_multi');
 SELECT refresh_logdel('mimeo_dest.logdel_test_dest_multi');
+SELECT diag('Running refresh for: mimeo_dest.logdel_test_dest_nodata');
 SELECT refresh_logdel('mimeo_dest.logdel_test_dest_nodata');
+SELECT diag('Running refresh for: mimeo_dest.logdel_test_dest_filter');
 SELECT refresh_logdel('mimeo_dest.logdel_test_dest_filter');
+SELECT diag('Running refresh for: mimeo_dest.logdel_test_dest_condition');
 SELECT refresh_logdel('mimeo_dest.logdel_test_dest_condition');
+SELECT diag('Running refresh for: mimeo_source.LogDel-Test-Source');
+SELECT refresh_logdel('mimeo_source.LogDel-Test-Source');
 
 SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_owner password=mimeo_owner');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established'); 
@@ -97,12 +151,28 @@ SELECT table_privs_are('mimeo_dest', 'snap_test_dest_change_col_snap1', 'mimeo_d
 SELECT table_privs_are('mimeo_dest', 'snap_test_dest_change_col_snap2', 'mimeo_dumb_role', ARRAY['SELECT'], 'Checking mimeo_dumb_role privileges for mimeo_dest.snap_test_dest_change_col_snap2');
 SELECT view_owner_is ('mimeo_dest', 'snap_test_dest_change_col', 'mimeo_test', 'Check ownership for view mimeo_dest.snap_test_dest_change_col');
 
+SELECT results_eq('SELECT "primary", col2, "COL-3", "Col4" FROM mimeo_source."Snap-test-Source" ORDER BY "primary" ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT "primary", col2, "COL-3", "Col4" FROM mimeo_source."Snap-test-Source" ORDER BY "primary" ASC'') t ("primary" int, col2 text, "Col-3" timestamptz, "Col4" inet)',
+    'Check data for: mimeo_source.Snap-test-Source');
+SELECT columns_are('mimeo_source', 'Snap-test-Source_snap1', ARRAY['primary', 'col2', 'COL-3', 'Col4'], 'Check that column change propagated for mimeo_dest.Snap-test-Source_snap1');
+SELECT columns_are('mimeo_source', 'Snap-test-Source_snap2', ARRAY['primary', 'col2', 'COL-3', 'Col4'], 'Check that column change propagated for mimeo_dest.Snap-test-Source_snap2');
+SELECT has_index('mimeo_source','Snap-test-Source_snap1', 'snap1_Snap-test-Source_col2_idx', 'col2','Check index for: mimeo_dest.Snap-test-Source_snap1');
+SELECT has_index('mimeo_source','Snap-test-Source_snap2', 'snap2_Snap-test-Source_col2_idx', 'col2','Check index for: mimeo_dest.Snap-test-Source_snap1');
+SELECT table_privs_are('mimeo_source', 'Snap-test-Source', 'mimeo_dumb_role', ARRAY['SELECT'], 'Checking mimeo_dumb_role privileges for mimeo_source.Snap-test-Source');
+SELECT table_privs_are('mimeo_source', 'Snap-test-Source_snap1', 'mimeo_dumb_role', ARRAY['SELECT'], 'Checking mimeo_dumb_role privileges for mimeo_source.Snap-test-Source_snap1');
+SELECT table_privs_are('mimeo_source', 'Snap-test-Source_snap2', 'mimeo_dumb_role', ARRAY['SELECT'], 'Checking mimeo_dumb_role privileges for mimeo_source.Snap-test-Source_snap2');
+SELECT view_owner_is ('mimeo_source', 'Snap-test-Source', 'mimeo_test', 'Check ownership for view mimeo_source.Snap-test-Source');
+SELECT table_owner_is ('mimeo_source', 'Snap-test-Source_snap1', 'mimeo_test', 'Check ownership for view mimeo_source.Snap-test-Source_snap1');
+SELECT table_owner_is ('mimeo_source', 'Snap-test-Source_snap2', 'mimeo_test', 'Check ownership for view mimeo_source.Snap-test-Source_snap2');
+
+
 SELECT results_eq('SELECT match FROM validate_rowcount(''mimeo_dest.snap_test_dest'')', ARRAY[true], 'Check validate_rowcount match');
 
 -- ########## PLAIN TABLE TESTS ##########
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.table_test_dest ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.snap_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.table_test_dest');
+SELECT results_eq('SELECT last_value::text FROM mimeo_dest.col1_seq', ARRAY['100000'], 'Check that destination sequence was reset for mimeo_dest.table_test_dest');
 
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.table_test_dest_nodata ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.snap_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
@@ -118,6 +188,11 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.table_test_dest_condi
     'Check data for: mimeo_dest.table_test_dest_condition');
 
 SELECT is_empty('SELECT col1, col2, col3 FROM mimeo_dest.table_test_dest_empty ORDER BY col1 ASC', 'Check data for: mimeo_dest.table_test_dest_empty');
+
+SELECT results_eq('SELECT "primary", col2, "COL-3" FROM mimeo_dest."Table-test-Source" ORDER BY "primary" ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT "primary", col2, "COL-3" FROM mimeo_source."Snap-test-Source" ORDER BY "primary" ASC'') t ("primary" int, col2 text, col3 timestamptz)',
+    'Check data for: mimeo_dest.Table-test-Source');
+SELECT results_eq('SELECT last_value::text FROM mimeo_dest."PRIMARY-seq"', ARRAY['100000'], 'Check that destination sequence was reset for mimeo_dest.Table-test-Source');
 
 SELECT results_eq('SELECT match FROM validate_rowcount(''mimeo_dest.table_test_dest'')', ARRAY[true], 'Check validate_rowcount match');
 
@@ -143,6 +218,10 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.inserter_test_dest_co
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source WHERE col1 > 9000 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.inserter_test_dest_condition');
 
+SELECT results_eq('SELECT col1, "group", "Col-3" FROM mimeo_source."Inserter-Test-Source" ORDER BY col1 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, "group", "Col-3" FROM mimeo_source."Inserter-Test-Source" ORDER BY col1 ASC'') t (col1 int, "group" text, "Col-3" timestamptz)',
+    'Check data for: mimeo_source."Inserter-Test-Source"');
+
 SELECT results_eq('SELECT match FROM validate_rowcount(''mimeo_dest.inserter_test_dest'')', ARRAY[true], 'Check validate_rowcount match');
 
 -- Serial
@@ -150,6 +229,9 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.inserter_test_dest_se
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source WHERE col1 < (SELECT max(col1) FROM mimeo_source.inserter_test_source) ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.inserter_test_dest_serial');
 
+SELECT results_eq('SELECT col1, "group", "Col-3" FROM mimeo_dest."Inserter-Test-Source_Serial" ORDER BY col1 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, "group", "Col-3" FROM mimeo_source."Inserter-Test-Source" WHERE col1 < (SELECT max(col1) FROM mimeo_source."Inserter-Test-Source") ORDER BY col1 ASC'') t (col1 int, "group" text, "Col-3" timestamptz)',
+    'Check data for: mimeo_dest."Inserter-Test-Source_Serial"');
 
 -- ########## UPDATER TESTS ##########
 -- Time
@@ -173,6 +255,10 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.updater_test_dest_con
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.updater_test_source WHERE col1 > 9000 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.updater_test_dest_condition');
 
+SELECT results_eq('SELECT "COL-1", "group", "Col3" FROM mimeo_source."Updater-Test-Source" ORDER BY "COL-1" ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT "COL-1", "group", "Col3" FROM mimeo_source."Updater-Test-Source" ORDER BY "COL-1" ASC'') t ("COL-1" int, "group" text, "Col3" timestamptz)',
+    'Check data for: mimeo_source."Updater-Test-Source"');
+
 SELECT results_eq('SELECT match FROM validate_rowcount(''mimeo_dest.updater_test_dest'')', ARRAY[true], 'Check validate_rowcount match');
 
 -- Serial
@@ -180,6 +266,9 @@ SELECT results_eq('SELECT col1, col2, col3, col4 FROM mimeo_dest.updater_test_de
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3, col4 FROM mimeo_source.updater_test_source WHERE col4 < (SELECT max(col4) FROM mimeo_source.updater_test_source) ORDER BY col4 ASC'') t (col1 int, col2 text, col3 timestamptz, col4 int)',
     'Check data for: mimeo_dest.updater_test_dest_serial');
 
+SELECT results_eq('SELECT "COL-1", "group", "Col3" FROM mimeo_dest."Updater-Test-Source_Serial" ORDER BY "COL-1" ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT "COL-1", "group", "Col3" FROM mimeo_source."Updater-Test-Source" WHERE "COL-1" < (SELECT max("COL-1") FROM mimeo_source."Updater-Test-Source") ORDER BY "COL-1" ASC'') t ("COL-1" int, "group" text, "Col3" timestamptz)',
+    'Check data for: mimeo_source."Updater-Test-Source_Serial"');
 
 -- ########## DML TESTS ##########
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.dml_test_source ORDER BY col1 ASC',
@@ -207,6 +296,10 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.dml_test_dest_conditi
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.dml_test_source_condition WHERE col1 > 9000 ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
     'Check data for: mimeo_dest.dml_test_dest_condition');
 SELECT is_empty('SELECT * FROM mimeo_dest.dml_test_dest_condition WHERE col1 <= 10000', 'Check that deleted row is gone from mimeo_dest.dml_test_dest_condition');
+
+SELECT results_eq('SELECT "COL1", "group", "Col-3" FROM mimeo_source."Dml-Test-Source" ORDER BY "COL1" ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT "COL1", "group", "Col-3" FROM mimeo_source."Dml-Test-Source" ORDER BY "COL1" ASC'') t ("COL1" int, "group" text, "Col-3" timestamptz)',
+    'Check data for: mimeo_source.Dml-Test-Source');
 
 SELECT results_eq('SELECT match FROM validate_rowcount(''mimeo_dest.dml_test_dest'')', ARRAY[true], 'Check validate_rowcount match');
 
@@ -243,6 +336,10 @@ SELECT results_eq('SELECT col1, col2 FROM mimeo_dest.logdel_test_dest_filter ORD
 SELECT results_eq('SELECT col1, col2 FROM mimeo_dest.logdel_test_dest_condition WHERE col1 <> 11 ORDER BY col1, col2 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2 FROM mimeo_source.logdel_test_source_condition WHERE col1 > 9000 ORDER BY col1, col2 ASC'') t (col1 int, col2 text)',
     'Check data for: mimeo_dest.logdel_test_dest_condition');
+
+SELECT results_eq('SELECT "COL1", "group", "Col-3" FROM mimeo_source."LogDel-Test-Source" ORDER BY "COL1" ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT "COL1", "group", "Col-3" FROM mimeo_source."LogDel-Test-Source" ORDER BY "COL1" ASC'') t ("COL1" int, "group" text, "Col-3" timestamptz)',
+    'Check data for: mimeo_source.LogDel-Test-Source');
 
 SELECT results_eq('SELECT match FROM validate_rowcount(''mimeo_source.logdel_test_source'')', ARRAY[true], 'Check validate_rowcount match');
 SELECT results_eq('SELECT match FROM validate_rowcount(''mimeo_dest.logdel_test_dest'')', ARRAY[false], 'Check validate_rowcount match');

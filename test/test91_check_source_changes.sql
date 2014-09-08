@@ -1,6 +1,6 @@
 /*
- * Checks that snapshot replication copies column changes
- * Checks monitoring functions or ensure they catch new source tables and source column changes on non-snap tables
+ * Checks monitoring functions to ensure they catch new source tables and source column changes on non-snap tables
+ * Further checks that snapshot replication copies column changes
  */
 \set ON_ERROR_ROLLBACK 1
 \set ON_ERROR_STOP true
@@ -9,7 +9,7 @@
 
 SELECT set_config('search_path','mimeo, dblink, public',false);
 
-SELECT plan(4);
+SELECT plan(5);
 
 SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_owner password=mimeo_owner');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established');
@@ -19,6 +19,8 @@ SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.brand_new_table(id s
 SELECT results_eq('SELECT schemaname, tablename FROM mimeo.check_missing_source_tables()'
     , $$VALUES ('mimeo_source', 'brand_new_table') $$
     , 'Ensure check_missing_source_tables() returns table on source that doesn''t exist on destination');
+
+SELECT is_empty('SELECT * FROM mimeo.check_source_columns()', 'Check that check_source_columns returns nothing before changes on source');
 
 SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.snap_test_source DROP COLUMN col3');
 SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.snap_test_source ADD COLUMN col4 varchar(42)');
@@ -84,7 +86,7 @@ SELECT results_eq('SELECT dest_schemaname, dest_tablename, src_schemaname, src_t
         , ('mimeo_source','logdel_test_source','mimeo_source','logdel_test_source','col1','text')
         , ('mimeo_source','logdel_test_source','mimeo_source','logdel_test_source','col4','point')
         , ('mimeo_source','updater_test_source','mimeo_source','updater_test_source','col4','text')$$
-    , ' Ensure snapshots replicated column changes by checking heck_source_columns() no longer lists them');
+    , ' Ensure snapshots replicated column changes by checking that check_source_columns() no longer lists them');
 
 
 SELECT dblink_disconnect('mimeo_test');

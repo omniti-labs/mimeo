@@ -11,9 +11,13 @@ SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_sourc
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established');
 
 -- Test INSERT only
+SELECT diag('Inserting rows: mimeo_source.dml_test_source');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.dml_test_source VALUES (generate_series(100031,100040), ''test''||generate_series(100031,100040)::text)');
+SELECT diag('Inserting rows: mimeo_source.logdel_test_source');
 SELECT dblink_exec('mimeo_test', 'INSERT INTO mimeo_source.logdel_test_source VALUES (generate_series(100031,100040), ''test''||generate_series(100031,100040)::text)');
+SELECT diag('Running refresh: mimeo_source.dml_test_source');
 SELECT refresh_dml('mimeo_source.dml_test_source');
+SELECT diag('Running refresh: mimeo_source.logdel_test_source');
 SELECT refresh_logdel('mimeo_source.logdel_test_source');
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.dml_test_source ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.dml_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
@@ -23,9 +27,13 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.logdel_test_source 
     'Check data for: mimeo_source.logdel_test_source');
 
 -- Test UPDATE only
+SELECT diag('Updating rows: mimeo_source.dml_test_source');
 SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.dml_test_source SET col2 = ''update_test'' WHERE col1 between 100031 and 100040');
+SELECT diag('Updating rows: mimeo_source.logdel_test_source');
 SELECT dblink_exec('mimeo_test', 'UPDATE mimeo_source.logdel_test_source SET col2 = ''update_test''||col1 WHERE col1 between 100031 and 100040');
+SELECT diag('Running refresh: mimeo_source.dml_test_source');
 SELECT refresh_dml('mimeo_source.dml_test_source');
+SELECT diag('Running refresh: mimeo_source.logdel_test_source');
 SELECT refresh_logdel('mimeo_source.logdel_test_source');
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.dml_test_source ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.dml_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
@@ -35,9 +43,13 @@ SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.logdel_test_source 
     'Check data for: mimeo_source.logdel_test_source');
 
 -- Test DELETE only
+SELECT diag('Deleting rows: mimeo_source.dml_test_source');
 SELECT dblink_exec('mimeo_test', 'DELETE FROM mimeo_source.dml_test_source WHERE col1 between 100031 and 100040');
+SELECT diag('Deleting rows: mimeo_source.logdel_test_source');
 SELECT dblink_exec('mimeo_test', 'DELETE FROM mimeo_source.logdel_test_source WHERE col1 between 100031 and 100040');
+SELECT diag('Running refresh: mimeo_source.dml_test_source');
 SELECT refresh_dml('mimeo_source.dml_test_source');
+SELECT diag('Running refresh: mimeo_source.logdel_test_source');
 SELECT refresh_logdel('mimeo_source.logdel_test_source');
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.dml_test_source ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.dml_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',

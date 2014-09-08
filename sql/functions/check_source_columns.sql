@@ -20,6 +20,9 @@ v_exists                int;
 v_row_dblink            record;
 v_row_table             record;
 v_row_col               record;
+v_sql                   text;
+v_src_schema_name       text;
+v_src_table_name        text;
 
 BEGIN
 
@@ -56,23 +59,49 @@ LOOP
         SELECT source_table, dest_table, filter, type FROM @extschema@.refresh_config_table WHERE dblink = v_row_dblink.data_source_id )
         ORDER BY 1,2
     LOOP
-        FOR v_row_col IN
-            EXECUTE 'SELECT attname, atttypid, atttypmod, schemaname, tablename FROM '||v_dblink_schema||'.dblink(''mimeo_col_check'', 
-                ''SELECT a.attname::text, a.atttypid, a.atttypmod, n.nspname AS schemaname, c.relname AS tablename
-                FROM pg_attribute a
-                JOIN pg_class c ON c.oid = a.attrelid
-                JOIN pg_namespace n ON c.relnamespace = n.oid
-                WHERE a.attrelid = '''''||v_row_table.source_table||'''''::regclass 
-                AND a.attnum > 0
-                AND attisdropped = false
-                ORDER BY 1,2'') t (attname text, atttypid oid, atttypmod int, schemaname text, tablename text)'
+        v_sql := 'SELECT schemaname, tablename FROM 
+                pg_catalog.pg_tables 
+                WHERE schemaname ||''.''|| tablename = '||quote_literal(v_row_table.source_table); 
+
+        EXECUTE format('SELECT schemaname, tablename
+                    FROM %I.dblink(%L, %L)
+                    AS (schemaname text, tablename text)'
+                    , v_dblink_schema, 'mimeo_col_check', v_sql)
+                INTO v_src_schema_name, v_src_table_name;
+
+        v_sql := format('SELECT a.attname::text, a.atttypid, a.atttypmod, n.nspname AS schemaname, c.relname AS tablename
+                    FROM pg_catalog.pg_attribute a
+                    JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+                    JOIN pg_catalog.pg_namespace n ON c.relnamespace = n.oid
+                    WHERE n.nspname = %L
+                    AND c.relname = %L
+                    AND a.attnum > 0
+                    AND attisdropped = false
+                    ORDER BY 1,2'
+                , v_src_schema_name, v_src_table_name);
+
+        FOR v_row_col IN EXECUTE 
+            format('SELECT attname, atttypid, atttypmod, schemaname, tablename 
+            FROM %I.dblink(%L, %L) 
+            AS (attname text, atttypid oid, atttypmod int, schemaname text, tablename text)'
+            , v_dblink_schema, 'mimeo_col_check', v_sql)
         LOOP
             IF v_row_col.attname <> ANY (v_row_table.filter) THEN
                 CONTINUE;
             END IF;
+
+            IF v_row_table.type = 'snap' THEN
+                SELECT schemaname, viewname INTO dest_schemaname, dest_tablename FROM pg_catalog.pg_views WHERE schemaname||'.'||viewname = v_row_table.dest_table;
+            ELSE
+                SELECT schemaname, tablename INTO dest_schemaname, dest_tablename FROM pg_catalog.pg_tables WHERE schemaname||'.'||tablename = v_row_table.dest_table;
+            END IF;
+
             SELECT count(*) INTO v_exists
-            FROM pg_attribute
-            WHERE attrelid = v_row_table.dest_table::regclass
+            FROM pg_catalog.pg_attribute a
+            JOIN pg_catalog.pg_class c ON a.attrelid = c.oid
+            JOIN pg_catalog.pg_namespace n ON c.relnamespace = n.oid
+            WHERE n.nspname = dest_schemaname
+            AND c.relname = dest_tablename
             AND attnum > 0
             AND attisdropped = false
             AND attname = v_row_col.attname
@@ -81,17 +110,16 @@ LOOP
 
             -- if column doesn't exist, means it's missing on destination.
             IF v_exists < 1 THEN
-                IF v_row_table.type = 'snap' THEN
-                    SELECT schemaname, viewname INTO dest_schemaname, dest_tablename FROM pg_catalog.pg_views WHERE schemaname||'.'||viewname = v_row_table.dest_table;
-                ELSE
-                    SELECT schemaname, tablename INTO dest_schemaname, dest_tablename FROM pg_catalog.pg_tables WHERE schemaname||'.'||tablename = v_row_table.dest_table;
-                END IF;
                 src_schemaname := v_row_col.schemaname;
                 src_tablename := v_row_col.tablename;
                 missing_column_name := v_row_col.attname;
                 missing_column_type := format_type(v_row_col.atttypid, v_row_col.atttypmod)::text;
                 data_source := v_row_dblink.data_source_id;
                 RETURN NEXT;
+            ELSE
+                -- Reset output variables used above
+                dest_schemaname = NULL;
+                dest_tablename = NULL;
             END IF;
 
         END LOOP; -- end v_row_col

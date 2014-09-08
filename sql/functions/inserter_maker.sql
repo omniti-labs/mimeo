@@ -28,6 +28,7 @@ v_jobmon                    boolean;
 v_insert_refresh_config     text;
 v_max_id                    bigint;
 v_max_timestamp             timestamptz;
+v_sql                       text;
 v_table_exists              boolean;
 
 BEGIN
@@ -46,8 +47,7 @@ IF p_dest_table IS NULL THEN
 END IF;
 
 IF position('.' in p_dest_table) > 0 AND position('.' in p_src_table) > 0 THEN
-    v_dest_schema_name := split_part(p_dest_table, '.', 1); 
-    v_dest_table_name := split_part(p_dest_table, '.', 2);
+    -- Do nothing. Schema & table variable names set below after table is created
 ELSE
     RAISE EXCEPTION 'Source (and destination) table must be schema qualified';
 END IF;
@@ -59,7 +59,7 @@ SELECT
         ELSE false
     END AS jobmon_schema
 INTO v_jobmon 
-FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
+FROM pg_catalog.pg_namespace n, pg_catalog.pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
 
 IF p_type = 'time' THEN
     v_dst_active := @extschema@.dst_utc_check();
@@ -133,6 +133,11 @@ EXECUTE v_insert_refresh_config;
 
 SELECT p_table_exists FROM @extschema@.manage_dest_table(p_dest_table, NULL, p_debug) INTO v_table_exists;
 
+SELECT schemaname, tablename 
+INTO v_dest_schema_name, v_dest_table_name 
+FROM pg_catalog.pg_tables 
+WHERE schemaname||'.'||tablename = p_dest_table;
+
 IF p_pulldata AND v_table_exists = false THEN
     RAISE NOTICE 'Pulling all data from source...';
     EXECUTE 'SELECT @extschema@.refresh_inserter('||quote_literal(p_dest_table)||', p_repull := true, p_debug := '||p_debug||')';
@@ -146,19 +151,32 @@ IF v_table_exists THEN
     RAISE NOTICE 'Destination table % already exists. No data or indexes were pulled from source', p_dest_table;
 END IF;
 
+RAISE NOTICE 'Analyzing destination table...';
+EXECUTE format('ANALYZE %I.%I', v_dest_schema_name, v_dest_table_name);
+
+v_sql := format('SELECT max(%I) FROM %I.%I', p_control_field, v_dest_schema_name, v_dest_table_name);
+PERFORM @extschema@.gdb(p_debug, v_sql);
 IF p_type = 'time' THEN
     RAISE NOTICE 'Getting the maximum destination timestamp...';
-    EXECUTE 'SELECT max('||p_control_field||') FROM '||p_dest_table||';' INTO v_max_timestamp;
-    EXECUTE 'UPDATE @extschema@.refresh_config_inserter_time SET last_value = '||quote_literal(COALESCE(v_max_timestamp, CURRENT_TIMESTAMP))||' WHERE dest_table = '||quote_literal(p_dest_table);
+    EXECUTE v_sql INTO v_max_timestamp;
+    v_sql := format('UPDATE %I.refresh_config_inserter_time SET last_value = %L WHERE dest_table = %L'
+                    , '@extschema@'
+                    , COALESCE(v_max_timestamp, CURRENT_TIMESTAMP)
+                    , p_dest_table);
+    PERFORM @extschema@.gdb(p_debug, v_sql);
+    EXECUTE v_sql;
 ELSIF p_type = 'serial' THEN
     RAISE NOTICE 'Getting the maximum destination id...';
-    EXECUTE 'SELECT max('||p_control_field||') FROM '||p_dest_table||';' INTO v_max_id;
-    EXECUTE 'UPDATE @extschema@.refresh_config_inserter_serial SET last_value = '||COALESCE(v_max_id, 0)||' WHERE dest_table = '||quote_literal(p_dest_table);
+    EXECUTE v_sql INTO v_max_id;
+    v_sql := format('UPDATE %I.refresh_config_inserter_serial SET last_value = %L WHERE dest_table = %L'
+                    , '@extschema@'
+                    , COALESCE(v_max_id, 0)
+                    , p_dest_table);
+    PERFORM @extschema@.gdb(p_debug, v_sql);
+    EXECUTE v_sql;
 END IF;
-
 
 RAISE NOTICE 'Done';
 END
 $$;
-
 

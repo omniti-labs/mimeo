@@ -18,7 +18,9 @@ v_dblink                int;
 v_dblink_name           text;
 v_dblink_schema         text;
 v_delete_sql            text;
+v_dest_schema_name      text;
 v_dest_table            text;
+v_dest_table_name       text;
 v_fetch_sql             text;
 v_filter                text[]; 
 v_full_refresh          boolean := false;
@@ -35,8 +37,10 @@ v_old_search_path       text;
 v_remote_sql            text;
 v_rowcount              bigint := 0; 
 v_source_table          text;
+v_sql                   text;
+v_src_schema_name       text;
+v_src_table_name        text;
 v_step_id               int;
-v_tmp_table             text;
 v_total                 bigint := 0;
 
 BEGIN
@@ -61,7 +65,6 @@ EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||COALESCE(v_jobmon_sc
 
 SELECT source_table
     , dest_table
-    , 'tmp_'||replace(dest_table,'.','_')
     , dblink
     , control
     , last_value
@@ -72,7 +75,6 @@ SELECT source_table
     , jobmon
 INTO v_source_table
     , v_dest_table
-    , v_tmp_table
     , v_dblink
     , v_control
     , v_last_value
@@ -89,6 +91,15 @@ END IF;
 
 -- Allow override with parameter
 v_jobmon := COALESCE(p_jobmon, v_jobmon);
+
+SELECT schemaname, tablename 
+INTO v_dest_schema_name, v_dest_table_name
+FROM pg_catalog.pg_tables
+WHERE schemaname||'.'||tablename = v_dest_table;
+
+IF v_dest_table_name IS NULL THEN
+    RAISE EXCEPTION 'Destination table is missing (%)', v_dest_table;
+END IF;
 
 -- Take advisory lock to prevent multiple calls to function overlapping
 v_adv_lock := pg_try_advisory_xact_lock(hashtext('refresh_inserter'), hashtext(v_job_name));
@@ -113,55 +124,71 @@ IF v_jobmon THEN
     v_step_id := add_step(v_job_id,'Building SQL');
 END IF;
 
-IF v_filter IS NULL THEN 
-    SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||format_type(atttypid, atttypmod)::text),',') 
-        INTO v_cols, v_cols_n_types
-        FROM pg_attribute WHERE attrelid = p_destination::regclass AND attnum > 0 AND attisdropped is false;
-ELSE
-    SELECT array_to_string(array_agg(attname),','), array_to_string(array_agg(attname||' '||format_type(atttypid, atttypmod)::text),',') 
-        INTO v_cols, v_cols_n_types
-        FROM pg_attribute WHERE attrelid = p_destination::regclass AND ARRAY[attname::text] <@ v_filter AND attnum > 0 AND attisdropped is false;
-END IF;
+SELECT array_to_string(p_cols, ','), array_to_string(p_cols_n_types, ',') INTO v_cols, v_cols_n_types FROM manage_dest_table(v_dest_table, NULL, p_debug);
 
 PERFORM dblink_connect(v_dblink_name, auth(v_dblink));
+
+SELECT schemaname, tablename INTO v_src_schema_name, v_src_table_name 
+    FROM dblink(v_dblink_name, 'SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname ||''.''|| tablename = '||quote_literal(v_source_table)) t (schemaname text, tablename text);
+
+IF v_src_table_name IS NULL THEN
+    RAISE EXCEPTION 'Source table missing (%)', v_source_table;
+END IF;
 
 IF p_limit IS NOT NULL THEN
     v_limit := p_limit;
 END IF;
 
-EXECUTE 'SELECT boundary FROM dblink('||quote_literal(v_dblink_name)||', ''SELECT max('||v_control||') - '||v_boundary||' as boundary FROM '||v_source_table||''') AS (boundary bigint)' INTO v_boundary;
+-- Unlike incremental time, there's nothing like CURRENT_TIMESTAMP to base the boundary on. So use the current source max to determine it.
+-- For some reason this doesn't like using an int with %L (v_boundary) when making up the format command using dblink
+v_sql := format('SELECT boundary FROM dblink(%L, ''SELECT max(%I) - '||v_boundary||' AS boundary FROM %I.%I'') AS (boundary bigint)'
+                , v_dblink_name 
+                , v_control
+                , v_src_schema_name
+                , v_src_table_name);
+PERFORM gdb(p_debug, v_sql);
+EXECUTE v_sql INTO v_boundary;
+
 IF p_repull THEN
     -- Repull ALL data if no start and end values set
     IF p_repull_start IS NULL AND p_repull_end IS NULL THEN
         IF v_jobmon THEN
             PERFORM update_step(v_step_id, 'OK','Request to repull ALL data from source. This could take a while...');
         END IF;
-        EXECUTE 'TRUNCATE '||v_dest_table;
+        EXECUTE format('TRUNCATE %I.%I', v_dest_schema_name, v_dest_table_name);
         -- Use upper boundary remote max to avoid edge case of multiple upper boundary values inserting during refresh
-        v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table;
+        v_remote_sql := format('SELECT '||v_cols||' FROM %I.%I', v_src_schema_name, v_src_table_name);
         IF v_condition IS NOT NULL THEN
             v_remote_sql := v_remote_sql || ' ' || v_condition || ' AND ';
         ELSE
             v_remote_sql := v_remote_sql || ' WHERE ';
         END IF;
-        v_remote_sql := v_remote_sql ||v_control||' < '||quote_literal(v_boundary);
+        v_remote_sql := format(v_remote_sql || '%I < %L', v_control, v_boundary);
     ELSE
         IF v_jobmon THEN
             PERFORM update_step(v_step_id, 'OK','Request to repull data from '||COALESCE(p_repull_start, '0')||' to '||COALESCE(p_repull_end, v_boundary));
         END IF;
         PERFORM gdb(p_debug,'Request to repull data from '||COALESCE(p_repull_start, '0')||' to '||COALESCE(p_repull_end, v_boundary));
-        v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table;
+        v_remote_sql := format('SELECT '||v_cols||' FROM %I.%I', v_src_schema_name, v_src_table_name);
         IF v_condition IS NOT NULL THEN
             v_remote_sql := v_remote_sql || ' ' || v_condition || ' AND ';
         ELSE
             v_remote_sql := v_remote_sql || ' WHERE ';
         END IF;
         -- Use upper boundary remote max to avoid edge case of multiple upper boundary values inserting during refresh
-        v_remote_sql := v_remote_sql ||v_control||' > '||quote_literal(COALESCE(p_repull_start, 0))||' AND '
-            ||v_control||' < '||quote_literal(COALESCE(p_repull_end, v_boundary));
+        v_remote_sql := v_remote_sql || format('%I > %L AND %I < %L'
+                                        , v_control
+                                        , COALESCE(p_repull_start, 0)
+                                        , v_control
+                                        , COALESCE(p_repull_end, v_boundary));
         -- Delete the old local data. Use higher than bigint max upper boundary to ensure all old data is deleted
-        v_delete_sql := 'DELETE FROM '||v_dest_table||' WHERE '||v_control||' > '||quote_literal(COALESCE(p_repull_start, 0))||' AND '
-            ||v_control||' < '||quote_literal(COALESCE(p_repull_end, 9300000000000000000));
+        v_delete_sql := format('DELETE FROM %I.%I WHERE %I > %L AND %L < %L'
+                        , v_dest_schema_name
+                        , v_dest_table_name
+                        , v_control
+                        , COALESCE(p_repull_start, 0)
+                        , v_control
+                        , COALESCE(p_repull_end, 9300000000000000000));
         IF v_jobmon THEN
             v_step_id := add_step(v_job_id, 'Deleting current, local data');
         END IF;
@@ -175,13 +202,18 @@ IF p_repull THEN
 ELSE
     -- does < for upper boundary to keep missing data from happening on rare edge case where a newly inserted row outside the transaction batch
     -- has the exact same timestamp as the previous batch's max timestamp
-    v_remote_sql := 'SELECT '||v_cols||' FROM '||v_source_table;
+    v_remote_sql := format('SELECT '||v_cols||' FROM %I.%I', v_src_schema_name, v_src_table_name);
     IF v_condition IS NOT NULL THEN
         v_remote_sql := v_remote_sql || ' ' || v_condition || ' AND ';
     ELSE
         v_remote_sql := v_remote_sql || ' WHERE ';
     END IF;
-    v_remote_sql := v_remote_sql ||v_control||' > '||quote_literal(v_last_value)||' AND '||v_control||' < '||quote_literal(v_boundary)||' ORDER BY '||v_control||' ASC LIMIT '|| COALESCE(v_limit::text, 'ALL');
+    v_remote_sql := v_remote_sql || format('%I > %L AND %I < %L ORDER BY %I ASC LIMIT '||COALESCE(v_limit::text, 'ALL')
+                                    , v_control
+                                    , v_last_value
+                                    , v_control
+                                    , v_boundary
+                                    , v_control);
 
     IF v_jobmon THEN
         PERFORM update_step(v_step_id, 'OK','Grabbing rows from '||v_last_value::text||' to '||v_boundary::text);
@@ -190,8 +222,8 @@ ELSE
 
 END IF;
 
-EXECUTE 'CREATE TEMP TABLE '||v_tmp_table||' ('||v_cols_n_types||')';
-PERFORM gdb(p_debug,v_remote_sql);
+EXECUTE 'CREATE TEMP TABLE mimeo_refresh_inserter_temp ('||v_cols_n_types||')';
+PERFORM gdb(p_debug, 'v_remote_sql: '||COALESCE(v_remote_sql, '<NULL>'));
 PERFORM dblink_open(v_dblink_name, 'mimeo_cursor', v_remote_sql);
 IF v_jobmon THEN
     v_step_id := add_step(v_job_id, 'Inserting new records into local table');
@@ -199,15 +231,15 @@ END IF;
 v_rowcount := 0;
 v_total := 0;
 LOOP
-    v_fetch_sql := 'INSERT INTO '||v_tmp_table||'('||v_cols||') 
+    v_fetch_sql := 'INSERT INTO mimeo_refresh_inserter_temp ('||v_cols||') 
         SELECT '||v_cols||' FROM dblink_fetch('||quote_literal(v_dblink_name)||', ''mimeo_cursor'', 50000) AS ('||v_cols_n_types||')';
     EXECUTE v_fetch_sql;
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
     v_total := v_total + coalesce(v_rowcount, 0);
-    EXECUTE 'SELECT max('||v_control||') FROM '||v_tmp_table INTO v_last_fetched;
+    EXECUTE format('SELECT max(%I) FROM mimeo_refresh_inserter_temp', v_control) INTO v_last_fetched;
     IF v_limit IS NULL THEN -- insert into the real table in batches if no limit to avoid excessively large temp tables
-        EXECUTE 'INSERT INTO '||v_dest_table||' ('||v_cols||') SELECT '||v_cols||' FROM '||v_tmp_table;
-        EXECUTE 'TRUNCATE '||v_tmp_table;
+        EXECUTE format('INSERT INTO %I.%I ('||v_cols||') SELECT '||v_cols||' FROM mimeo_refresh_inserter_temp', v_dest_schema_name, v_dest_table_name);
+        TRUNCATE mimeo_refresh_inserter_temp;
     END IF;
     EXIT WHEN v_rowcount = 0;
     PERFORM gdb(p_debug,'Fetching rows in batches: '||v_total||' done so far. Last fetched: '||v_last_fetched);
@@ -234,11 +266,11 @@ ELSE
             PERFORM update_step(v_step_id, 'WARNING','Row count fetched equal to or greater than limit set: '||v_limit||'. Recommend increasing batch limit if possible.');
         END IF;
         PERFORM gdb(p_debug, 'Row count fetched equal to or greater than limit set: '||v_limit||'. Recommend increasing batch limit if possible.'); 
-        EXECUTE 'SELECT max('||v_control||') FROM '||v_tmp_table INTO v_last_value;
+        EXECUTE format('SELECT max(%I) FROM mimeo_refresh_inserter_temp', v_control) INTO v_last_value;
         IF v_jobmon THEN
             v_step_id := add_step(v_job_id, 'Removing high boundary rows from this batch to avoid missing data');       
         END IF;
-        EXECUTE 'DELETE FROM '||v_tmp_table||' WHERE '||v_control||' = '||quote_literal(v_last_value);
+        EXECUTE format('DELETE FROM mimeo_refresh_inserter_temp WHERE %I = %L', v_control, v_last_value);
         GET DIAGNOSTICS v_rowcount = ROW_COUNT;
         IF v_jobmon THEN
             PERFORM update_step(v_step_id, 'OK', 'Removed '||v_rowcount||' rows. Batch now contains '||v_limit - v_rowcount||' records');
@@ -265,7 +297,7 @@ ELSE
         IF v_jobmon THEN
             v_step_id := add_step(v_job_id,'Inserting new records into local table');
         END IF;
-        EXECUTE 'INSERT INTO '||v_dest_table||' ('||v_cols||') SELECT '||v_cols||' FROM '||v_tmp_table;
+        EXECUTE format('INSERT INTO %I.%I ('||v_cols||') SELECT '||v_cols||' FROM mimeo_refresh_inserter_temp', v_dest_schema_name, v_dest_table_name);
         IF v_jobmon THEN
             PERFORM update_step(v_step_id, 'OK','Inserted '||v_total||' records');
         END IF;
@@ -278,15 +310,15 @@ IF v_batch_limit_reached <> 3 THEN
     IF v_jobmon THEN
         v_step_id := add_step(v_job_id, 'Setting next lower boundary');
     END IF;
-    EXECUTE 'SELECT max('||v_control||') FROM '|| v_dest_table INTO v_last_value;
-    UPDATE refresh_config_inserter_serial set last_value = coalesce(v_last_value, 0), last_run = CURRENT_TIMESTAMP WHERE dest_table = p_destination;  
+    EXECUTE format('SELECT max(%I) FROM %I.%I', v_control, v_dest_schema_name, v_dest_table_name) INTO v_last_value;
+    UPDATE refresh_config_inserter_serial SET last_value = coalesce(v_last_value, 0), last_run = CURRENT_TIMESTAMP WHERE dest_table = p_destination;  
     IF v_jobmon THEN
         PERFORM update_step(v_step_id, 'OK','Lower boundary value is: '|| coalesce(v_last_value, 0));
         PERFORM gdb(p_debug, 'Lower boundary value is: '||coalesce(v_last_value, 0));
     END IF;
 END IF;
 
-EXECUTE 'DROP TABLE IF EXISTS ' || v_tmp_table;
+DROP TABLE IF EXISTS mimeo_refresh_inserter_temp;
 
 PERFORM dblink_disconnect(v_dblink_name);
 

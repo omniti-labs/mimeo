@@ -39,6 +39,8 @@ v_old_search_path           text;
 v_pk_name                   text[] := p_pk_name;
 v_pk_type                   text[] := p_pk_type;
 v_remote_key_sql            text;
+v_src_schema_name           text;
+v_src_table_name            text;
 v_table_exists              boolean;
 v_update_refresh_config     text;
 
@@ -56,25 +58,31 @@ END IF;
 
 SELECT data_source INTO v_data_source FROM @extschema@.dblink_mapping_mimeo WHERE data_source_id = p_dblink_id; 
 IF NOT FOUND THEN
-	RAISE EXCEPTION 'ERROR: database link ID is incorrect %', p_dblink_id; 
-END IF;  
+    RAISE EXCEPTION 'ERROR: database link ID is incorrect %', p_dblink_id; 
+END IF;
 
 IF p_dest_table IS NULL THEN
     p_dest_table := p_src_table;
 END IF;
 
 IF position('.' in p_dest_table) > 0 AND position('.' in p_src_table) > 0 THEN
-    v_dest_schema_name := split_part(p_dest_table, '.', 1); 
-    v_dest_table_name := split_part(p_dest_table, '.', 2);
+    -- Do nothing. Schema & table variable names set below after table is created
 ELSE
     RAISE EXCEPTION 'Source (and destination) table must be schema qualified';
 END IF;
 
 PERFORM dblink_connect(v_dblink_name, @extschema@.auth(p_dblink_id));
 
+SELECT schemaname, tablename INTO v_src_schema_name, v_src_table_name 
+    FROM dblink(v_dblink_name, 'SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname ||''.''|| tablename = '||quote_literal(p_src_table)) t (schemaname text, tablename text);
+
+IF v_src_table_name IS NULL THEN
+    RAISE EXCEPTION 'Source table missing (%)', v_source_table;
+END IF;
+
 -- Automatically get source primary/unique key if none given
 IF p_pk_name IS NULL AND p_pk_type IS NULL THEN
-    SELECT v_key_type, indkey_names, indkey_types INTO v_key_type, v_pk_name, v_pk_type FROM fetch_replication_key(p_src_table, v_dblink_name);
+    SELECT v_key_type, indkey_names, indkey_types INTO v_key_type, v_pk_name, v_pk_type FROM fetch_replication_key(v_src_schema_name, v_src_table_name, v_dblink_name);
 END IF;
 
 IF v_pk_name IS NULL OR v_pk_type IS NULL THEN
@@ -180,6 +188,11 @@ END IF;
 
 SELECT p_table_exists FROM @extschema@.manage_dest_table(p_dest_table, NULL, p_debug) INTO v_table_exists;
 
+SELECT schemaname, tablename 
+INTO v_dest_schema_name, v_dest_table_name
+FROM pg_catalog.pg_tables
+WHERE schemaname||'.'||tablename = p_dest_table;
+
 IF p_pulldata AND v_table_exists = false THEN
     RAISE NOTICE 'Pulling all data from source...';
     EXECUTE 'SELECT @extschema@.refresh_updater('||quote_literal(p_dest_table)||', p_repull := true, p_debug := '||p_debug||')';
@@ -191,9 +204,9 @@ ELSIF v_table_exists = false THEN
 -- Ensure destination indexes that are needed for efficient replication are created even if p_index is set false
     PERFORM gdb(p_debug, 'Creating indexes needed for replication');
     IF v_key_type = 'primary' THEN
-        EXECUTE 'ALTER TABLE '||p_dest_table||' ADD PRIMARY KEY('||array_to_string(v_pk_name, ',')||')';
+        EXECUTE format('ALTER TABLE %I.%I', v_dest_schema_name, v_dest_table_name)||' ADD PRIMARY KEY('||array_to_string(v_pk_name, ',')||')';
     ELSE
-        EXECUTE 'CREATE UNIQUE INDEX ON '||p_dest_table||' ('||array_to_string(v_pk_name, ',')||')';
+        EXECUTE format('CREATE UNIQUE INDEX ON %I.%I', v_dest_schema_name, v_dest_table_name)||' ('||array_to_string(v_pk_name, ',')||')';
     END IF;
 END IF;
 
@@ -201,16 +214,19 @@ IF v_table_exists THEN
     RAISE NOTICE 'Destination table % already exists. No data or indexes was pulled from source', p_dest_table;
 END IF;
 
+RAISE NOTICE 'Analyzing destination table...';
+EXECUTE format('ANALYZE %I.%I', v_dest_schema_name, v_dest_table_name);
+
 PERFORM dblink_disconnect(v_dblink_name);
 
 IF p_type = 'time' THEN
     RAISE NOTICE 'Getting the maximum destination timestamp...';
-    EXECUTE 'SELECT max('||p_control_field||') FROM '||p_dest_table||';' INTO v_max_timestamp;
-    EXECUTE 'UPDATE @extschema@.refresh_config_updater_time SET last_value = '||quote_literal(COALESCE(v_max_timestamp, CURRENT_TIMESTAMP))||' WHERE dest_table = '||quote_literal(p_dest_table);
+    EXECUTE format('SELECT max(%I) FROM %I.%I', p_control_field, v_dest_schema_name, v_dest_table_name) INTO v_max_timestamp;
+    EXECUTE format('UPDATE @extschema@.refresh_config_updater_time SET last_value = %L WHERE dest_table = %L', COALESCE(v_max_timestamp, CURRENT_TIMESTAMP), p_dest_table);
 ELSIF p_type = 'serial' THEN
     RAISE NOTICE 'Getting the maximum destination id...';
-    EXECUTE 'SELECT max('||p_control_field||') FROM '||p_dest_table||';' INTO v_max_id;
-    EXECUTE 'UPDATE @extschema@.refresh_config_updater_serial SET last_value = '||COALESCE(v_max_id, 0)||' WHERE dest_table = '||quote_literal(p_dest_table);
+    EXECUTE format('SELECT max(%I) FROM %I.%I', p_control_field, v_dest_schema_name, v_dest_table_name) INTO v_max_id;
+    EXECUTE format('UPDATE @extschema@.refresh_config_updater_serial SET last_value = %L WHERE dest_table = %L', COALESCE(v_max_id, 0), p_dest_table);
 END IF;
 
 EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
@@ -225,8 +241,8 @@ EXCEPTION
         IF v_link_exists THEN
             EXECUTE 'SELECT '||v_dblink_schema||'.dblink_disconnect('||quote_literal(v_dblink_name)||')';
         END IF;
-        RAISE EXCEPTION '%', SQLERRM;   
-END  
+        RAISE EXCEPTION '%', SQLERRM;
+END
 $$;
 
 

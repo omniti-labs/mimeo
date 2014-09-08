@@ -41,13 +41,16 @@ Install the extension on the destination database. Mimeo does not require a spec
     destinationdb=# create extension mimeo schema mimeo;
     CREATE EXTENSION
 
-Any role that will be calling the functions in mimeo will need to be granted usage privileges on the mimeo schema and execution privileges on the refresh functions. That role will also, obviously, need permissions on the destination tables to select, insert, update, delete & truncate.
+Any role that will be calling the functions in mimeo will need to be granted usage privileges on the mimeo schema and execution privileges on the refresh functions. Using the maker functions will require granting object creation permissions as well. Write permissions don't necessarily need to be granted on destination tables for roles that will call refresh functions. All refresh functions have SECURITY DEFINER set, so refreshing data can be allowed, but not editing the actual destination table directly (a handy feature for letting non-admins repull data as needed without compromising the data integrity itself).
 
-    destinationdb=# GRANT USAGE ON SCHEMA mimeo to some_role;
+    destinationdb=# GRANT USAGE ON SCHEMA mimeo TO some_role;
     GRANT
-    destinationdb=# GRANT EXECUTE ON FUNCTION mimeo.refresh_snap(text,boolean) to some_role;
+    destinationdb=# GRANT CREATE ON SCHEMA destination_schema TO some_maker_role;
+    GRANT
+    destinationdb=# GRANT EXECUTE ON FUNCTION mimeo.refresh_snap(text,boolean) TO some_role;
     GRANT
     destinationdb=# GRANT EXECUTE ON FUNCTION...
+    GRANT
 
 If you just want to grant execute to all mimeo functions, you can do a much easier command
 
@@ -152,7 +155,7 @@ PostgreSQL has no internal scheduler (something that I hope someday is fixed), s
     period      | 1 day
     batch_limit | 
 
-This will cause the replication job to run daily at the time listed for *last_run*. You can manually change the *last_run* value to whatever you wish if you need to reschedule the job to start running at a certain time.
+This will cause the replication job refresh this table at least once a day.
 
 You can now use the **run_refresh.py** script to run your refresh jobs. You can schedule it to run as often as you like and it will only run refresh jobs that have not run since their last configured period. The --type option will only run 1 of the types given above (snap, inserter, etc). The --batch_limit option sets how many tables to replicate in a single run of the script. Running the script with no arguments will cause all scheduled jobs of all replication types to be run in order of their last_run values.
 
