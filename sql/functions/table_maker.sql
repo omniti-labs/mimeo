@@ -25,6 +25,8 @@ v_jobmon                    boolean;
 v_max_timestamp             timestamptz;
 v_seq                       text;
 v_seq_max                   bigint;
+v_src_schema_name           text;
+v_src_table_name            text;
 v_table_exists              boolean;
 
 BEGIN
@@ -75,7 +77,8 @@ v_insert_refresh_config := 'INSERT INTO @extschema@.refresh_config_table(
 PERFORM @extschema@.gdb(p_debug, 'v_insert_refresh_config: '||v_insert_refresh_config);
 EXECUTE v_insert_refresh_config;
 
-SELECT p_table_exists FROM @extschema@.manage_dest_table(p_dest_table, NULL, p_debug) INTO v_table_exists;
+SELECT p_table_exists, p_source_schema_name, p_source_table_name INTO v_table_exists, v_src_schema_name, v_src_table_name 
+FROM @extschema@.manage_dest_table(p_dest_table, NULL, NULL, p_debug);
 
 IF p_pulldata AND v_table_exists = false THEN
     RAISE NOTICE 'Pulling all data from source...';
@@ -83,7 +86,7 @@ IF p_pulldata AND v_table_exists = false THEN
 END IF;
 
 IF p_index AND v_table_exists = false THEN
-    PERFORM @extschema@.create_index(p_dest_table, NULL, p_debug);
+    PERFORM @extschema@.create_index(p_dest_table, v_src_schema_name, v_src_table_name, NULL, p_debug);
 END IF;
 
 IF v_table_exists THEN

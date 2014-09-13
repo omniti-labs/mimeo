@@ -1,7 +1,7 @@
 /*
  *  Refresh based on DML (Insert, Update, Delete)
  */
-CREATE OR REPLACE FUNCTION refresh_dml(p_destination text, p_limit int default NULL, p_repull boolean DEFAULT false, p_jobmon boolean DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
+CREATE FUNCTION refresh_dml(p_destination text, p_limit int default NULL, p_repull boolean DEFAULT false, p_jobmon boolean DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
@@ -143,7 +143,22 @@ IF v_filter IS NOT NULL THEN
         END IF;
     END LOOP;
 END IF;
-SELECT array_to_string(p_cols, ','), array_to_string(p_cols_n_types, ',') INTO v_cols, v_cols_n_types FROM manage_dest_table(v_dest_table, NULL, p_debug);
+
+PERFORM dblink_connect(v_dblink_name, auth(v_dblink));
+
+SELECT array_to_string(p_cols, ',')
+    , array_to_string(p_cols_n_types, ',') 
+    , p_source_schema_name
+    , p_source_table_name
+INTO v_cols
+    , v_cols_n_types 
+    , v_src_schema_name
+    , v_src_table_name
+FROM manage_dest_table(v_dest_table, NULL, v_dblink_name, p_debug);
+
+IF v_src_table_name IS NULL THEN
+    RAISE EXCEPTION 'Source table missing (%)', v_source_table;
+END IF;
 
 IF p_limit IS NOT NULL THEN
     v_limit := p_limit;
@@ -163,15 +178,6 @@ END LOOP;
 
 IF v_jobmon THEN
     PERFORM update_step(v_step_id, 'OK','Done');
-END IF;
-
-PERFORM dblink_connect(v_dblink_name, auth(v_dblink));
-
-SELECT schemaname, tablename INTO v_src_schema_name, v_src_table_name 
-    FROM dblink(v_dblink_name, 'SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname ||''.''|| tablename = '||quote_literal(v_source_table)) t (schemaname text, tablename text);
-
-IF v_src_table_name IS NULL THEN
-    RAISE EXCEPTION 'Source table missing (%)', v_source_table;
 END IF;
 
 SELECT schemaname, tablename INTO v_q_schema_name, v_q_table_name 
@@ -361,7 +367,7 @@ EXCEPTION
             EXECUTE 'SELECT '||v_jobmon_schema||'.fail_job('||v_job_id||')';
         END IF;
         RAISE EXCEPTION '%', SQLERRM;
+
 END
 $$;
-
 

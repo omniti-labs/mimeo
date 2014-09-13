@@ -168,13 +168,18 @@ IF v_filter IS NOT NULL THEN
         END IF;
     END LOOP;
 END IF;
--- determine column list, column type list
-SELECT array_to_string(p_cols, ','), array_to_string(p_cols_n_types, ',') INTO v_cols, v_cols_n_types FROM manage_dest_table(v_dest_table, NULL, p_debug);
 
 PERFORM dblink_connect(v_dblink_name, auth(v_dblink));
 
-SELECT schemaname, tablename INTO v_src_schema_name, v_src_table_name 
-    FROM dblink(v_dblink_name, 'SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname ||''.''|| tablename = '||quote_literal(v_source_table)) t (schemaname text, tablename text);
+SELECT array_to_string(p_cols, ',')
+    , array_to_string(p_cols_n_types, ',') 
+    , p_source_schema_name
+    , p_source_table_name
+INTO v_cols
+    , v_cols_n_types 
+    , v_src_schema_name
+    , v_src_table_name
+FROM manage_dest_table(v_dest_table, NULL, v_dblink_name, p_debug);
 
 IF v_src_table_name IS NULL THEN
     RAISE EXCEPTION 'Source table missing (%)', v_source_table;

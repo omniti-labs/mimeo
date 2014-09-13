@@ -48,6 +48,9 @@ SELECT dblink_exec('mimeo_owner', 'CREATE TABLE mimeo_source."Snap-test-Source" 
     "COL-3" timestamptz DEFAULT clock_timestamp())');
 SELECT dblink_exec('mimeo_owner', 'INSERT INTO mimeo_source."Snap-test-Source" VALUES (generate_series(1,10000), ''test''||generate_series(1,10000)::text)');
 SELECT dblink_exec('mimeo_owner', 'CREATE INDEX ON mimeo_source."Snap-test-Source" (col2)');
+-- View
+SELECT diag('Creating source view: mimeo_source.snap_test_source_view');
+SELECT dblink_exec('mimeo_owner', 'CREATE VIEW mimeo_source.snap_test_source_view AS SELECT * FROM mimeo_source.snap_test_source');
 
 -- Inserter
 SELECT diag('Creating source table: mimeo_source.inserter_test_source');
@@ -70,6 +73,9 @@ SELECT dblink_exec('mimeo_owner', 'CREATE TABLE mimeo_source."Inserter-Test-Sour
         "Col-3" timestamptz DEFAULT clock_timestamp() )');
 SELECT dblink_exec('mimeo_owner', 'CREATE INDEX "Inserter-Test-Source-group-Idx" ON mimeo_source."Inserter-Test-Source" ("group")');
 SELECT dblink_exec('mimeo_owner', 'INSERT INTO mimeo_source."Inserter-Test-Source" VALUES (generate_series(1,10000), ''test''||generate_series(1,10000)::text)');
+-- View
+SELECT diag('Creating source view: mimeo_source.inserter_test_source_view');
+SELECT dblink_exec('mimeo_owner', 'CREATE VIEW mimeo_source.inserter_test_source_view AS SELECT * FROM mimeo_source.inserter_test_source');
 
 
 -- Updater
@@ -95,7 +101,9 @@ SELECT dblink_exec('mimeo_owner', 'CREATE TABLE mimeo_source."Updater-Test-Sourc
         "Col3" timestamptz DEFAULT clock_timestamp() )');
 SELECT dblink_exec('mimeo_owner', 'CREATE INDEX "Updater-Test-Source-group-Idx" ON mimeo_source."Updater-Test-Source" ("group")');
 SELECT dblink_exec('mimeo_owner', 'INSERT INTO mimeo_source."Updater-Test-Source" VALUES (generate_series(1,10000), ''test''||generate_series(1,10000)::text)');
-
+-- View
+SELECT diag('Creating source view: mimeo_source.updater_test_source_view');
+SELECT dblink_exec('mimeo_owner', 'CREATE VIEW mimeo_source.updater_test_source_view AS SELECT * FROM mimeo_source.updater_test_source');
 
 -- DML
 -- Must do separate tables due to queue table needing to be distinct

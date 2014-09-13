@@ -21,6 +21,8 @@ SELECT diag('Running refresh for: mimeo_dest.snap_test_dest_change_col');
 SELECT refresh_snap('mimeo_dest.snap_test_dest_change_col');
 SELECT diag('Running refresh for: mimeo_source.Snap-test-Source');
 SELECT refresh_snap('mimeo_source.Snap-test-Source');
+SELECT diag('Running refresh for: mimeo_source.snap_test_source_view');
+SELECT refresh_snap('mimeo_source.snap_test_source_view');
 
 
 SELECT diag('Running refresh for: mimeo_dest.table_test_dest');
@@ -35,6 +37,8 @@ SELECT diag('Running refresh for: mimeo_dest.table_test_dest_empty');
 SELECT refresh_table('mimeo_dest.table_test_dest_empty');
 SELECT diag('Running refresh for: mimeo_dest.Table-test-Source');
 SELECT refresh_table('mimeo_dest.Table-test-Source');
+SELECT diag('Running refresh for: mimeo_dest.table_test_dest_view');
+SELECT refresh_table('mimeo_dest.table_test_dest_view');
 
 
 --time
@@ -52,11 +56,15 @@ SELECT diag('Running refresh for: mimeo_source.inserter_test_source_empty');
 SELECT refresh_inserter('mimeo_source.inserter_test_source_empty');
 SELECT diag('Running refresh for: mimeo_source.Inserter-Test-Source');
 SELECT refresh_inserter('mimeo_source.Inserter-Test-Source');
+SELECT diag('Running refresh for: mimeo_source.inserter_test_source_view');
+SELECT refresh_inserter('mimeo_source.inserter_test_source_view');
 --serial
 SELECT diag('Running refresh for: mimeo_dest.inserter_test_dest_serial');
 SELECT refresh_inserter('mimeo_dest.inserter_test_dest_serial');
 SELECT diag('Running refresh for: mimeo_dest.Inserter-Test-Source_Serial');
 SELECT refresh_inserter('mimeo_dest.Inserter-Test-Source_Serial');
+SELECT diag('Running refresh for: mimeo_dest.inserter_test_dest_serial_view');
+SELECT refresh_inserter('mimeo_dest.inserter_test_dest_serial_view');
 
 --time
 SELECT diag('Running refresh for: mimeo_source.updater_test_source');
@@ -73,11 +81,15 @@ SELECT diag('Running refresh for: mimeo_source.updater_test_source_empty');
 SELECT refresh_updater('mimeo_source.updater_test_source_empty');
 SELECT diag('Running refresh for: mimeo_source.Updater-Test-Source');
 SELECT refresh_updater('mimeo_source.Updater-Test-Source');
+SELECT diag('Running refresh for: mimeo_source.updater_test_source_view');
+SELECT refresh_updater('mimeo_source.updater_test_source_view');
 --serial
 SELECT diag('Running refresh for: mimeo_dest.updater_test_dest_serial');
 SELECT refresh_updater('mimeo_dest.updater_test_dest_serial');
 SELECT diag('Running refresh for: mimeo_dest.Updater-Test-Source_Serial');
 SELECT refresh_updater('mimeo_dest.Updater-Test-Source_Serial');
+SELECT diag('Running refresh for: mimeo_dest.updater_test_dest_serial_view');
+SELECT refresh_updater('mimeo_dest.updater_test_dest_serial_view');
 
 
 SELECT diag('Running refresh for: mimeo_source.dml_test_source');

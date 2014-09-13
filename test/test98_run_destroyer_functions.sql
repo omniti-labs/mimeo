@@ -3,7 +3,7 @@
 
 SELECT set_config('search_path','mimeo, dblink, public',false);
 
-SELECT plan(77);
+SELECT plan(85);
 
 SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_owner password=mimeo_owner');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established');
@@ -55,6 +55,11 @@ SELECT hasnt_table('mimeo_source', 'Snap-test-Source_snap2', 'Check snapshot_des
 DROP TABLE mimeo_source."Snap-test-Source";
 SELECT hasnt_table('mimeo_source', 'Snap-test-Source', 'Check table dropped: mimeo_source.Snap-test-Source');
 
+SELECT snapshot_destroyer('mimeo_source.snap_test_source_view', false);
+SELECT hasnt_view('mimeo_source', 'snap_test_source_view', 'Check snapshot_destroyer dropped view: mimeo_source.snap_test_source_view');
+SELECT hasnt_table('mimeo_source', 'snap_test_source_view_snap1', 'Check snapshot_destroyer dropped table: mimeo_source.snap_test_source_view_snap1');
+SELECT hasnt_table('mimeo_source', 'snap_test_source_view_snap2', 'Check snapshot_destroyer dropped table: mimeo_source.snap_test_source_view_snap2');
+
 -- ########## PLAIN TABLE DESTROYER ##########
 SELECT table_destroyer('mimeo_dest.table_test_dest');
 SELECT has_table('mimeo_dest', 'table_test_dest', 'Check table_destroyer kept destination table: mimeo_dest.table_test_dest');
@@ -71,6 +76,9 @@ SELECT table_destroyer('mimeo_dest.table_test_dest_empty', false);
 SELECT hasnt_table('mimeo_dest', 'table_test_dest_empty', 'Check table_destroyer dropped table: mimeo_dest.table_test_source_empty');
 SELECT table_destroyer('mimeo_dest.Table-test-Source', false);
 SELECT hasnt_table('mimeo_dest', 'Table-test-Source', 'Check table_destroyer dropped table: mimeo_dest.Table-test-Source');
+SELECT table_destroyer('mimeo_dest.table_test_dest_view', false);
+SELECT hasnt_table('mimeo_dest', 'table_test_dest_view', 'Check table dropped: mimeo_dest.table_test_dest_view');
+
 
 -- ########## INSERTER DESTROYER ##########
 SELECT inserter_destroyer('mimeo_dest.inserter_test_dest');
@@ -88,6 +96,8 @@ SELECT inserter_destroyer('mimeo_dest.inserter_test_dest_condition', false);
 SELECT hasnt_table('mimeo_dest', 'inserter_test_dest_condition', 'Check inserter_destroyer dropped table: mimeo_dest.inserter_test_dest_condition');
 SELECT inserter_destroyer('mimeo_source.inserter_test_source_empty', false);
 SELECT hasnt_table('mimeo_source', 'inserter_test_source_empty', 'Check inserter_destroyer dropped table: mimeo_source.inserter_test_source_empty');
+SELECT inserter_destroyer('mimeo_source.inserter_test_source_view', false);
+SELECT hasnt_table('mimeo_source', 'inserter_test_source_view', 'Check inserter_destroyer dropped table: mimeo_source.inserter_test_source_view');
 
 SELECT inserter_destroyer('mimeo_source.Inserter-Test-Source');
 SELECT has_table('mimeo_source', 'Inserter-Test-Source', 'Check inserter_destroyer kept destination table: mimeo_source.Inserter-Test-Source');
@@ -96,6 +106,8 @@ SELECT hasnt_table('mimeo_source', 'Inserter-Test-Source', 'Check table dropped:
 
 SELECT inserter_destroyer('mimeo_dest.inserter_test_dest_serial', false);
 SELECT hasnt_table('mimeo_dest', 'inserter_test_dest_serial', 'Check inserter_destroyer dropped table: mimeo_source.inserter_test_dest_serial');
+SELECT inserter_destroyer('mimeo_dest.inserter_test_dest_serial_view', false);
+SELECT hasnt_table('mimeo_dest', 'inserter_test_dest_serial_view', 'Check inserter_destroyer dropped table: mimeo_source.inserter_test_dest_serial_view');
 
 SELECT inserter_destroyer('mimeo_dest.Inserter-Test-Source_Serial', false);
 SELECT hasnt_table('mimeo_dest', 'Inserter-Test-Source_Serial', 'Check inserter_destroyer dropped table: mimeo_dest.Inserter-Test-Source_Serial');
@@ -116,6 +128,8 @@ SELECT updater_destroyer('mimeo_dest.updater_test_dest_condition', false);
 SELECT hasnt_table('mimeo_dest', 'updater_test_dest_condition', 'Check updater_destroyer dropped table: mimeo_dest.updater_test_dest_condition');
 SELECT updater_destroyer('mimeo_source.updater_test_source_empty', false);
 SELECT hasnt_table('mimeo_source', 'updater_test_source_empty', 'Check updater_destroyer dropped table: mimeo_source.updater_test_source_empty');
+SELECT updater_destroyer('mimeo_source.updater_test_source_view', false);
+SELECT hasnt_table('mimeo_source', 'updater_test_source_view', 'Check updater_destroyer dropped table: mimeo_source.updater_test_source_view');
 
 SELECT updater_destroyer('mimeo_source.Updater-Test-Source');
 SELECT has_table('mimeo_source', 'Updater-Test-Source', 'Check updater_destroyer kept destination table: mimeo_source.Updater-Test-Source');
@@ -124,6 +138,8 @@ SELECT hasnt_table('mimeo_source', 'Updater-Test-Source', 'Check table dropped: 
 
 SELECT updater_destroyer('mimeo_dest.updater_test_dest_serial', false);
 SELECT hasnt_table('mimeo_dest', 'updater_test_dest_serial', 'Check updater_destroyer dropped table: mimeo_dest.updater_test_dest_serial');
+SELECT updater_destroyer('mimeo_dest.updater_test_dest_serial_view', false);
+SELECT hasnt_table('mimeo_dest', 'updater_test_dest_serial_view', 'Check updater_destroyer dropped table: mimeo_dest.updater_test_dest_serial_view');
 SELECT updater_destroyer('mimeo_dest.Updater-Test-Source_Serial', false);
 SELECT hasnt_table('mimeo_dest', 'Updater-Test-Source_Serial', 'Check updater_destroyer dropped table: mimeo_dest.Updater-Test-Source_Serial');
 

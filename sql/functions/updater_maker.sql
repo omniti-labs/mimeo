@@ -74,10 +74,23 @@ END IF;
 PERFORM dblink_connect(v_dblink_name, @extschema@.auth(p_dblink_id));
 
 SELECT schemaname, tablename INTO v_src_schema_name, v_src_table_name 
-    FROM dblink(v_dblink_name, 'SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname ||''.''|| tablename = '||quote_literal(p_src_table)) t (schemaname text, tablename text);
+FROM dblink(v_dblink_name, format('
+            SELECT schemaname, tablename
+            FROM (
+                SELECT schemaname, tablename 
+                FROM pg_catalog.pg_tables 
+                WHERE schemaname ||''.''|| tablename = %L
+                UNION
+                SELECT schemaname, viewname AS tablename
+                FROM pg_catalog.pg_views
+                WHERE schemaname || ''.'' || viewname = %L
+            ) tables LIMIT 1'
+        , p_src_table, p_src_table) )
+    t (schemaname text, tablename text);
+
 
 IF v_src_table_name IS NULL THEN
-    RAISE EXCEPTION 'Source table missing (%)', v_source_table;
+    RAISE EXCEPTION 'Source table missing (%)', p_src_table;
 END IF;
 
 -- Automatically get source primary/unique key if none given
@@ -186,7 +199,7 @@ ELSIF p_type = 'serial' THEN
     EXECUTE v_insert_refresh_config;
 END IF;
 
-SELECT p_table_exists FROM @extschema@.manage_dest_table(p_dest_table, NULL, p_debug) INTO v_table_exists;
+SELECT p_table_exists FROM @extschema@.manage_dest_table(p_dest_table, NULL, NULL,  p_debug) INTO v_table_exists;
 
 SELECT schemaname, tablename 
 INTO v_dest_schema_name, v_dest_table_name
@@ -199,7 +212,7 @@ IF p_pulldata AND v_table_exists = false THEN
 END IF;
 
 IF p_index AND v_table_exists = false THEN
-    PERFORM create_index(p_dest_table, NULL, p_debug);
+    PERFORM create_index(p_dest_table, v_src_schema_name, v_src_table_name, NULL, p_debug);
 ELSIF v_table_exists = false THEN
 -- Ensure destination indexes that are needed for efficient replication are created even if p_index is set false
     PERFORM gdb(p_debug, 'Creating indexes needed for replication');

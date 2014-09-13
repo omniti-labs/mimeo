@@ -29,6 +29,8 @@ v_insert_refresh_config     text;
 v_max_id                    bigint;
 v_max_timestamp             timestamptz;
 v_sql                       text;
+v_src_schema_name           text;
+v_src_table_name            text;
 v_table_exists              boolean;
 
 BEGIN
@@ -131,7 +133,8 @@ END IF;
 PERFORM @extschema@.gdb(p_debug, 'v_insert_refresh_config: '||v_insert_refresh_config);
 EXECUTE v_insert_refresh_config;
 
-SELECT p_table_exists FROM @extschema@.manage_dest_table(p_dest_table, NULL, p_debug) INTO v_table_exists;
+SELECT p_table_exists, p_source_schema_name, p_source_table_name INTO v_table_exists, v_src_schema_name, v_src_table_name
+FROM @extschema@.manage_dest_table(p_dest_table, NULL, NULL, p_debug);
 
 SELECT schemaname, tablename 
 INTO v_dest_schema_name, v_dest_table_name 
@@ -144,7 +147,7 @@ IF p_pulldata AND v_table_exists = false THEN
 END IF;
 
 IF p_index AND v_table_exists = false THEN
-    PERFORM @extschema@.create_index(p_dest_table, NULL, p_debug);
+    PERFORM @extschema@.create_index(p_dest_table, v_src_schema_name, v_src_table_name, NULL, p_debug);
 END IF;
 
 IF v_table_exists THEN
@@ -179,4 +182,5 @@ END IF;
 RAISE NOTICE 'Done';
 END
 $$;
+
 

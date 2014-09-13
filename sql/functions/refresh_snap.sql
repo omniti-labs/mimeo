@@ -43,10 +43,10 @@ v_remote_sql        text;
 v_row               record;
 v_rowcount          bigint;
 v_r                 text;
-v_src_schema_name   text;
-v_src_table_name    text;
 v_snap              text;
 v_source_table      text;
+v_src_schema_name   text;
+v_src_table_name    text;
 v_step_id           int;
 v_table_exists      boolean;
 v_total             bigint := 0;
@@ -134,10 +134,6 @@ WHERE schemaname ||'.'|| viewname = v_dest_table;
 
 PERFORM dblink_connect(v_dblink_name, @extschema@.auth(v_dblink));
 
-SELECT schemaname, tablename
-INTO v_src_schema_name, v_src_table_name
-FROM dblink(v_dblink_name, 'SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname ||''.''|| tablename = '||quote_literal(v_source_table)) t (schemaname text, tablename text);
-
 IF v_jobmon THEN
     PERFORM update_step(v_step_id, 'OK','Done');
     v_step_id := add_step(v_job_id,'Truncate non-active snap table');
@@ -164,7 +160,18 @@ v_old_snap_table := split_part(v_old_snap_table, '.', 2);
 -- Create snap table if it doesn't exist
 PERFORM gdb(p_debug, 'Getting table columns and creating destination table if it doesn''t exist');
 -- v_cols is never used as an array in this function. v_cols_n_types is used as both.
-SELECT p_table_exists, array_to_string(p_cols, ','), p_cols_n_types FROM manage_dest_table(v_dest_table, v_snap, p_debug) INTO v_table_exists, v_cols, v_cols_n_types;
+SELECT p_table_exists
+    , array_to_string(p_cols, ',')
+    , p_cols_n_types
+    , p_source_schema_name
+    , p_source_table_name
+INTO v_table_exists
+    , v_cols
+    , v_cols_n_types 
+    , v_src_schema_name
+    , v_src_table_name
+FROM manage_dest_table(v_dest_table, v_snap, v_dblink_name, p_debug);
+
 IF v_table_exists THEN 
 /* Check local column definitions against remote and recreate table if different. 
 Allows automatic recreation of snap tables if columns change (add, drop type change)  */  
@@ -224,7 +231,7 @@ Allows automatic recreation of snap tables if columns change (add, drop type cha
 
         EXECUTE format('DROP TABLE %I.%I', v_dest_schema_name, v_refresh_snap);
         EXECUTE format('DROP VIEW %I.%I', v_dest_schema_name, v_dest_table_name);
-        PERFORM manage_dest_table(v_dest_table, v_snap, p_debug);
+        PERFORM manage_dest_table(v_dest_table, v_snap, v_dblink_name, p_debug);
 
         IF v_jobmon THEN
             v_step_id := add_step(v_job_id,'Source table structure changed.');
@@ -304,7 +311,7 @@ END IF;
 -- Create indexes if new table was created
 IF (v_table_exists = false OR v_match = 'f') AND p_index = true THEN
     PERFORM gdb(p_debug, 'Creating indexes');
-    PERFORM create_index(v_dest_table, v_snap, p_debug);
+    PERFORM create_index(v_dest_table, v_src_schema_name, v_src_table_name, v_snap, p_debug);
 END IF;
 
 EXECUTE format('ANALYZE %I.%I', v_dest_schema_name, v_refresh_snap);
@@ -416,5 +423,4 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
-
 

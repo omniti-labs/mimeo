@@ -1,3 +1,12 @@
+1.3.1
+-- Fixed being able to use a view as a source table. This broke in 1.3.0 due to new checks to make sure that the source table existed. 
+    -- Note that DML-based replication will not work with views as a source (they didn't work before 1.3.0 either). 
+    -- Also, it will only work with updater replication if an underlying primary key is manually given during the maker function call.
+-- Reduced the number of new connections generated via dblink during refresh function calls.
+-- Allow dml & logdel maker functions to be run in parallel. Previously would get duplicate dblink connection name errors.
+-- Add pgTAP tests for view sources
+
+
 1.3.0
 -- NOTE: This update is a major refactoring of many of the core functions to support a new feature. I've done quite a bit of testing to try and ensure I've handled all known code paths (you can see all the new TAP tests), but I'll readily admit I may have missed some edge cases. I think the capabilities this tool now has, along with what I've learned along the way, have made it worth the effort. And again, many thanks to David Wheeler for the pgTAP project. A refactorization like this would never have been possible without extensive unit testing.
 -- Can now properly handle mixed-case, special characters & reserved words in object names (tables, columns, etc).

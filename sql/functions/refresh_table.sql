@@ -127,15 +127,23 @@ EXECUTE v_truncate_sql;
 
 PERFORM dblink_connect(v_dblink_name, @extschema@.auth(v_dblink));
 
-SELECT schemaname, tablename
-INTO v_src_schema_name, v_src_table_name
-FROM dblink(v_dblink_name, 'SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname ||''.''|| tablename = '||quote_literal(v_source_table)) t (schemaname text, tablename text);
-
 IF v_jobmon THEN
     v_step_id := add_step(v_job_id,'Grabbing Mapping, Building SQL');
 END IF;
 
-SELECT array_to_string(p_cols, ','), array_to_string(p_cols_n_types, ',') FROM manage_dest_table(v_dest_table, NULL, p_debug) INTO v_cols, v_cols_n_types;
+SELECT array_to_string(p_cols, ',')
+    , array_to_string(p_cols_n_types, ',') 
+    , p_source_schema_name
+    , p_source_table_name
+INTO v_cols
+    , v_cols_n_types 
+    , v_src_schema_name
+    , v_src_table_name
+FROM manage_dest_table(v_dest_table, NULL, v_dblink_name, p_debug);
+
+IF v_src_table_name IS NULL THEN
+    RAISE EXCEPTION 'Source table missing (%)', v_source_table;
+END IF;
 
 IF v_jobmon THEN
     PERFORM update_step(v_step_id, 'OK', 'Done');
@@ -236,5 +244,4 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
-
 

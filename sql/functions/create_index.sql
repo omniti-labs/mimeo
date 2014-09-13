@@ -1,7 +1,7 @@
 /*
  * Create index(es) on destination table
  */
-CREATE FUNCTION create_index(p_destination text, p_snap text DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
+CREATE FUNCTION create_index(p_destination text, p_source_schema_name text, p_source_table_name text, p_snap text DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
@@ -20,8 +20,6 @@ v_repl_index        oid;
 v_remote_index_sql  text;
 v_row               record;
 v_source_table      text;
-v_src_schema_name   text;
-v_src_table_name    text;
 v_statement         text;
 v_type              text;
 
@@ -58,13 +56,10 @@ PERFORM dblink_connect(v_dblink_name, @extschema@.auth(v_dblink));
 SELECT set_config INTO v_conf FROM dblink(v_dblink_name, 'SELECT set_config(''search_path'', '''', false)::text') t (set_config text);
 
 SELECT schemaname, tablename INTO v_dest_schema_name, v_dest_table_name FROM pg_catalog.pg_tables WHERE schemaname||'.'||tablename = v_dest_table||COALESCE('_'||p_snap, '');
-SELECT schemaname, tablename INTO v_src_schema_name, v_src_table_name 
-    FROM dblink(v_dblink_name, 'SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname ||''.''|| tablename = '||quote_literal(v_source_table)) t (schemaname text, tablename text);
 
-   PERFORM gdb(p_debug, 'v_dest_schema_name: '||v_dest_schema_name||', v_dest_table_name: '||v_dest_table_name||', v_src_schema_name: '||v_src_schema_name||', v_src_table_name: '||v_src_table_name);
 -- Gets primary key or unique index used by updater/dml/logdel replication (same function is called in their makers). 
 -- Should only loop once, but just easier to keep code consistent with below method
-FOR v_row IN SELECT indexrelid, key_type, indkey_names, statement FROM fetch_replication_key(v_src_schema_name, v_src_table_name, v_dblink_name, p_debug)
+FOR v_row IN SELECT indexrelid, key_type, indkey_names, statement FROM fetch_replication_key(p_source_schema_name, p_source_table_name, v_dblink_name, p_debug)
 LOOP
 
     EXIT WHEN v_row.indexrelid IS NULL; -- function still returns a row full of nulls when nothing found
@@ -78,10 +73,10 @@ LOOP
         -- Replace source table name with destination
         v_statement := regexp_replace(
             v_statement
-            , ' ON "?'||v_src_schema_name||'"?."?'||v_src_table_name||'"?'
+            , ' ON "?'||p_source_schema_name||'"?."?'||p_source_table_name||'"?'
             , ' ON '||quote_ident(v_dest_schema_name)||'.'||quote_ident(v_dest_table_name));
         -- If source index name contains the table name, replace it with the destination table.
-        v_statement := regexp_replace(v_statement, '(INDEX \w*)'||v_src_table_name||'(\w* ON)', '\1'||v_dest_table_name||'\2');
+        v_statement := regexp_replace(v_statement, '(INDEX \w*)'||p_source_table_name||'(\w* ON)', '\1'||v_dest_table_name||'\2');
         -- If it's a snap table, prepend to ensure unique index name (may cause snap1/2 to be in index name twice, but too complicated to fix that.
         -- This is done separately from above replace because it must always be done even if the index name doesn't contain the source table
         IF p_snap IS NOT NULL THEN
@@ -100,8 +95,8 @@ IF v_filter IS NULL THEN
         FROM pg_catalog.pg_index i
         JOIN pg_catalog.pg_class c ON i.indrelid = c.oid 
         JOIN pg_catalog.pg_namespace n ON c.relnamespace = n.oid
-        WHERE n.nspname = '||quote_literal(v_src_schema_name)||'
-        AND c.relname = '||quote_literal(v_src_table_name)||'
+        WHERE n.nspname = '||quote_literal(p_source_schema_name)||'
+        AND c.relname = '||quote_literal(p_source_table_name)||'
         AND i.indisprimary IS false
         AND i.indisvalid';
     IF v_repl_index IS NOT NULL THEN
@@ -113,10 +108,10 @@ IF v_filter IS NULL THEN
         -- Replace source table name with destination
         v_statement := regexp_replace(
             v_statement
-            , ' ON "?'||v_src_schema_name||'"?."?'||v_src_table_name||'"?'
+            , ' ON "?'||p_source_schema_name||'"?."?'||p_source_table_name||'"?'
             , ' ON '||quote_ident(v_dest_schema_name)||'.'||quote_ident(v_dest_table_name));
         -- If source index name contains the table name, replace it with the destination table.
-        v_statement := regexp_replace(v_statement, '(INDEX \w*)'||v_src_table_name||'(\w* ON)', '\1'||v_dest_table_name||'\2');
+        v_statement := regexp_replace(v_statement, '(INDEX \w*)'||p_source_table_name||'(\w* ON)', '\1'||v_dest_table_name||'\2');
         -- If it's a snap table, prepend to ensure unique index name (may cause snap1/2 to be in index name twice, but too complicated to fix that.
         -- This is done separately from above replace because it must always be done even if the index name doesn't contain the source table
         IF p_snap IS NOT NULL THEN

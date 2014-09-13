@@ -2,7 +2,17 @@
  * Manages creating destination table and/or returning data about the columns.
  * p_snap parameter is passed if snap table is being managed. Should be equal to either _snap1 or _snap2.
  */ 
-CREATE FUNCTION manage_dest_table (p_destination text, p_snap text, p_debug boolean DEFAULT false, OUT p_table_exists boolean, OUT p_cols text[], OUT p_cols_n_types text[]) RETURNS record
+CREATE FUNCTION manage_dest_table (
+    p_destination text
+    , p_snap text
+    , p_dblink_name text DEFAULT NULL
+    , p_debug boolean DEFAULT false
+    , OUT p_table_exists boolean
+    , OUT p_cols text[]
+    , OUT p_cols_n_types text[]
+    , OUT p_source_schema_name text
+    , OUT p_source_table_name text) 
+RETURNS record
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
@@ -22,13 +32,16 @@ v_link_exists       boolean;
 v_remote_sql        text; 
 v_old_search_path   text;
 v_source_table      text;
-v_src_schema_name   text;
-v_src_table_name    text;
 v_type              text;
 
 BEGIN
 
-v_dblink_name := @extschema@.check_name_length('manage_dest_table_dblink_'||p_destination);
+-- Allow re-use of existing remote connection to avoid load of creating another
+IF p_dblink_name IS NULL THEN
+    v_dblink_name := @extschema@.check_name_length('manage_dest_table_dblink_'||p_destination);
+ELSE
+    v_dblink_name := p_dblink_name;
+END IF;
 
 SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
 
@@ -64,12 +77,26 @@ ELSE
     RAISE EXCEPTION 'Destination table set in refresh_config table must be schema qualified. Error in manage_dest_table() call.';
 END IF;
 
-PERFORM dblink_connect(v_dblink_name, @extschema@.auth(v_dblink));
+IF p_dblink_name IS NULL THEN
+    PERFORM dblink_connect(v_dblink_name, @extschema@.auth(v_dblink));
+END IF;
 
-SELECT schemaname, tablename INTO v_src_schema_name, v_src_table_name 
-    FROM dblink(v_dblink_name, 'SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname ||''.''|| tablename = '||quote_literal(v_source_table)) t (schemaname text, tablename text);
+SELECT schemaname, tablename INTO p_source_schema_name, p_source_table_name 
+    FROM dblink(v_dblink_name, format('
+            SELECT schemaname, tablename
+            FROM (
+                SELECT schemaname, tablename 
+                FROM pg_catalog.pg_tables 
+                WHERE schemaname ||''.''|| tablename = %L
+                UNION
+                SELECT schemaname, viewname AS tablename
+                FROM pg_catalog.pg_views
+                WHERE schemaname || ''.'' || viewname = %L
+            ) tables LIMIT 1'
+        , v_source_table, v_source_table) )
+    t (schemaname text, tablename text);
 
-IF v_src_schema_name IS NULL OR v_src_table_name IS NULL THEN
+IF p_source_schema_name IS NULL OR p_source_table_name IS NULL THEN
     RAISE EXCEPTION 'Source table % not found for dblink id %', v_source_table, v_dblink;
 END IF;
 
@@ -78,7 +105,7 @@ END IF;
 v_remote_sql := 'SELECT array_agg(''"''||attname||''"'') as cols
     , array_agg(''"''||attname||''"''||'' ''||format_type(atttypid, atttypmod)::text) as cols_n_types 
     FROM pg_attribute 
-    WHERE attrelid = '''||quote_ident(v_src_schema_name)||'.'||quote_ident(v_src_table_name)||'''::regclass 
+    WHERE attrelid = '''||quote_ident(p_source_schema_name)||'.'||quote_ident(p_source_table_name)||'''::regclass 
     AND attnum > 0 
     AND attisdropped is false';
 PERFORM gdb(p_debug,'v_remote_sql: '||v_remote_sql);
@@ -127,7 +154,10 @@ IF p_table_exists = false THEN
 
 END IF;
 
-PERFORM dblink_disconnect(v_dblink_name);
+-- Only close link if dblink name wasn't passed in as parameter
+IF p_dblink_name IS NULL THEN
+    PERFORM dblink_disconnect(v_dblink_name);
+END IF;
 
 EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
 
@@ -141,4 +171,5 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;   
 END
 $$;
+
 

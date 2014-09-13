@@ -3,7 +3,7 @@
 
 SELECT set_config('search_path','mimeo, dblink, public',false);
 
-SELECT plan(166);
+SELECT plan(173);
 
 SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_owner password=mimeo_owner');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established');
@@ -80,6 +80,11 @@ SELECT view_owner_is ('mimeo_source', 'Snap-test-Source', 'mimeo_test', 'Check o
 SELECT table_owner_is ('mimeo_source', 'Snap-test-Source_snap1', 'mimeo_test', 'Check ownership for view mimeo_source.Snap-test-Source_snap1');
 SELECT table_owner_is ('mimeo_source', 'Snap-test-Source_snap2', 'mimeo_test', 'Check ownership for view mimeo_source.Snap-test-Source_snap2');
 
+SELECT has_view('mimeo_source', 'snap_test_source_view', 'Check that view exists: mimeo_source.snap_test_source_view');
+SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.snap_test_source_view ORDER BY col1 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.snap_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
+    'Check data for: mimeo_source.snap_test_source_view');
+
 -- ########## PLAIN TABLE TESTS ##########
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.table_test_dest ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.snap_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
@@ -109,6 +114,10 @@ SELECT results_eq('SELECT "primary", col2, "COL-3" FROM mimeo_dest."Table-test-S
     'Check data for: mimeo_dest.Table-test-Source');
 SELECT has_index('mimeo_dest','Table-test-Source','Snap-test-Source_col2_idx','col2','Check index for: mimeo_dest.Table-test-Source');
 SELECT has_sequence('mimeo_dest', 'PRIMARY-seq', 'Checking that sequence exists: mimeo_dest.PRIMARY-seq');
+
+SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.table_test_dest_view ORDER BY col1 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.snap_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
+    'Check data for: mimeo_dest.table_test_dest_view');
 
 -- ########## INSERTER TESTS ##########
 -- Time
@@ -148,6 +157,10 @@ SELECT results_eq('SELECT col1, "group", "Col-3" FROM mimeo_source."Inserter-Tes
 SELECT col_is_pk('mimeo_source','Inserter-Test-Source', 'col1', 'Check primary key for: mimeo_source.Inserter-Test-Source');
 SELECT has_index('mimeo_source','Inserter-Test-Source','Inserter-Test-Source-group-Idx','"group"','Check index for: mimeo_source.Inserter-Test-Source');
 
+SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source_view ORDER BY col1 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
+    'Check data for: mimeo_source.inserter_test_source_view');
+
 -- Serial
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.inserter_test_dest_serial ORDER BY col1 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source WHERE col1 < (SELECT max(col1) FROM mimeo_source.inserter_test_source) ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
@@ -161,6 +174,9 @@ SELECT results_eq('SELECT col1, "group", "Col-3" FROM mimeo_dest."Inserter-Test-
 SELECT col_is_pk('mimeo_dest','Inserter-Test-Source_Serial', 'col1', 'Check primary key for: mimeo_source.Inserter-Test-Source');
 SELECT has_index('mimeo_dest','Inserter-Test-Source_Serial','Inserter-Test-Source-group-Idx','"group"','Check index for: mimeo_source.Inserter-Test-Source_Serial');
 
+SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_dest.inserter_test_dest_serial_view ORDER BY col1 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.inserter_test_source WHERE col1 < (SELECT max(col1) FROM mimeo_source.inserter_test_source) ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
+    'Check data for: mimeo_dest.inserter_test_dest_serial_view');
 
 -- ########## UPDATER TESTS ##########
 -- Time
@@ -200,6 +216,10 @@ SELECT results_eq('SELECT "COL-1", "group", "Col3" FROM mimeo_source."Updater-Te
 SELECT col_is_pk('mimeo_source','Updater-Test-Source', 'COL-1', 'Check primary key for: mimeo_source."Updater-Test-Source"');
 SELECT has_index('mimeo_source','Updater-Test-Source','Updater-Test-Source-group-Idx','"group"','Check index for: mimeo_source."Updater-Test-Source"');
 
+SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.updater_test_source_view ORDER BY col1 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3 FROM mimeo_source.updater_test_source ORDER BY col1 ASC'') t (col1 int, col2 text, col3 timestamptz)',
+    'Check data for: mimeo_source.updater_test_source_view');
+
 -- Serial
 SELECT results_eq('SELECT col1, col2, col3, col4 FROM mimeo_dest.updater_test_dest_serial ORDER BY col4 ASC',
     'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3, col4 FROM mimeo_source.updater_test_source WHERE col4 < (SELECT max(col4) FROM mimeo_source.updater_test_source ) ORDER BY col4 ASC'') t (col1 int, col2 text, col3 timestamptz, col4 int)',
@@ -214,6 +234,9 @@ SELECT results_eq('SELECT "COL-1", "group", "Col3" FROM mimeo_dest."Updater-Test
 SELECT col_is_pk('mimeo_dest','Updater-Test-Source_Serial', 'COL-1', 'Check primary key for: mimeo_source."Updater-Test-Source_Serial"');
 SELECT has_index('mimeo_dest','Updater-Test-Source_Serial','Updater-Test-Source-group-Idx','"group"','Check index for: mimeo_source."Updater-Test-Source_Serial"');
 
+SELECT results_eq('SELECT col1, col2, col3, col4 FROM mimeo_dest.updater_test_dest_serial_view ORDER BY col4 ASC',
+    'SELECT * FROM dblink(''mimeo_test'', ''SELECT col1, col2, col3, col4 FROM mimeo_source.updater_test_source WHERE col4 < (SELECT max(col4) FROM mimeo_source.updater_test_source ) ORDER BY col4 ASC'') t (col1 int, col2 text, col3 timestamptz, col4 int)',
+    'Check data for: mimeo_dest.updater_test_dest_serial_view');
 
 -- ########## DML TESTS ##########
 SELECT results_eq('SELECT col1, col2, col3 FROM mimeo_source.dml_test_source ORDER BY col1 ASC',

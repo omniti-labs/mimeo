@@ -59,9 +59,17 @@ LOOP
         SELECT source_table, dest_table, filter, type FROM @extschema@.refresh_config_table WHERE dblink = v_row_dblink.data_source_id )
         ORDER BY 1,2
     LOOP
-        v_sql := 'SELECT schemaname, tablename FROM 
-                pg_catalog.pg_tables 
-                WHERE schemaname ||''.''|| tablename = '||quote_literal(v_row_table.source_table); 
+        v_sql := format('SELECT schemaname, tablename
+            FROM (
+                SELECT schemaname, tablename 
+                FROM pg_catalog.pg_tables 
+                WHERE schemaname ||''.''|| tablename = %L
+                UNION
+                SELECT schemaname, viewname AS tablename
+                FROM pg_catalog.pg_views
+                WHERE schemaname || ''.'' || viewname = %L
+            ) tables LIMIT 1'
+        , v_row_table.source_table, v_row_table.source_table);
 
         EXECUTE format('SELECT schemaname, tablename
                     FROM %I.dblink(%L, %L)
@@ -132,4 +140,5 @@ END LOOP; -- end v_row_dblink
 
 END
 $$;
+
 

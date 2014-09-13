@@ -23,6 +23,7 @@ v_cols_n_types              text[];
 v_counter                   int := 1;
 v_create_trig               text;
 v_data_source               text;
+v_dblink_name               text;
 v_dblink_schema             text;
 v_dest_schema_name          text;
 v_dest_table_name           text;
@@ -56,6 +57,8 @@ v_types                     text[];
 
 BEGIN
 
+v_dblink_name := @extschema@.check_name_length('mimeo_logdel_maker_'||p_src_table);
+
 SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
 SELECT current_setting('search_path') INTO v_old_search_path;
 EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_dblink_schema||',public'',''false'')';
@@ -79,11 +82,23 @@ ELSE
     RAISE EXCEPTION 'Source (and destination) table must be schema qualified';
 END IF;
 
-PERFORM dblink_connect('mimeo_logdel', @extschema@.auth(p_dblink_id));
+PERFORM dblink_connect(v_dblink_name, @extschema@.auth(p_dblink_id));
 
 SELECT schemaname ||'_'|| tablename, schemaname, tablename
 INTO v_src_table_template, v_src_schema_name, v_src_table_name
-FROM dblink('mimeo_logdel', 'SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname ||''.''|| tablename = '||quote_literal(p_src_table)) t (schemaname text, tablename text);
+FROM dblink(v_dblink_name, format('
+            SELECT schemaname, tablename
+            FROM (
+                SELECT schemaname, tablename 
+                FROM pg_catalog.pg_tables 
+                WHERE schemaname ||''.''|| tablename = %L
+                UNION
+                SELECT schemaname, viewname AS tablename
+                FROM pg_catalog.pg_views
+                WHERE schemaname || ''.'' || viewname = %L
+            ) tables LIMIT 1'
+        , p_src_table, p_src_table) )
+    t (schemaname text, tablename text);
 
 IF v_src_table_template IS NULL THEN
     RAISE EXCEPTION 'Source table given (%) does not exist in configured source database', p_src_table;
@@ -95,7 +110,7 @@ v_source_queue_trigger := check_name_length(v_src_table_template, '_mimeo_trig')
 
 -- Automatically get source primary/unique key if none given
 IF p_pk_name IS NULL AND p_pk_type IS NULL THEN
-    SELECT key_type, indkey_names, indkey_types INTO v_key_type, v_pk_name, v_pk_type FROM fetch_replication_key(v_src_schema_name, v_src_table_name, 'mimeo_logdel', p_debug);
+    SELECT key_type, indkey_names, indkey_types INTO v_key_type, v_pk_name, v_pk_type FROM fetch_replication_key(v_src_schema_name, v_src_table_name, v_dblink_name, p_debug);
 END IF;
 
 v_pk_name_csv := '"'||array_to_string(v_pk_name, '","')||'"';
@@ -120,7 +135,7 @@ END IF;
 -- Do check for existing queue table(s) to support multiple destinations
 SELECT tablename 
     INTO v_source_queue_exists 
-FROM dblink('mimeo_logdel'
+FROM dblink(v_dblink_name
             , 'SELECT tablename 
             FROM pg_catalog.pg_tables 
             WHERE schemaname = ''@extschema@''
@@ -133,7 +148,7 @@ WHILE v_source_queue_exists IS NOT NULL LOOP -- loop until a tablename that does
     v_source_queue_table := check_name_length(v_src_table_template, '_q'||to_char(v_source_queue_counter, 'FM00'));
     SELECT tablename 
         INTO v_source_queue_exists 
-    FROM dblink('mimeo_logdel'
+    FROM dblink(v_dblink_name
             , 'SELECT tablename 
             FROM pg_catalog.pg_tables 
             WHERE schemaname = ''@extschema@''
@@ -177,7 +192,7 @@ RAISE NOTICE 'Inserting data into config table';
 PERFORM gdb(p_debug, 'v_insert_refresh_config: '||v_insert_refresh_config);
 EXECUTE v_insert_refresh_config;
 
-SELECT p_table_exists, p_cols, p_cols_n_types FROM manage_dest_table(p_dest_table, NULL, p_debug) INTO v_table_exists, v_cols, v_cols_n_types;
+SELECT p_table_exists, p_cols, p_cols_n_types INTO v_table_exists, v_cols, v_cols_n_types FROM manage_dest_table(p_dest_table, NULL, NULL, p_debug) ;
 
 SELECT schemaname, tablename 
 INTO v_dest_schema_name, v_dest_table_name 
@@ -233,17 +248,17 @@ v_create_trig := v_create_trig || format(' ON %I.%I FOR EACH ROW EXECUTE PROCEDU
 RAISE NOTICE 'Creating objects on source database (function, trigger & queue table)...';
 
 PERFORM gdb(p_debug, 'v_remote_q_table: '||v_remote_q_table); 
-PERFORM dblink_exec('mimeo_logdel', v_remote_q_table);
+PERFORM dblink_exec(v_dblink_name, v_remote_q_table);
 v_remote_q_index := format('CREATE INDEX ON %I.%I', '@extschema@', v_source_queue_table)||' ("'||array_to_string(v_pk_name, '","')||'")';
 PERFORM gdb(p_debug, 'v_remote_q_index: '||v_remote_q_index);
-PERFORM dblink_exec('mimeo_logdel', v_remote_q_index);
+PERFORM dblink_exec(v_dblink_name, v_remote_q_index);
 v_remote_q_index := format('CREATE INDEX ON %I.%I', '@extschema@', v_source_queue_table)||' (processed, mimeo_source_deleted)';
 PERFORM gdb(p_debug, 'v_remote_q_index: '||v_remote_q_index);
-PERFORM dblink_exec('mimeo_logdel', v_remote_q_index);
+PERFORM dblink_exec(v_dblink_name, v_remote_q_index);
 PERFORM gdb(p_debug, 'v_trigger_func: '||v_trigger_func);
-PERFORM dblink_exec('mimeo_logdel', v_trigger_func);
+PERFORM dblink_exec(v_dblink_name, v_trigger_func);
 PERFORM gdb(p_debug, 'v_create_trig: '||v_create_trig); 
-PERFORM dblink_exec('mimeo_logdel', v_create_trig);
+PERFORM dblink_exec(v_dblink_name, v_create_trig);
 
 IF p_pulldata AND v_table_exists = false THEN
     RAISE NOTICE 'Pulling all data from source...';
@@ -251,7 +266,7 @@ IF p_pulldata AND v_table_exists = false THEN
 END IF;
 
 IF p_index AND v_table_exists = false THEN
-    PERFORM create_index(p_dest_table, NULL, p_debug);
+    PERFORM create_index(p_dest_table, v_src_schema_name, v_src_table_name, NULL, p_debug);
     -- Create index on special column for logdel
     EXECUTE format('CREATE INDEX %I ON %I.%I (mimeo_source_deleted)', check_name_length(v_dest_table_name, '_mimeo_source_deleted'), v_dest_schema_name, v_dest_table_name);
 ELSIF v_table_exists = false THEN
@@ -271,7 +286,7 @@ END IF;
 RAISE NOTICE 'Analyzing destination table...';
 EXECUTE format('ANALYZE %I.%I', v_dest_schema_name, v_dest_table_name);
 
-PERFORM dblink_disconnect('mimeo_logdel');
+PERFORM dblink_disconnect(v_dblink_name);
 
 EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
 
@@ -285,11 +300,11 @@ EXCEPTION
         EXECUTE 'SELECT count(*) FROM @extschema@.refresh_config_logdel WHERE source_table = '||quote_literal(p_src_table) INTO v_exists;
         IF dblink_get_connections() @> '{mimeo_logdel}' THEN
             IF v_exists = 0 THEN
-                PERFORM dblink_exec('mimeo_logdel', format('DROP TRIGGER IF EXISTS %I ON %I.%I', v_source_queue_trigger, v_src_schema_name, v_src_table_name));
-                PERFORM dblink_exec('mimeo_logdel', format('DROP TABLE IF EXISTS %I.%I', '@extschema@', v_source_queue_table));
-                PERFORM dblink_exec('mimeo_logdel', format('DROP FUNCTION IF EXISTS %I.%I()', '@extschema@', v_source_queue_function));
+                PERFORM dblink_exec(v_dblink_name, format('DROP TRIGGER IF EXISTS %I ON %I.%I', v_source_queue_trigger, v_src_schema_name, v_src_table_name));
+                PERFORM dblink_exec(v_dblink_name, format('DROP TABLE IF EXISTS %I.%I', '@extschema@', v_source_queue_table));
+                PERFORM dblink_exec(v_dblink_name, format('DROP FUNCTION IF EXISTS %I.%I()', '@extschema@', v_source_queue_function));
             END IF;
-            PERFORM dblink_disconnect('mimeo_logdel');
+            PERFORM dblink_disconnect(v_dblink_name);
         END IF;
         IF v_exists = 0 AND dblink_get_connections() @> '{mimeo_logdel}' THEN
             EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
@@ -301,5 +316,4 @@ EXCEPTION
 
 END
 $$;
-
 

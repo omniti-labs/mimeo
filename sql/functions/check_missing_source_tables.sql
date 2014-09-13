@@ -2,6 +2,7 @@
  * Check data sources to see what tables exist there that are not set up for mimeo replication
  * Provides monitoring capability for situations where all tables on source should be replicated.
  * Returns a record value so that a WHERE condition can be used to ignore tables that aren't desired.
+ * Note this does NOT check for source views.
  * If p_data_source_id value is not given, all configured sources are checked.
  */
 CREATE FUNCTION check_missing_source_tables(p_data_source_id int DEFAULT NULL, OUT schemaname text, OUT tablename text, OUT data_source int) RETURNS SETOF record

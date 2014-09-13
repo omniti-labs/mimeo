@@ -22,6 +22,8 @@ The **p_condition** option in the maker functions (and the **condition** column 
     SELECT mimeo.snapshot_maker(..., p_condition := 'WHERE col1 > 4 AND col2 <> ''test''');
     SELECT mimeo.dml_maker (..., p_condition := ', table2, table3 WHERE source_table.col1 = table2.col1 AND table1.col3 = table3.col3');
 
+You can use views as source tables, but only in certain conditions. Snapshot, Table & Incremental replication all support views, but both DML-based replication methods do not. Also, for updater replication, you must manually provide the primary/unique key column names & types via the special parameters to its maker function. Otherwise it tries to look them up in the system catalog and fails (since views have no pk catalog entry).
+
 Mimeo uses the **pg_jobmon** extension to provide an audit trail and monitoring capability. If you're having any problems with mimeo working, check the job logs that pg_jobmon creates. https://github.com/omniti-labs/pg_jobmon
 
 All refresh functions use the advisory lock system to ensure that jobs do not run concurrently. If a job is found to already be running, it will cleanly exit immediately and record that another job was already running in pg_jobmon. It will also log a level 2 (WARNING) status for the job so you can monitor for a refresh job running concurrently too many times which may be an indication that replication is falling behind.
@@ -243,6 +245,7 @@ Extension Objects
 
 *check_missing_source_tables(p_data_source_id int DEFAULT NULL, OUT schemaname text, OUT tablename text, OUT data_source int) RETURNS SETOF record*
  * Provides monitoring capability for situations where all tables on source should be replicated.
+ * Note this does not check for source views.
  * p_data_source_id - optional parameter to check one specific data source. Otherwise, all sources listed in dblink_mapping_mimeo table are checked.
  * Returns a record value so WHERE conditions can be used to ignore tables that aren't desired.
 
