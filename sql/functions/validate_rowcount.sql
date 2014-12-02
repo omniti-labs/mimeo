@@ -36,6 +36,8 @@ SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.
 SELECT current_setting('search_path') INTO v_old_search_path;
 EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_dblink_schema||',public'',''true'')';
 
+v_dblink_name := @extschema@.check_name_length('mimeo_data_validation_'||p_destination);
+
 SELECT dest_table
     , type
     , dblink
@@ -85,7 +87,6 @@ IF v_adv_lock_hash1 IS NOT NULL AND v_adv_lock_hash2 IS NOT NULL THEN
     END IF;
 END IF;
 
-v_dblink_name := @extschema@.check_name_length('mimeo_data_validation_'||v_dest_table);
 PERFORM dblink_connect(v_dblink_name, auth(v_dblink));
 
 v_remote_sql := 'SELECT count(*) as row_count FROM '||v_source_table;

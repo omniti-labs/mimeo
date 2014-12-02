@@ -183,17 +183,17 @@ IF p_repull THEN
         -- Use upper boundary remote max to avoid edge case of multiple upper boundary values inserting during refresh
         v_remote_sql := v_remote_sql || format('%I > %L AND %I < %L'
                                         , v_control
-                                        , COALESCE(p_repull_start, 0)
+                                        , COALESCE(p_repull_start::bigint, 0)
                                         , v_control
-                                        , COALESCE(p_repull_end, v_boundary));
+                                        , COALESCE(p_repull_end::bigint, v_boundary));
         -- Delete the old local data. Use higher than bigint max upper boundary to ensure all old data is deleted
-        v_delete_sql := format('DELETE FROM %I.%I WHERE %I > %L AND %L < %L'
+        v_delete_sql := format('DELETE FROM %I.%I WHERE %I > %L AND %I < %L'
                         , v_dest_schema_name
                         , v_dest_table_name
                         , v_control
-                        , COALESCE(p_repull_start, 0)
+                        , COALESCE(p_repull_start::bigint, 0)
                         , v_control
-                        , COALESCE(p_repull_end, 9300000000000000000));
+                        , COALESCE(p_repull_end::bigint, 9300000000000000000));
         IF v_jobmon THEN
             v_step_id := add_step(v_job_id, 'Deleting current, local data');
         END IF;
@@ -288,7 +288,7 @@ ELSE
                 v_step_id := add_step(v_job_id, 'Reached inconsistent state');
                 PERFORM update_step(v_step_id, 'CRITICAL', 'Batch contained max rows ('||v_limit||') or greater and all contained the same serial value. Unable to guarentee rows will ever be replicated consistently. Increase row limit parameter to allow a consistent batch.');
             END IF;
-            PERFORM gdb(p_debug, 'Batch contained max rows desired ('||v_limit||') or greaer and all contained the same serial value. Unable to guarentee rows will be replicated consistently. Increase row limit parameter to allow a consistent batch.');
+            PERFORM gdb(p_debug, 'Batch contained max rows desired ('||v_limit||') or greater and all contained the same serial value. Unable to guarentee rows will be replicated consistently. Increase row limit parameter to allow a consistent batch.');
             v_batch_limit_reached = 3;
         END IF;
     ELSE

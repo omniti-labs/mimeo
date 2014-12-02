@@ -1,3 +1,10 @@
+1.3.3
+-- Fixed repull functionality for incremental refresh functions. For serial-based replication, using the p_repull_start & p_repull_end arguments was not working correctly. The destination data was not being deleted and could either cause unique key violations or duplicate data. Run the validate_rowcounts() function after this fix is installed to see if you have any issues. If you ran a repull without using p_repull_start or p_repull_end, it worked fine.
+-- Fixed unclear error in validate_rowcount() function if called on a destination table that isn't configured.
+-- Fixed broken update file for updating mimeo from 1.3.1 to 1.3.2. File name had wrong formatting.
+-- Added pgTAP tests for better incremental repull testing
+
+
 1.3.2
 -- Fix check_name_length() function to work with PostgreSQL 9.1. Installation would fail with syntax errors. Named parameter support was not added for SQL functions until 9.2.
     -- Function was added in version 1.1.0, so any updates from version 1.0.1 to later would fail on PostgreSQL 9.1. If anyone needs an update script for 1.0.1 to 1.3.2, please create an issue on github.

@@ -201,19 +201,19 @@ IF p_repull THEN
             v_remote_sql := v_remote_sql || ' WHERE ';
         END IF;
         -- Use upper boundary remote max to avoid edge case of multiple upper boundary values inserting during refresh
-        v_remote_sql := v_remote_sql || format('%I > %L AND %I > %L'
+        v_remote_sql := v_remote_sql || format('%I > %L AND %I < %L'
                                                 , v_control
-                                                , COALESCE(p_repull_start, 0)
+                                                , COALESCE(p_repull_start::bigint, 0)
                                                 , v_control
-                                                , COALESCE(p_repull_end, v_boundary));
+                                                , COALESCE(p_repull_end::bigint, v_boundary));
         -- Delete the old local data. Use higher than bigint max upper boundary to ensure all old data is deleted
         v_delete_sql := format('DELETE FROM %I.%I WHERE %I > %L AND %I < %L'
                                 , v_dest_schema_name
                                 , v_dest_table_name
                                 , v_control
-                                , COALESCE(p_repull_start, 0)
+                                , COALESCE(p_repull_start::bigint, 0)
                                 , v_control
-                                , COALESCE(p_repull_end, 9300000000000000000));
+                                , COALESCE(p_repull_end::bigint, 9300000000000000000));
         IF v_jobmon THEN
             v_step_id := add_step(v_job_id, 'Deleting current, local data');
         END IF;
@@ -413,4 +413,5 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
+
 
