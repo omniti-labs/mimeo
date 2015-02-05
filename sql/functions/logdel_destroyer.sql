@@ -27,6 +27,9 @@ v_src_table             text;
 v_src_table_name        text;
 v_src_table_template    text;
 v_table_name            text;
+v_table_owner           text;
+v_username              text;
+
 
 BEGIN
 
@@ -51,12 +54,18 @@ ELSE
     FROM pg_catalog.pg_tables
     WHERE schemaname||'.'||tablename = v_dest_table;
 
+    SELECT username INTO v_username FROM @extschema@.dblink_mapping_mimeo;
+
     v_dblink_name := 'mimeo_logdel_destroy';
     PERFORM dblink_connect(v_dblinK_name, @extschema@.auth(v_dblink));
 
-    SELECT schemaname ||'_'|| tablename, schemaname, tablename
-    INTO v_src_table_template, v_src_schema_name, v_src_table_name
-    FROM dblink(v_dblink_name, 'SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname ||''.''|| tablename = '||quote_literal(v_src_table)) t (schemaname text, tablename text);
+    SELECT schemaname ||'_'|| tablename, schemaname, tablename, tableowner
+    INTO v_src_table_template, v_src_schema_name, v_src_table_name, v_table_owner
+    FROM dblink(v_dblink_name, 'SELECT schemaname, tablename, tableowner FROM pg_catalog.pg_tables WHERE schemaname ||''.''|| tablename = '||quote_literal(v_src_table)) t (schemaname text, tablename text, tableowner text);
+
+    IF v_table_owner <> v_username THEN
+        RAISE EXCEPTION 'Unable to drop the mimeo trigger on source table (%). Mimeo role must be the owner of the table to automatically drop it. Manually drop the mimeo trigger first, then run destroyer function again.', v_src_table;
+    END IF;
 
     v_source_queue_table :=  check_name_length(v_src_table_template, '_q');
     v_source_queue_function := check_name_length(v_src_table_template, '_mimeo_queue');
@@ -76,12 +85,16 @@ ELSE
     PERFORM dblink_disconnect(v_dblink_name);
 
     IF p_keep_table THEN 
-        RAISE NOTICE 'Destination table NOT destroyed: %', v_dest_table; 
+        RAISE NOTICE 'Destination table NOT destroyed (if it existed): %', v_dest_table; 
     ELSE
-        RAISE NOTICE 'Destination table destroyed: %', v_dest_table;
-        v_drop_dest_table := format('DROP TABLE IF EXISTS %I.%I', v_dest_schema_name, v_dest_table_name);
-        PERFORM gdb(p_debug, v_drop_dest_table);
-        EXECUTE v_drop_dest_table;
+        IF v_dest_schema_name IS NOT NULL AND v_dest_table_name IS NOT NULL THEN
+            v_drop_dest_table := format('DROP TABLE IF EXISTS %I.%I', v_dest_schema_name, v_dest_table_name);
+            PERFORM gdb(p_debug, v_drop_dest_table);
+            EXECUTE v_drop_dest_table;
+            RAISE NOTICE 'Destination table destroyed: %', v_dest_table;
+        ELSE
+            RAISE NOTICE 'Destination table did not exist: %', v_dest_table;
+        END IF;
     END IF;
 
     RAISE NOTICE 'Removing config data';
@@ -101,5 +114,4 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;    
 END
 $$;
-
 

@@ -81,7 +81,7 @@ END IF;
 -- Allow override with parameter
 v_jobmon := COALESCE(p_jobmon, v_jobmon);
 
-v_adv_lock := pg_try_advisory_xact_lock(hashtext('refresh_table'), hashtext(p_destination));
+v_adv_lock := @extschema@.concurrent_lock_check(v_dest_table);
 IF v_adv_lock = 'false' THEN
     IF v_jobmon THEN
         v_job_id := add_job(v_job_name);

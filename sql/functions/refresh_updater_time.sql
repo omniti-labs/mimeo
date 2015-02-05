@@ -109,7 +109,7 @@ END IF;
 v_jobmon := COALESCE(p_jobmon, v_jobmon);
 
 -- Take advisory lock to prevent multiple calls to function overlapping
-v_adv_lock := pg_try_advisory_xact_lock(hashtext('refresh_updater'), hashtext(v_job_name));
+v_adv_lock := @extschema@.concurrent_lock_check(v_dest_table);
 IF v_adv_lock = 'false' THEN
     IF v_jobmon THEN
         v_job_id := add_job(v_job_name);
@@ -118,6 +118,7 @@ IF v_adv_lock = 'false' THEN
         PERFORM fail_job(v_job_id, 2);
     END IF;
     PERFORM gdb(p_debug,'Obtaining advisory lock FAILED for job: '||v_job_name);
+    RAISE NOTICE 'Found concurrent job. Exiting gracefully';
     EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
     RETURN;
 END IF;

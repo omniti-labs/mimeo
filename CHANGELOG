@@ -1,3 +1,9 @@
+1.3.4
+-- Provide a safer method and clearer error message when running dml_destroyer() or logdel_destroyer() and mimeo is unable to automatically drop the trigger on the source table. Mimeo checks first to see if it's even possible to drop the trigger and immediately stops if it can't, providing a clear message that the trigger must be manually dropped first.
+-- Added a function for performing the advisory lock check that is used to prevent concurrent refresh runs on the same table (concurrent_lock_check()). Allows other applications to more easily interact with mimeo if they have to edit destination tables as well. Allows either mimeo or the other application to cleanly handle concurrent run attempts and avoid deadlocks.
+-- Drop dhb_attr column from dblink_mapping_mimeo table. Was never being used even if set.
+
+
 1.3.3
 -- Fixed repull functionality for incremental refresh functions. For serial-based replication, using the p_repull_start & p_repull_end arguments was not working correctly. The destination data was not being deleted and could either cause unique key violations or duplicate data. Run the validate_rowcounts() function after this fix is installed to see if you have any issues. If you ran a repull without using p_repull_start or p_repull_end, it worked fine.
 -- Fixed unclear error in validate_rowcount() function if called on a destination table that isn't configured.

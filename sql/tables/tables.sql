@@ -10,7 +10,6 @@ CREATE TABLE dblink_mapping_mimeo (
     data_source text NOT NULL,
     username text NOT NULL,
     pwd text,
-    dbh_attr text,
     CONSTRAINT dblink_mapping_mimeo_data_source_id_pkey PRIMARY KEY (data_source_id)
 );
 SELECT pg_catalog.pg_extension_config_dump('dblink_mapping_mimeo', '');

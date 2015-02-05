@@ -3,7 +3,7 @@
 
 SELECT set_config('search_path','mimeo, dblink, public',false);
 
-SELECT plan(85);
+SELECT plan(87);
 
 SELECT dblink_connect('mimeo_test', 'host=localhost port=5432 dbname=mimeo_source user=mimeo_owner password=mimeo_owner');
 SELECT is(dblink_get_connections() @> '{mimeo_test}', 't', 'Remote database connection established');
@@ -144,6 +144,8 @@ SELECT updater_destroyer('mimeo_dest.Updater-Test-Source_Serial', false);
 SELECT hasnt_table('mimeo_dest', 'Updater-Test-Source_Serial', 'Check updater_destroyer dropped table: mimeo_dest.Updater-Test-Source_Serial');
 
 -- ########## DML DESTROYER ##########
+-- Check that error is thrown when trying to destroy and mimeo does not own source trigger
+SELECT throws_ok('SELECT dml_destroyer(''mimeo_dest.dml_test_dest'')', 'Unable to drop the mimeo trigger on source table (mimeo_source.dml_test_source2). Mimeo role must be the owner of the table to automatically drop it. Manually drop the mimeo trigger first, then run destroyer function again.', 'Testing that error is thrown if mimeo does not own source table on dml_destroyer() call');
 -- Have to change the owner of the source tables in order to be able to drop triggers
 SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.dml_test_source OWNER TO mimeo_test');
 SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.dml_test_source2 OWNER TO mimeo_test');
@@ -174,6 +176,8 @@ SELECT dml_destroyer('mimeo_source.Dml-Test-Source', false);
 SELECT hasnt_table('mimeo_source', 'Dml-Test-Source', 'Check dml_destroyer dropped table: mimeo_source.Dml-Test-Source');
 
 -- ########## LOGDEL DESTROYER ##########
+-- Check that error is thrown when trying to destroy and mimeo does not own source trigger
+SELECT throws_ok('SELECT logdel_destroyer(''mimeo_dest.logdel_test_dest'')', 'Unable to drop the mimeo trigger on source table (mimeo_source.logdel_test_source2). Mimeo role must be the owner of the table to automatically drop it. Manually drop the mimeo trigger first, then run destroyer function again.', 'Testing that error is thrown if mimeo does not own source table on logdel_destroyer() call');
 -- Have to change the owner of the source tables in order to be able to drop triggers
 SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.logdel_test_source OWNER TO mimeo_test');
 SELECT dblink_exec('mimeo_test', 'ALTER TABLE mimeo_source.logdel_test_source2 OWNER TO mimeo_test');

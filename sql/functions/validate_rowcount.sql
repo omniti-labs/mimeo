@@ -8,9 +8,7 @@ CREATE FUNCTION validate_rowcount(p_destination text, p_src_incr_less boolean DE
     AS $$
 DECLARE
 
-v_adv_lock          boolean;
-v_adv_lock_hash1    text;
-v_adv_lock_hash2    text;
+v_adv_lock          boolean := true;
 v_condition         text;
 v_control           text;
 v_dblink            int;
@@ -54,8 +52,7 @@ END IF;
 
 CASE v_type
 WHEN 'snap' THEN
-    v_adv_lock_hash1 := 'refresh_snap';
-    v_adv_lock_hash2 := 'Refresh Snap: '||v_dest_table;
+    v_adv_lock := @extschema@.concurrent_lock_check(v_dest_table);
     SELECT source_table INTO v_source_table FROM refresh_config_snap WHERE dest_table = v_dest_table;
 WHEN 'inserter_time' THEN
     SELECT source_table, control INTO v_source_table, v_control FROM refresh_config_inserter WHERE dest_table = v_dest_table;
@@ -66,25 +63,19 @@ WHEN 'updater_time' THEN
 WHEN 'updater_serial' THEN
     SELECT source_table, control INTO v_source_table, v_control FROM refresh_config_updater WHERE dest_table = v_dest_table;
 WHEN 'dml' THEN
-    v_adv_lock_hash1 := 'refresh_dml';
-    v_adv_lock_hash2 := 'Refresh DML: '||v_dest_table;
+    v_adv_lock := @extschema@.concurrent_lock_check(v_dest_table);
     SELECT source_table INTO v_source_table FROM refresh_config_dml WHERE dest_table = v_dest_table;
 WHEN 'logdel' THEN
-    v_adv_lock_hash1 := 'refresh_logdel';
-    v_adv_lock_hash2 := 'Refresh Log Del: '||v_dest_table;
+    v_adv_lock := @extschema@.concurrent_lock_check(v_dest_table);
     SELECT source_table INTO v_source_table FROM refresh_config_logdel WHERE dest_table = v_dest_table;
 WHEN 'table' THEN
-    v_adv_lock_hash1 := 'refresh_table';
-    v_adv_lock_hash2 := v_dest_table;
+    v_adv_lock := @extschema@.concurrent_lock_check(v_dest_table);
     SELECT source_table INTO v_source_table FROM refresh_config_table WHERE dest_table = v_dest_table;
 END CASE;
 
-IF v_adv_lock_hash1 IS NOT NULL AND v_adv_lock_hash2 IS NOT NULL THEN
-    v_adv_lock := pg_try_advisory_xact_lock(hashtext(v_adv_lock_hash1), hashtext(v_adv_lock_hash2));
-    IF v_adv_lock = 'false' THEN
-        RAISE EXCEPTION 'Validation cannot run while refresh for given table is running: %', v_dest_table;
-        RETURN;
-    END IF;
+IF v_adv_lock = 'false' THEN
+    RAISE EXCEPTION 'Validation cannot run while refresh for given table is running: %', v_dest_table;
+    RETURN;
 END IF;
 
 PERFORM dblink_connect(v_dblink_name, auth(v_dblink));
@@ -155,3 +146,4 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
+
