@@ -1,3 +1,5 @@
+[![PGXN version](https://badge.fury.io/pg/mimeo.svg)](https://badge.fury.io/pg/mimeo)
+
 Mimeo
 =====
 
