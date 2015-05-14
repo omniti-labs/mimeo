@@ -257,10 +257,16 @@ Extension Objects
  * p_data_source_id - optional parameter to check one specific data source. Otherwise, all sources listed in dblink_mapping_mimeo table are checked.
  * Returns a record value so WHERE conditions can be used to ignore tables and/or columns that don't matter for your situation.
 
-*concurrent_lock_check(p_dest_table text) RETURNS boolean*
+*concurrent_lock_check(p_dest_table text, p_lock_wait int DEFAULT NULL) RETURNS boolean*
  * Mimeo uses the advisory lock system to ensure concurrent runs of a replication job do not occur. You can use this function to obtain a lock if one is available.
  * This function works like the pg_try_advisory_xact_lock() function, returning true if a lock was able to be obtained and false if it was not. So if it returns false, your app must be able to handle that failure scenario and either fail gracefully or retry. A delay between retries is highly recommendend and the length of that delay should be determined by how long a refresh run of the given table usually takes.
  * This lock must be obtained before operating on any destination table being maintained by mimeo. Failure to do so could result in a deadlock. An example of this is when a column filter is in place to not replicate all table columns, or the destination has additional columns, and you need to edit the destination table via another method and not interfere with the normal replication jobs. 
+ * p_dest_table - Destination table on which to obtain a lock 
+ * p_lock_wait - set a specified period of time to wait for the advisory lock before giving up. The following are valid values:
+   * NULL (default value if not set): Do not wait at all for an advisory lock and immediately return FALSE if one cannot be obtained.
+   * > 0: Keep retrying to obtain an advisory lock for the given table for this number of seconds before giving up and returning FALSE. If lock is obtained in this time period, will immediately return TRUE.
+   * <= 0: Keep retrying indefinitely to obtain an advisory lock. Will only return when the lock is obtained and returns TRUE. Ensure your code handles this condition properly to avoid infinite waits.
+
 
 ### Tables
 

@@ -1,4 +1,4 @@
-default_version = '1.3.4'
+default_version = '1.3.5'
 comment = 'Extension for specialized, per-table replication between PostgreSQL instances'
 requires = 'dblink'
 relocatable = false

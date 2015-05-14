@@ -1,3 +1,13 @@
+1.3.5
+-- Added a lock wait argument to concurrent_lock_check() function to allow a specified period of time to wait for the advisory lock before giving up. The following are valid values:
+    -- NULL (default value if not set): Do not wait at all for an advisory lock and immediately return FALSE if one cannot be obtained (this was the old behavior).
+    -- > 0: Keep retrying to obtain an advisory lock for the given table for this number of seconds before giving up and returning FALSE. If lock is obtained in this time period, will immediately return TRUE.
+    -- <= 0: Keep retrying indefinitely to obtain an advisory lock. Will only return when the lock is obtained and returns TRUE. Ensure your code handles this condition properly to avoid infinite waits.
+-- Will keep retrying once per second until lock is obtained or wait period expires.
+
+-- Concurrent lock check code greatly simplified and now avoids possible race conditions discovered during code review.
+
+
 1.3.4
 -- Provide a safer method and clearer error message when running dml_destroyer() or logdel_destroyer() and mimeo is unable to automatically drop the trigger on the source table. Mimeo checks first to see if it's even possible to drop the trigger and immediately stops if it can't, providing a clear message that the trigger must be manually dropped first.
 -- Added a function for performing the advisory lock check that is used to prevent concurrent refresh runs on the same table (concurrent_lock_check()). Allows other applications to more easily interact with mimeo if they have to edit destination tables as well. Allows either mimeo or the other application to cleanly handle concurrent run attempts and avoid deadlocks.
