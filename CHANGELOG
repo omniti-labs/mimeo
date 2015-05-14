@@ -6,6 +6,7 @@
 -- Will keep retrying once per second until lock is obtained or wait period expires.
 
 -- Concurrent lock check code greatly simplified and now avoids possible race conditions discovered during code review.
+-- Thanks to https://github.com/bdunavant for assistance with this patch
 
 
 1.3.4

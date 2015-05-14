@@ -2,12 +2,14 @@
     -- NULL (default value if not set): Do not wait at all for an advisory lock and immediately return FALSE if one cannot be obtained (this was the old behavior).
     -- > 0: Keep retrying to obtain an advisory lock for the given table for this number of seconds before giving up and returning FALSE. If lock is obtained in this time period, will immediately return TRUE.
     -- <= 0: Keep retrying indefinitely to obtain an advisory lock. Will only return when the lock is obtained and returns TRUE. Ensure your code handles this condition properly to avoid infinite waits.
--- Will keep retrying once per second until lock is obtained or wait period expires.
+-- Will keep retrying once per second until lock is obtained or wait period expires. 
 
--- Concurrent lock check code greatly simplified and now avoids possible race conditions discovered during code review.
+-- Concurrent lock check code greatly simplified and now avoids possible race conditions discovered during code review. 
+-- Thanks to https://github.com/bdunavant for assistance with this patch
 
+DROP FUNCTION @extschema@.concurrent_lock_check(text);
 
-CREATE OR REPLACE FUNCTION concurrent_lock_check(p_dest_table text, p_lock_wait int DEFAULT NULL) RETURNS boolean
+CREATE FUNCTION concurrent_lock_check(p_dest_table text, p_lock_wait int DEFAULT NULL) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
