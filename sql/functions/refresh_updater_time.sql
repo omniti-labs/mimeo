@@ -1,7 +1,7 @@
 /*
  *  Refresh insert/update only table based on timestamp control field
  */
-CREATE FUNCTION refresh_updater_time(p_destination text, p_limit integer DEFAULT NULL, p_repull boolean DEFAULT false, p_repull_start timestamp DEFAULT NULL, p_repull_end timestamp DEFAULT NULL, p_jobmon boolean DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
+CREATE FUNCTION refresh_updater_time(p_destination text, p_limit integer DEFAULT NULL, p_repull boolean DEFAULT false, p_repull_start timestamp DEFAULT NULL, p_repull_end timestamp DEFAULT NULL, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
@@ -109,7 +109,7 @@ END IF;
 v_jobmon := COALESCE(p_jobmon, v_jobmon);
 
 -- Take advisory lock to prevent multiple calls to function overlapping
-v_adv_lock := @extschema@.concurrent_lock_check(v_dest_table);
+v_adv_lock := @extschema@.concurrent_lock_check(v_dest_table, p_lock_wait);
 IF v_adv_lock = 'false' THEN
     IF v_jobmon THEN
         v_job_id := add_job(v_job_name);
@@ -431,5 +431,4 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
-
 

@@ -1,7 +1,7 @@
 /*
  *  Plain table refresh function. 
  */
-CREATE FUNCTION refresh_table(p_destination text, p_truncate_cascade boolean DEFAULT NULL, p_jobmon boolean DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
+CREATE FUNCTION refresh_table(p_destination text, p_truncate_cascade boolean DEFAULT NULL, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -81,7 +81,7 @@ END IF;
 -- Allow override with parameter
 v_jobmon := COALESCE(p_jobmon, v_jobmon);
 
-v_adv_lock := @extschema@.concurrent_lock_check(v_dest_table);
+v_adv_lock := @extschema@.concurrent_lock_check(v_dest_table, p_lock_wait);
 IF v_adv_lock = 'false' THEN
     IF v_jobmon THEN
         v_job_id := add_job(v_job_name);

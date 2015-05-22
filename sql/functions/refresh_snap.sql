@@ -1,7 +1,7 @@
 /*
  *  Snap refresh to repull all table data
  */
-CREATE FUNCTION refresh_snap(p_destination text, p_index boolean DEFAULT true, p_pulldata boolean DEFAULT true, p_jobmon boolean DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
+CREATE FUNCTION refresh_snap(p_destination text, p_index boolean DEFAULT true, p_pulldata boolean DEFAULT true, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
@@ -107,7 +107,7 @@ END IF;
 v_jobmon := COALESCE(p_jobmon, v_jobmon);
 
 -- Take advisory lock to prevent multiple calls to function overlapping and causing possible deadlock
-v_adv_lock := @extschema@.concurrent_lock_check(v_dest_table);
+v_adv_lock := @extschema@.concurrent_lock_check(v_dest_table, p_lock_wait);
 IF v_adv_lock = 'false' THEN
     IF v_jobmon THEN
         v_job_id := add_job(v_job_name);

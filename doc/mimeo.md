@@ -158,50 +158,56 @@ Extension Objects
 
 ### Refresh Functions
 
-*refresh_dml(p_destination text, p_limit int default NULL, p_repull boolean DEFAULT false, p_jobmon boolean DEFAULT NULL, p_debug boolean DEFAULT false)* 
+*refresh_dml(p_destination text, p_limit int default NULL, p_repull boolean DEFAULT false, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_debug boolean DEFAULT false)* 
  * Replicate tables by replaying INSERTS, UPDATES and DELETES in the order they occur on the source table. Useful for tables that are too large for snapshots.  
  * Can be setup with dml_maker(...) and removed with dml_destroyer(...) functions.  
  * p_limit, an optional argument, can be used to change the limit on how many rows are grabbed from the source with each run of the function. Defaults to all new rows if not given here or set in configuration table. Has no affect on function performance as it does with inserter/updater.
  * p_repull, an optional argument, sets a flag to repull data from the source instead of getting new data. Note that **ALL local data will be truncated** and the ENTIRE source table will be repulled.
  * p_jobmon, an optional argument, sets whether to use jobmon for the refresh run. By default uses config table value.
+ * p_lock_wait, an optional argument, sets whether you want this refresh call to wait for the advisory lock on this table to be released if it is being held. See the **concurrent_lock_check()** function info in this document for more details on what are valid values for this parameter.
 
-*refresh_inserter(p_destination text, p_limit integer DEFAULT NULL, p_repull boolean DEFAULT false, p_repull_start text DEFAULT NULL, p_repull_end text DEFAULT NULL, p_jobmon boolean DEFAULT NULL, p_debug boolean DEFAULT false)*  
+*refresh_inserter(p_destination text, p_limit integer DEFAULT NULL, p_repull boolean DEFAULT false, p_repull_start text DEFAULT NULL, p_repull_end text DEFAULT NULL, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_debug boolean DEFAULT false)*  
  * Replication for tables that have INSERT ONLY data and contain a timestamp or integer column that is incremented with every INSERT.
  * Can be setup with inserter_maker(...) and removed with inserter_destroyer(...) functions.  
  * p_limit, an optional argument, can be used to change the limit on how many rows are grabbed from the source with each run of the function. Defaults to all new rows if not given here or set in configuration table. Note that this makes the refresh function slightly more expensive to run as extra checks must be run to ensure data consistency.
  * p_repull, an optional argument, sets a flag to repull data from the source instead of getting new data. If this flag is set without setting the start/end arguments as well, then **ALL local data will be truncated** and the ENTIRE source table will be repulled.
  * p_repull_start and p_repull_end, optional arguments, can set a specific time period to repull source data. This is an EXCLUSIVE time period (< start, > end). If p_repull is not set, then these arguments are ignored.
  * p_jobmon, an optional argument, sets whether to use jobmon for the refresh run. By default uses config table value.
+ * p_lock_wait, an optional argument, sets whether you want this refresh call to wait for the advisory lock on this table to be released if it is being held. See the **concurrent_lock_check()** function info in this document for more details on what are valid values for this parameter.
     
-*refresh_logdel(p_destination text, p_limit int DEFAULT NULL, p_repull boolean DEFAULT false, p_jobmon boolean DEFAULT NULL, p_debug boolean DEFAULT false)*
+*refresh_logdel(p_destination text, p_limit int DEFAULT NULL, p_repull boolean DEFAULT false, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_debug boolean DEFAULT false)*
  * Replicate tables by replaying INSERTS, UPDATES and DELETES in the order they occur on the source table, but DO NOT remove deleted tables from the destination table.
  * Can be setup with logdel_maker(...) and removed with logdel_destroyer(...) functions.  
  * p_limit, an optional argument, can be used to change the limit on how many rows are grabbed from the source with each run of the function. Defaults to all new rows if not given here or set in configuration table. Has no affect on function performance as it does with inserter/updater.
  * p_repull, an optional argument, sets a flag to repull data from the source instead of getting new data. Unlike other refresh repull options this does NOT do a TRUNCATE; it deletes all rows where mimeo_source_deleted is not null, so old deleted rows are not lost on the destination. It is highly recommended to do a manual VACUUM after this is done, possibly even a VACUUM FULL to reclaim disk space.
  * p_jobmon, an optional argument, sets whether to use jobmon for the refresh run. By default uses config table value.
+ * p_lock_wait, an optional argument, sets whether you want this refresh call to wait for the advisory lock on this table to be released if it is being held. See the **concurrent_lock_check()** function info in this document for more details on what are valid values for this parameter.
 
-*refresh_snap(p_destination text, p_index boolean DEFAULT true, p_jobmon boolean DEFAULT NULL, p_debug boolean DEFAULT false, p_pulldata boolean DEFAULT true)*  
+*refresh_snap(p_destination text, p_index boolean DEFAULT true, p_pulldata boolean DEFAULT true, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_debug boolean DEFAULT false)*
  * Full table replication to the destination table given by p_destination. Automatically creates destination view and tables needed if they do not already exist. * If data has not changed on the soure (insert, update or delete), no data will be repulled. pg_jobmon still records that the job ran successfully and updates last_run, so you are still able to monitor that tables using this method are refreshed on a regular basis. It just logs that no new data was pulled.
  * Can be setup with snapshot_maker(...) and removed with snapshot_destroyer(...) functions.  
-  * p_index, an optional argument, sets whether to recreate all indexes if any of the columns on the source table change. Defaults to true. Note this only applies when the columns on the source change, not the indexes.
+ * p_index, an optional argument, sets whether to recreate all indexes if any of the columns on the source table change. Defaults to true. Note this only applies when the columns on the source change, not the indexes.
+ * p_pulldata, does not generally need to be used and in most cases can just be ignored. It is primarily for internal use by the maker function to allow its p_pulldata parameter to work.
  * p_jobmon, an optional argument, sets whether to use jobmon for the refresh run. By default uses config table value.
- * The final parameter, p_pulldata, does not generally need to be used and in most cases can just be ignored. It is primarily for internal use by the maker function to allow its p_pulldata parameter to work.
+ * p_lock_wait, an optional argument, sets whether you want this refresh call to wait for the advisory lock on this table to be released if it is being held. See the **concurrent_lock_check()** function info in this document for more details on what are valid values for this parameter.
 
-*refresh_table(p_destination text, p_truncate_cascade boolean DEFAULT NULL, p_jobmon boolean DEFAULT NULL, p_debug boolean DEFAULT false)*  
+*refresh_table(p_destination text, p_truncate_cascade boolean DEFAULT NULL, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_debug boolean DEFAULT false)*  
  * A basic replication method that simply truncates the destination and repulls all the data.
  * Not ideal for normal replication but is useful for dev systems that need to pull from a production system and should have no write access on said system. It requires no primary keys, control columns or triggers/queues on the source.
  * Can be setup with table_maker(...) and removed with table_destroyer(...) functions.
  * If the destination table has any sequences, they can be reset by adding them to the *sequences* array column in the *refresh_config_table* table or with the *p_sequences* option in the maker function. Note this will check all tables on the destination database that have the given sequences set as a default at the time the refresh is run and reset the sequence to the highest value found.
  * p_truncate_cascade, an optional argument that will cascade the truncation of the given table to any tables that reference it with foreign keys. This argument is here to provide an override to the config table option. Both this parameter and the config table default to NOT doing a cascade, so doing this should be a conscious choice.
  * p_jobmon, an optional argument, sets whether to use jobmon for the refresh run. By default uses config table value.
+ * p_lock_wait, an optional argument, sets whether you want this refresh call to wait for the advisory lock on this table to be released if it is being held. See the **concurrent_lock_check()** function info in this document for more details on what are valid values for this parameter.
 
-*refresh_updater(p_destination text, p_limit integer DEFAULT NULL, p_repull boolean DEFAULT false, p_repull_start text DEFAULT NULL, p_repull_end text DEFAULT NULL, p_jobmon boolean DEFAULT NULL, p_debug boolean DEFAULT false)*  
+*refresh_updater(p_destination text, p_limit integer DEFAULT NULL, p_repull boolean DEFAULT false, p_repull_start text DEFAULT NULL, p_repull_end text DEFAULT NULL, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_debug boolean DEFAULT false)*  
  * Replication for tables that have INSERT AND/OR UPDATE ONLY data and contain a timestamp or integer column that is incremented with every INSERT AND UPDATE
  * Can be setup with updater_maker(...) and removed with updater_destroyer(...) functions.  
  * p_limit, an optional argument, can be used to change the limit on how many rows are grabbed from the source with each run of the function. Defaults to all new rows if not given here or set in configuration table. Note that this makes the refresh function slightly more expensive to run as extra checks must be run to ensure data consistency.
  * p_repull, an optional argument, sets a flag to repull data from the source instead of getting new data. If this flag is set without setting the start/end arguments as well, then **ALL local data will be truncated** and the ENTIRE source table will be repulled.
  * p_repull_start and p_repull_end, optional arguments, can set a specific time period to repull source data. This is an EXCLUSIVE time period (< start, > end). If p_repull is not set, then these arguments are ignored.
  * p_jobmon, an optional argument, sets whether to use jobmon for the refresh run. By default uses config table value.
+ * p_lock_wait, an optional argument, sets whether you want this refresh call to wait for the advisory lock on this table to be released if it is being held. See the **concurrent_lock_check()** function info in this document for more details on what are valid values for this parameter.
 
 ### Cleanup Functions
 
@@ -258,7 +264,7 @@ Extension Objects
  * Returns a record value so WHERE conditions can be used to ignore tables and/or columns that don't matter for your situation.
 
 *concurrent_lock_check(p_dest_table text, p_lock_wait int DEFAULT NULL) RETURNS boolean*
- * Mimeo uses the advisory lock system to ensure concurrent runs of a replication job do not occur. You can use this function to obtain a lock if one is available.
+ * Mimeo uses the advisory lock system to ensure concurrent runs of a replication job on a single table do not occur. You can use this function to obtain a lock if one is available.
  * This function works like the pg_try_advisory_xact_lock() function, returning true if a lock was able to be obtained and false if it was not. So if it returns false, your app must be able to handle that failure scenario and either fail gracefully or retry. A delay between retries is highly recommendend and the length of that delay should be determined by how long a refresh run of the given table usually takes.
  * This lock must be obtained before operating on any destination table being maintained by mimeo. Failure to do so could result in a deadlock. An example of this is when a column filter is in place to not replicate all table columns, or the destination has additional columns, and you need to edit the destination table via another method and not interfere with the normal replication jobs. 
  * p_dest_table - Destination table on which to obtain a lock 
