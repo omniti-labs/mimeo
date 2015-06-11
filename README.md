@@ -12,9 +12,9 @@ In addition to the documentaion, some additional information about this extensio
 INSTALLATION
 ------------
 
-Requirements: dblink extension 
+Requirements: PostgreSQL 9.1+, dblink extension 
 
-Recommendations: pg_jobmon (>= 1.2.0) extension (https://github.com/omniti-labs/pg_jobmon)
+Recommendations: pg_jobmon (>= 1.3.0) extension (https://github.com/omniti-labs/pg_jobmon)
 
 In directory where you downloaded mimeo to run
 
