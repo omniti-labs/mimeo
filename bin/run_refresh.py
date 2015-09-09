@@ -16,6 +16,7 @@ args =  parser.parse_args()
 
 def create_conn():
     conn = psycopg2.connect(args.connection)
+    conn.autocommit = True
     return conn
 
 
@@ -58,7 +59,6 @@ def single_process(result, mimeo_schema):
             print("Running " + i[1] + " replication for table: " + i[0])
         sql = "SELECT " + mimeo_schema + ".refresh_" + i[1] + "(%s)"
         cur.execute(sql, [i[0]])
-        conn.commit()
     cur.close()
     close_conn(conn)
 
@@ -68,7 +68,6 @@ def refreshProc(dest_table, rtype, mimeo_schema):
     cur = conn.cursor()
     sql = "SELECT " + mimeo_schema + ".refresh_" + rtype + "(%s)"
     cur.execute(sql, [dest_table])
-    conn.commit()
     cur.close()
     close_conn(conn)
 

@@ -1,0 +1,1 @@
+-- No changes with code contained in the database made with this update. See CHANGELOG for details. This file is here to allow an upgrade path to future versions.

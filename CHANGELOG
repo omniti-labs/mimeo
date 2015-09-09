@@ -1,3 +1,7 @@
+1.3.8
+-- Turned on autocommit in run_refresh.py python script. This avoids a race condition where if it is used in a transaction, with a second transaction starting immediately before the previous commits, the incremental refreshes can have the same data pulled twice. If you have unique constraints on the destination table, you'd get violation errors. Otherwise, you may have duplicate data in your destination tables. It is higly advised you compare your destination & source tables. The included validate_rowcount() function can assist you with this. Thanks to Brian Dunavant (https://github.com/bdunavant) for assistance in tracking down this issue and correcting my grammar.
+
+
 1.3.7
 -- Fixed bug in snapshot replication where it would not always catch every column change on the source.
 
