@@ -32,6 +32,7 @@ v_field                     text;
 v_insert_refresh_config     text;
 v_jobmon                    boolean;
 v_key_type                  text;
+v_link_exists               boolean;
 v_old_search_path           text;
 v_pk_name                   text[] := p_pk_name;
 v_pk_name_csv               text;
@@ -280,7 +281,7 @@ ELSIF v_table_exists = false THEN
 END IF;
 
 IF v_table_exists THEN
-    RAISE NOTICE 'Destination table % already exists. No data or indexes were pulled from source: %. Recommend making index on special column mimeo_source_deleted if it doesn''t have one', p_dest_table;
+    RAISE NOTICE 'Destination table % already exists. No data or indexes were pulled from source: %. Recommend making index on special column mimeo_source_deleted if it doesn''t have one', p_dest_table, p_src_table;
 END IF;
 
 RAISE NOTICE 'Analyzing destination table...';
@@ -295,25 +296,23 @@ RETURN;
 
 EXCEPTION
     WHEN OTHERS THEN
-        EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_dblink_schema||''',''false'')';
         -- Only cleanup remote objects if replication doesn't exist at all for source table
+        SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
         EXECUTE 'SELECT count(*) FROM @extschema@.refresh_config_logdel WHERE source_table = '||quote_literal(p_src_table) INTO v_exists;
-        IF dblink_get_connections() @> '{mimeo_logdel}' THEN
+        EXECUTE format('SELECT %I.dblink_get_connections() @> ARRAY[%L]', v_dblink_schema, v_dblink_name) INTO v_link_exists;
+        IF v_link_exists THEN
             IF v_exists = 0 THEN
-                PERFORM dblink_exec(v_dblink_name, format('DROP TRIGGER IF EXISTS %I ON %I.%I', v_source_queue_trigger, v_src_schema_name, v_src_table_name));
-                PERFORM dblink_exec(v_dblink_name, format('DROP TABLE IF EXISTS %I.%I', '@extschema@', v_source_queue_table));
-                PERFORM dblink_exec(v_dblink_name, format('DROP FUNCTION IF EXISTS %I.%I()', '@extschema@', v_source_queue_function));
+                EXECUTE format('%I.dblink_exec(%L, %L)', v_dblink_schema, v_dblink_name, format('DROP TRIGGER IF EXISTS %I ON %I.%I', v_source_queue_trigger, v_src_schema_name, v_src_table_name));
+                EXECUTE format('%I.dblink_exec(%L, %L)', v_dblink_schema, v_dblink_name, format('DROP TABLE IF EXISTS %I.%I', '@extschema@', v_source_queue_table));
+                EXECUTE format('%I.dblink_exec(%L, %L)', v_dblink_schema, v_dblink_name, format('DROP FUNCTION IF EXISTS %I.%I()', '@extschema@', v_source_queue_function));
             END IF;
-            PERFORM dblink_disconnect(v_dblink_name);
+            EXECUTE format('SELECT %I.dblink_disconnect(%L)', v_dblink_schema, v_dblink_name);
         END IF;
-        IF v_exists = 0 AND dblink_get_connections() @> '{mimeo_logdel}' THEN
-            EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
+        IF v_exists = 0 AND v_link_exists THEN
             RAISE EXCEPTION 'logdel_maker() failure. Cleaned up source table mimeo objects (queue table, function & trigger) if they existed. SQLERRM: %', SQLERRM;
         ELSE
-            EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
             RAISE EXCEPTION 'logdel_maker() failure. Unable to clean up source database objects (trigger/queue table) if they were made. SQLERRM: % ', SQLERRM;
         END IF;
-
 END
 $$;
 

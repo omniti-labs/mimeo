@@ -48,6 +48,32 @@ v_total                 bigint := 0;
 
 BEGIN
 
+-- Take advisory lock to prevent multiple calls to function overlapping
+v_adv_lock := @extschema@.concurrent_lock_check(p_destination, p_lock_wait);
+IF v_adv_lock = 'false' THEN
+    -- This code is known duplication of code below.
+    -- This is done in order to keep advisory lock as early in the code as possible to avoid race conditions and still log if issues are encountered.
+    v_job_name := 'Refresh Inserter: '||p_destination;
+    SELECT jobmon
+    INTO v_jobmon
+    FROM @extschema@.refresh_config_inserter
+    WHERE dest_table = p_destination;
+    SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
+    IF p_jobmon IS TRUE AND v_jobmon_schema IS NULL THEN
+        RAISE EXCEPTION 'p_jobmon parameter set to TRUE, but unable to determine if pg_jobmon extension is installed';
+    END IF;
+
+    IF v_jobmon THEN
+        EXECUTE format('SELECT %I.add_job(%L)', v_jobmon_schema, v_job_name) INTO v_job_id;
+        EXECUTE format('SELECT %I.add_step(%L, %L)', v_jobmon_schema, v_job_id, 'Obtaining advisory lock for job: '||v_job_name) INTO v_step_id;
+        EXECUTE format('SELECT %I.update_step(%L, %L, %L)', v_jobmon_schema, v_step_id, 'WARNING', 'Found concurrent job. Exiting gracefully');
+        EXECUTE format('SELECT %I.fail_job(%L, %L)', v_jobmon_schema, v_job_id, 2);
+    END IF;
+    PERFORM @extschema@.gdb(p_debug,'Obtaining advisory lock FAILED for job: '||v_job_name);
+    RAISE DEBUG 'Found concurrent job. Exiting gracefully';
+    RETURN;
+END IF;
+
 IF p_debug IS DISTINCT FROM true THEN
     PERFORM set_config( 'client_min_messages', 'warning', true );
 END IF;
@@ -95,7 +121,7 @@ INTO v_source_table
 FROM refresh_config_inserter_time
 WHERE dest_table = p_destination; 
 IF NOT FOUND THEN
-   RAISE EXCEPTION 'No configuration found for %',v_job_name; 
+    RAISE EXCEPTION 'Destination table given in argument (%) is not managed by mimeo.', p_destination; 
 END IF;  
 
 -- Allow override with parameter
@@ -105,21 +131,6 @@ SELECT schemaname, tablename
 INTO v_dest_schema_name, v_dest_table_name
 FROM pg_catalog.pg_tables
 WHERE schemaname||'.'||tablename = v_dest_table;
-
--- Take advisory lock to prevent multiple calls to function overlapping
-v_adv_lock := @extschema@.concurrent_lock_check(v_dest_table, p_lock_wait);
-IF v_adv_lock = 'false' THEN
-    IF v_jobmon THEN
-        v_job_id := add_job(v_job_name);
-        v_step_id := add_step(v_job_id,'Obtaining advisory lock for job: '||v_job_name);
-        PERFORM update_step(v_step_id, 'WARNING','Found concurrent job. Exiting gracefully');
-        PERFORM fail_job(v_job_id, 2);
-    END IF;
-    PERFORM gdb(p_debug,'Obtaining advisory lock FAILED for job: '||v_job_name);
-    RAISE NOTICE 'Found concurrent job. Exiting gracefully';
-    EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
-    RETURN;
-END IF;
 
 IF v_jobmon THEN
     v_job_id := add_job(v_job_name);
@@ -215,13 +226,13 @@ IF p_repull THEN
         EXECUTE v_delete_sql;
         GET DIAGNOSTICS v_rowcount = ROW_COUNT;
         IF v_jobmon THEN
-            PERFORM update_step(v_step_id, 'OK', v_rowcount || 'rows removed');
+            PERFORM update_step(v_step_id, 'OK', v_rowcount || ' rows removed');
         END IF;
     END IF;
 ELSE
     -- does < for upper boundary to keep missing data from happening on rare edge case where a newly inserted row outside the transaction batch
     -- has the exact same timestamp as the previous batch's max timestamp
-    v_remote_sql := format('SELECT '||v_cols||' FROM %I.%I', v_src_schema_name, v_src_table_name);
+    v_remote_sql := format('SELECT %s FROM %I.%I', v_cols, v_src_schema_name, v_src_table_name);
     IF v_condition IS NOT NULL THEN
         v_remote_sql := v_remote_sql || ' ' || v_condition || ' AND ';
     ELSE
@@ -250,17 +261,22 @@ END IF;
 v_rowcount := 0;
 v_total := 0;
 LOOP
-    v_fetch_sql := 'INSERT INTO mimeo_refresh_inserter_temp ('||v_cols||') 
-        SELECT '||v_cols||' FROM dblink_fetch('||quote_literal(v_dblink_name)||', ''mimeo_cursor'', 50000) AS ('||v_cols_n_types||')';
+    v_fetch_sql := format('INSERT INTO mimeo_refresh_inserter_temp(%s) SELECT %s FROM dblink_fetch(%L, %L, %s) AS (%s)'
+        , v_cols
+        , v_cols
+        , v_dblink_name
+        , 'mimeo_cursor'
+        , '50000'
+        , v_cols_n_types);
     EXECUTE v_fetch_sql;
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
     v_total := v_total + coalesce(v_rowcount, 0);
-    EXECUTE 'SELECT max('||quote_ident(v_control)||') FROM mimeo_refresh_inserter_temp' INTO v_last_fetched;
+    EXECUTE format('SELECT max(%I) FROM mimeo_refresh_inserter_temp', v_control) INTO v_last_fetched;
     IF v_limit IS NULL THEN -- insert into the real table in batches if no limit to avoid excessively large temp tables
-        EXECUTE format('INSERT INTO %I.%I ('||v_cols||') SELECT '||v_cols||' FROM mimeo_refresh_inserter_temp', v_dest_schema_name, v_dest_table_name);
+        EXECUTE format('INSERT INTO %I.%I (%s) SELECT %s FROM mimeo_refresh_inserter_temp', v_dest_schema_name, v_dest_table_name, v_cols, v_cols);
         TRUNCATE mimeo_refresh_inserter_temp;
     END IF;
-    EXIT WHEN v_rowcount = 0;        
+    EXIT WHEN v_rowcount = 0;
     PERFORM gdb(p_debug,'Fetching rows in batches: '||v_total||' done so far. Last fetched: '||v_last_fetched);
     IF v_jobmon THEN
         PERFORM update_step(v_step_id, 'PENDING', 'Fetching rows in batches: '||v_total||' done so far. Last fetched: '||v_last_fetched);
@@ -285,9 +301,9 @@ ELSE
             PERFORM update_step(v_step_id, 'WARNING','Row count fetched equal to or greater than limit set: '||v_limit||'. Recommend increasing batch limit if possible.');
         END IF;
         PERFORM gdb(p_debug, 'Row count fetched equal to or greater than limit set: '||v_limit||'. Recommend increasing batch limit if possible.'); 
-        EXECUTE 'SELECT max('||quote_ident(v_control)||') FROM mimeo_refresh_inserter_temp' INTO v_last_value;
+        EXECUTE format('SELECT max(%I) FROM mimeo_refresh_inserter_temp', v_control) INTO v_last_value;
         IF v_jobmon THEN
-            v_step_id := add_step(v_job_id, 'Removing high boundary rows from this batch to avoid missing data');       
+            v_step_id := add_step(v_job_id, 'Removing high boundary rows from this batch to avoid missing data');
         END IF;
         EXECUTE format('DELETE FROM mimeo_refresh_inserter_temp WHERE %I = %L', v_control, v_last_value);
         GET DIAGNOSTICS v_rowcount = ROW_COUNT;
@@ -316,7 +332,7 @@ ELSE
         IF v_jobmon THEN
             v_step_id := add_step(v_job_id,'Inserting new records into local table');
         END IF;
-        EXECUTE format('INSERT INTO %I.%I ('||v_cols||') SELECT '||v_cols||' FROM mimeo_refresh_inserter_temp', v_dest_schema_name, v_dest_table_name);
+        EXECUTE format('INSERT INTO %I.%I (%s) SELECT %s FROM mimeo_refresh_inserter_temp', v_dest_schema_name, v_dest_table_name, v_cols, v_cols);
         IF v_jobmon THEN
             PERFORM update_step(v_step_id, 'OK','Inserted '||v_total||' records');
         END IF;
@@ -359,28 +375,31 @@ EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false''
 
 EXCEPTION
     WHEN QUERY_CANCELED THEN
-        EXECUTE 'SELECT '||v_dblink_schema||'.dblink_get_connections() @> ARRAY['||quote_literal(v_dblink_name)||']' INTO v_link_exists;
+        SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
+        EXECUTE format('SELECT %I.dblink_get_connections() @> ARRAY[%L]', v_dblink_schema, v_dblink_name) INTO v_link_exists;
         IF v_link_exists THEN
-            EXECUTE 'SELECT '||v_dblink_schema||'.dblink_disconnect('||quote_literal(v_dblink_name)||')';
+            EXECUTE format('SELECT %I.dblink_disconnect(%L)', v_dblink_schema, v_dblink_name);
         END IF;
-        RAISE EXCEPTION '%', SQLERRM;    
+        RAISE EXCEPTION '%', SQLERRM;
     WHEN OTHERS THEN
-        EXECUTE 'SELECT '||v_dblink_schema||'.dblink_get_connections() @> ARRAY['||quote_literal(v_dblink_name)||']' INTO v_link_exists;
+        SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
+        SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
+        EXECUTE format('SELECT %I.dblink_get_connections() @> ARRAY[%L]', v_dblink_schema, v_dblink_name) INTO v_link_exists;
         IF v_link_exists THEN
-            EXECUTE 'SELECT '||v_dblink_schema||'.dblink_disconnect('||quote_literal(v_dblink_name)||')';
+            EXECUTE format('SELECT %I.dblink_disconnect(%L)', v_dblink_schema, v_dblink_name);
         END IF;
-        IF v_jobmon THEN
+        IF v_jobmon_schema IS NOT NULL THEN
             IF v_job_id IS NULL THEN
-                EXECUTE 'SELECT '||v_jobmon_schema||'.add_job(''Refresh Inserter: '||p_destination||''')' INTO v_job_id;
-                EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||', ''EXCEPTION before job logging started'')' INTO v_step_id;
+                EXECUTE format('SELECT %I.add_job(%L)', v_jobmon_schema, 'Refresh Inserter: '||p_destination) INTO v_job_id;
+                EXECUTE format('SELECT %I.add_step(%L, %L)', v_jobmon_schema, v_job_id, 'EXCEPTION before job logging started') INTO v_step_id;
             END IF;
             IF v_step_id IS NULL THEN
-                EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||', ''EXCEPTION before first step logged'')' INTO v_step_id;
+                EXECUTE format('SELECT %I.add_step(%L, %L)', v_jobmon_schema, v_job_id, 'EXCEPTION before first step logged') INTO v_step_id;
             END IF;
-                  EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_step_id||', ''CRITICAL'', ''ERROR: '||COALESCE(SQLERRM,'unknown')||''')';
-            EXECUTE 'SELECT '||v_jobmon_schema||'.fail_job('||v_job_id||')';
+                  EXECUTE format('SELECT %I.update_step(%L, %L, %L)', v_jobmon_schema, v_step_id, 'CRITICAL', 'ERROR: '||COALESCE(SQLERRM,'unknown'));
+            EXECUTE format('SELECT %I.fail_job(%L)', v_jobmon_schema, v_job_id);
         END IF;
-        RAISE EXCEPTION '%', SQLERRM;    
+        RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
 

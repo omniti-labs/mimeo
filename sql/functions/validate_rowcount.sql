@@ -92,13 +92,13 @@ IF v_control IS NOT NULL THEN
             v_remote_min_sql := 'SELECT min_source FROM dblink('||quote_literal(v_dblink_name)||','||quote_literal(v_remote_min_sql)||') t (min_source timestamptz)';
             PERFORM gdb(p_debug, 'v_remote_min_sql: '||v_remote_min_sql);
             EXECUTE v_remote_min_sql INTO v_source_min_time;
-            v_local_sql := v_local_sql || ' WHERE '||v_control|| ' >= '||quote_literal(v_source_min_time);
+            v_local_sql := v_local_sql || ' WHERE '||v_control|| ' >= '||quote_literal(COALESCE(v_source_min_time, '-infinity'));
             min_source_value := v_source_min_time::text;
         ELSIF v_type = 'inserter_serial' OR v_type = 'updater_serial' THEN
             v_remote_min_sql := 'SELECT min_source FROM dblink('||quote_literal(v_dblink_name)||','||quote_literal(v_remote_min_sql)||') t (min_source bigint)';
             PERFORM gdb(p_debug, 'v_remote_min_sql: '||v_remote_min_sql);
             EXECUTE v_remote_min_sql INTO v_source_min_serial;
-            v_local_sql := v_local_sql || ' WHERE '||v_control|| ' >= '||quote_literal(v_source_min_serial);
+            v_local_sql := v_local_sql || ' WHERE '||v_control|| ' >= '||quote_literal(COALESCE(v_source_min_serial, 0));
             min_source_value := v_source_min_serial::text;
         END IF;
     END IF;
@@ -111,14 +111,14 @@ IF v_control IS NOT NULL THEN
 
     IF v_type = 'inserter_time' OR v_type = 'updater_time' THEN
         EXECUTE 'SELECT max('||quote_ident(v_control)||') FROM '||v_dest_table INTO v_max_dest_time;
-        v_remote_sql := v_remote_sql ||v_control||' <= '||quote_literal(v_max_dest_time);
+        v_remote_sql := v_remote_sql ||v_control||' <= '||quote_literal(COALESCE(v_max_dest_time, 'infinity'));
         max_source_value := v_max_dest_time::text;
     ELSIF v_type = 'inserter_serial' OR v_type = 'updater_serial' THEN
         EXECUTE 'SELECT max('||quote_ident(v_control)||') FROM '||v_dest_table INTO v_max_dest_serial;
-        v_remote_sql := v_remote_sql ||v_control||' <= '||quote_literal(v_max_dest_serial);
+        v_remote_sql := v_remote_sql ||v_control||' <= '||quote_literal(COALESCE(v_max_dest_serial, 0));
         max_source_value := v_max_dest_serial::text;
     END IF;
-    
+
 ELSIF v_condition IS NOT NULL THEN
     v_remote_sql := v_remote_sql ||' '|| v_condition;
 END IF;

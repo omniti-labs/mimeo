@@ -1,3 +1,13 @@
+1.3.9
+-- Moved advisory lock check as early as possibly in all refresh functions. Concurrent refresh runs on the same destination table that happened within 0-5 seconds of each other could possibly encounter a race condition. This is only really an issue with incremental inserter replication where the the race condition caused the same time period/id value block to be obtained for two different jobs. This could possibly have caused duplicate data if there is no primary/unique key on the destination. If there is a unique key, no duplication occurred and a duplicate key error was raised. Chance for this is still there, but significantly reduced. Extremely difficult to remove 100% risk at this time (further work to run_refresh.py to reduce risk is under way), so advise that you space refresh runs out as much as you are able to.
+    -- IMPORTANT NOTE: Please run the row count check function on any inserter replication tables to check data integrity.
+-- Fixed exception syntax error in logdel_maker() function (Github Pull Request #13).
+-- Fixed bug in exception block that would not clear dblink connection if logdel_maker() function was cancelled mid-run (will fix this bug in other maker functions in future patch).
+-- Fixed bug in check_source_columns() that would break if any custom types were used (atttypid can be different on different clusters).
+-- Fix validate_rowcount() to properly handle empty tables.
+-- Fixed some pgtap tests that had hardcoded the mimeo schema outside of the search_path at the top. Thanks to Myon on #postgresql for the feedback.
+
+
 1.3.8
 -- Turned on autocommit in run_refresh.py python script. This avoids a race condition where if it is used in a transaction, with a second transaction starting immediately before the previous commits, the incremental refreshes can have the same data pulled twice. If you have unique constraints on the destination table, you'd get violation errors. Otherwise, you may have duplicate data in your destination tables. It is higly advised you compare your destination & source tables. The included validate_rowcount() function can assist you with this. Thanks to Brian Dunavant (https://github.com/bdunavant) for assistance in tracking down this issue and correcting my grammar.
 

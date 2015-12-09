@@ -18,11 +18,11 @@ SELECT is(dblink_get_connections() @> '{mimeo_owner}', 't', 'Remote database con
 
 SELECT dblink_exec('mimeo_test', 'CREATE TABLE mimeo_source.brand_new_table(id serial, stuff text)');
 
-SELECT results_eq('SELECT schemaname, tablename FROM mimeo.check_missing_source_tables()'
+SELECT results_eq('SELECT schemaname, tablename FROM check_missing_source_tables()'
     , $$VALUES ('mimeo_source', 'brand_new_table') $$
     , 'Ensure check_missing_source_tables() returns table on source that doesn''t exist on destination');
 
-SELECT is_empty('SELECT * FROM mimeo.check_source_columns()', 'Check that check_source_columns returns nothing before changes on source');
+SELECT is_empty('SELECT * FROM check_source_columns()', 'Check that check_source_columns returns nothing before changes on source');
 
 SELECT dblink_exec('mimeo_test', 'DROP VIEW mimeo_source.snap_test_source_view');
 SELECT dblink_exec('mimeo_test', 'DROP VIEW mimeo_source.inserter_test_source_view');
@@ -40,7 +40,7 @@ SELECT dblink_exec('mimeo_owner', 'CREATE VIEW mimeo_source.updater_test_source_
 -- Ensure views have permissions needed for mimeo_test role to call refreshes
 SELECT dblink_exec('mimeo_owner', 'GRANT SELECT, TRIGGER ON ALL TABLES IN SCHEMA mimeo_source TO mimeo_test');
 
-SELECT results_eq('SELECT dest_schemaname, dest_tablename, src_schemaname, src_tablename, missing_column_name, missing_column_type FROM mimeo.check_source_columns() ORDER BY 1,2,3,4,5,6'
+SELECT results_eq('SELECT dest_schemaname, dest_tablename, src_schemaname, src_tablename, missing_column_name, missing_column_type FROM check_source_columns() ORDER BY 1,2,3,4,5,6'
     , $$VALUES ('mimeo_dest','dml_test_dest_multi','mimeo_source','dml_test_source','col4','inet')
         , ('mimeo_dest','inserter_test_dest','mimeo_source','inserter_test_source','col4','text')
         , ('mimeo_dest','inserter_test_dest_condition','mimeo_source','inserter_test_source','col4','text')
@@ -83,7 +83,7 @@ SELECT refresh_snap('mimeo_source.snap_test_source_empty');
 SELECT refresh_snap('mimeo_dest.snap_test_dest_change_col');
 SELECT refresh_snap('mimeo_source.snap_test_source_view');
 
-SELECT results_eq('SELECT dest_schemaname, dest_tablename, src_schemaname, src_tablename, missing_column_name, missing_column_type FROM mimeo.check_source_columns() ORDER BY 1,2,3,4,5,6'
+SELECT results_eq('SELECT dest_schemaname, dest_tablename, src_schemaname, src_tablename, missing_column_name, missing_column_type FROM check_source_columns() ORDER BY 1,2,3,4,5,6'
     , $$VALUES ('mimeo_dest','dml_test_dest_multi','mimeo_source','dml_test_source','col4','inet')
         , ('mimeo_dest','inserter_test_dest','mimeo_source','inserter_test_source','col4','text')
         , ('mimeo_dest','inserter_test_dest_condition','mimeo_source','inserter_test_source','col4','text')

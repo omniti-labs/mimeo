@@ -37,8 +37,8 @@ v_pk_name_type_csv      text := '';
 v_pk_name               text[];
 v_pk_type               text[];
 v_pk_where              text := '';
-v_q_schema_name     text;
-v_q_table_name      text;
+v_q_schema_name         text;
+v_q_table_name          text;
 v_remote_f_sql          text;
 v_remote_q_sql          text;
 v_rowcount              bigint := 0; 
@@ -49,10 +49,36 @@ v_step_id               int;
 v_total                 bigint := 0;
 v_trigger_delete        text; 
 v_trigger_update        text;
-v_delete_remote_q     text;
+v_delete_remote_q       text;
 v_with_update           text;
 
 BEGIN
+
+-- Take advisory lock to prevent multiple calls to function overlapping
+v_adv_lock := @extschema@.concurrent_lock_check(p_destination, p_lock_wait);
+IF v_adv_lock = 'false' THEN
+    -- This code is known duplication of code found below
+    -- This is done in order to keep advisory lock as early in the code as possible to avoid race conditions and still log if issues are encountered.
+    v_job_name := 'Refresh DML: '||p_destination;
+    SELECT jobmon
+    INTO v_jobmon
+    FROM @extschema@.refresh_config_dml
+    WHERE dest_table = p_destination;
+    SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
+    IF p_jobmon IS TRUE AND v_jobmon_schema IS NULL THEN
+        RAISE EXCEPTION 'p_jobmon parameter set to TRUE, but unable to determine if pg_jobmon extension is installed';
+    END IF;
+
+    IF v_jobmon THEN
+        EXECUTE format('SELECT %I.add_job(%L)', v_jobmon_schema, v_job_name) INTO v_job_id;
+        EXECUTE format('SELECT %I.add_step(%L, %L)', v_jobmon_schema, v_job_id, 'Obtaining advisory lock for job: '||v_job_name) INTO v_step_id;
+        EXECUTE format('SELECT %I.update_step(%L, %L, %L)', v_jobmon_schema, v_step_id, 'WARNING', 'Found concurrent job. Exiting gracefully');
+        EXECUTE format('SELECT %I.fail_job(%L, %L)', v_jobmon_schema, v_job_id, 2);
+    END IF;
+    PERFORM @extschema@.gdb(p_debug,'Obtaining advisory lock FAILED for job: '||v_job_name);
+    RAISE DEBUG 'Found concurrent job. Exiting gracefully';
+    RETURN;
+END IF;
 
 IF p_debug IS DISTINCT FROM true THEN
     PERFORM set_config( 'client_min_messages', 'warning', true );
@@ -94,7 +120,7 @@ INTO v_source_table
 FROM refresh_config_dml 
 WHERE dest_table = p_destination; 
 IF NOT FOUND THEN
-   RAISE EXCEPTION 'No configuration found for %',v_job_name; 
+    RAISE EXCEPTION 'Destination table given in argument (%) is not managed by mimeo.', p_destination; 
 END IF;
 
 -- Allow override with parameter
@@ -107,21 +133,6 @@ WHERE schemaname||'.'||tablename = v_dest_table;
 
 IF v_dest_table_name IS NULL THEN
     RAISE EXCEPTION 'Destination table is missing (%)', v_dest_table;
-END IF;
-
--- Take advisory lock to prevent multiple calls to function overlapping
-v_adv_lock := @extschema@.concurrent_lock_check(v_dest_table, p_lock_wait);
-IF v_adv_lock = 'false' THEN
-    IF v_jobmon THEN
-        v_job_id := add_job(v_job_name);
-        v_step_id := add_step(v_job_id,'Obtaining advisory lock for job: '||v_job_name);
-        PERFORM update_step(v_step_id, 'WARNING','Found concurrent job. Exiting gracefully');
-        PERFORM fail_job(v_job_id, 2);
-    END IF;
-    PERFORM gdb(p_debug,'Obtaining advisory lock FAILED for job: '||v_job_name);
-    RAISE NOTICE 'Found concurrent job. Exiting gracefully';
-    EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
-    RETURN;
 END IF;
 
 IF v_jobmon THEN
@@ -194,15 +205,22 @@ IF v_jobmon THEN
 END IF;
 v_with_update := format('
         WITH a AS (
-            SELECT '||v_pk_name_csv||' FROM %I.%I ORDER BY '||v_pk_name_csv||' LIMIT '||COALESCE(v_limit::text, 'ALL')||')
+            SELECT %s FROM %I.%I ORDER BY %s LIMIT %s)
         UPDATE %I.%I b SET processed = true 
         FROM a 
-        WHERE '||v_pk_where
-    , v_q_schema_name, v_q_table_name, v_q_schema_name, v_q_table_name);
+        WHERE %s'
+    , v_pk_name_csv
+    , v_q_schema_name
+    , v_q_table_name
+    , v_pk_name_csv
+    , COALESCE(v_limit::text, 'ALL')
+    , v_q_schema_name
+    , v_q_table_name
+    , v_pk_where);
 PERFORM gdb(p_debug, v_with_update);
 v_trigger_update := 'SELECT dblink_exec('||quote_literal(v_dblink_name)||','|| quote_literal(v_with_update)||')';
 PERFORM gdb(p_debug,v_trigger_update);
-EXECUTE v_trigger_update INTO v_exec_status;    
+EXECUTE v_trigger_update INTO v_exec_status;
 IF v_jobmon THEN
     PERFORM update_step(v_step_id, 'OK','Result was '||v_exec_status);
 END IF;
@@ -222,22 +240,27 @@ IF p_repull THEN
         PERFORM update_step(v_step_id, 'OK','Done');
     END IF;
     -- Define cursor query
-    v_remote_f_sql := format('SELECT '||v_cols||' FROM %I.%I', v_src_schema_name, v_src_table_name);
+    v_remote_f_sql := format('SELECT %s FROM %I.%I', v_cols, v_src_schema_name, v_src_table_name);
     IF v_condition IS NOT NULL THEN
         v_remote_f_sql := v_remote_f_sql || ' ' || v_condition;
     END IF;
 ELSE
-    EXECUTE 'CREATE TEMP TABLE refresh_dml_queue ('||v_pk_name_type_csv||', PRIMARY KEY ('||v_pk_name_csv||'))';
+    EXECUTE format('CREATE TEMP TABLE refresh_dml_queue (%s, PRIMARY KEY (%s))', v_pk_name_type_csv, v_pk_name_csv);
     -- Copy queue locally for use in removing updated/deleted rows
-    v_remote_q_sql := format('SELECT DISTINCT '||v_pk_name_csv||' FROM %I.%I WHERE processed = true', v_q_schema_name, v_q_table_name);
+    v_remote_q_sql := format('SELECT DISTINCT %s FROM %I.%I WHERE processed = true', v_pk_name_csv, v_q_schema_name, v_q_table_name);
     PERFORM dblink_open(v_dblink_name, 'mimeo_cursor', v_remote_q_sql);
     IF v_jobmon THEN
         v_step_id := add_step(v_job_id, 'Creating local queue temp table');
     END IF;
     v_rowcount := 0;
     LOOP
-        v_fetch_sql := 'INSERT INTO refresh_dml_queue ('||v_pk_name_csv||') 
-            SELECT '||v_pk_name_csv||' FROM dblink_fetch('||quote_literal(v_dblink_name)||', ''mimeo_cursor'', 50000) AS ('||v_pk_name_type_csv||')';
+        v_fetch_sql := format('INSERT INTO refresh_dml_queue (%s) SELECT %s FROM dblink_fetch(%L, %L, %s) AS (%s)'
+                , v_pk_name_csv
+                , v_pk_name_csv
+                , v_dblink_name
+                , 'mimeo_cursor'
+                , '50000'
+                , v_pk_name_type_csv);
         EXECUTE v_fetch_sql;
         GET DIAGNOSTICS v_rowcount = ROW_COUNT;
         EXIT WHEN v_rowcount = 0;
@@ -248,7 +271,7 @@ ELSE
         END IF;
     END LOOP;
     PERFORM dblink_close(v_dblink_name, 'mimeo_cursor');
-    EXECUTE 'CREATE INDEX ON refresh_dml_queue ('||v_pk_name_csv||')';
+    EXECUTE format('CREATE INDEX ON refresh_dml_queue (%s)', v_pk_name_csv);
     ANALYZE refresh_dml_queue;
     IF v_jobmon THEN
         PERFORM update_step(v_step_id, 'OK','Number of rows inserted: '||v_total);
@@ -258,7 +281,7 @@ ELSE
     IF v_jobmon THEN
         v_step_id := add_step(v_job_id,'Deleting records from local table');
     END IF;
-    v_delete_sql := format('DELETE FROM %I.%I a USING refresh_dml_queue b WHERE '||v_pk_where, v_dest_schema_name, v_dest_table_name);
+    v_delete_sql := format('DELETE FROM %I.%I a USING refresh_dml_queue b WHERE %s', v_dest_schema_name, v_dest_table_name, v_pk_where);
     PERFORM gdb(p_debug,v_delete_sql);
     EXECUTE v_delete_sql; 
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
@@ -267,7 +290,7 @@ ELSE
         PERFORM update_step(v_step_id, 'OK','Removed '||v_rowcount||' records');
     END IF;
     -- Define cursor query
-    v_remote_f_sql := format('SELECT '||v_cols||' FROM %I.%I JOIN ('||v_remote_q_sql||') x USING ('||v_pk_name_csv||')', v_src_schema_name, v_src_table_name);
+    v_remote_f_sql := format('SELECT %s FROM %I.%I JOIN (%s) x USING (%s)', v_cols, v_src_schema_name, v_src_table_name, v_remote_q_sql, v_pk_name_csv);
     IF v_condition IS NOT NULL THEN
         v_remote_f_sql := v_remote_f_sql || ' ' || v_condition;
     END IF;
@@ -278,16 +301,21 @@ PERFORM dblink_open(v_dblink_name, 'mimeo_cursor', v_remote_f_sql);
 IF v_jobmon THEN
     v_step_id := add_step(v_job_id, 'Inserting new records into local table');
 END IF;
-EXECUTE 'CREATE TEMP TABLE refresh_dml_full ('||v_cols_n_types||')';
+EXECUTE format('CREATE TEMP TABLE refresh_dml_full (%s)', v_cols_n_types);
 v_rowcount := 0;
 v_total := 0;
 LOOP
-    v_fetch_sql := 'INSERT INTO refresh_dml_full ('||v_cols||') 
-        SELECT '||v_cols||' FROM dblink_fetch('||quote_literal(v_dblink_name)||', ''mimeo_cursor'', 50000) AS ('||v_cols_n_types||')';
+    v_fetch_sql := format('INSERT INTO refresh_dml_full (%s) SELECT %s FROM dblink_fetch(%L, %L, %s) AS (%s)'
+            , v_cols
+            , v_cols
+            , v_dblink_name
+            , 'mimeo_cursor'
+            , '50000'
+            , v_cols_n_types);
     EXECUTE v_fetch_sql;
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
     v_total := v_total + coalesce(v_rowcount, 0);
-    EXECUTE format('INSERT INTO %I.%I ('||v_cols||') SELECT '||v_cols||' FROM refresh_dml_full', v_dest_schema_name, v_dest_table_name);
+    EXECUTE format('INSERT INTO %I.%I (%s) SELECT %s FROM refresh_dml_full', v_dest_schema_name, v_dest_table_name, v_cols, v_cols);
     EXECUTE 'TRUNCATE refresh_dml_full';
     EXIT WHEN v_rowcount = 0;
     PERFORM gdb(p_debug,'Fetching rows in batches: '||v_total||' done so far.');
@@ -346,26 +374,29 @@ EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false''
 
 EXCEPTION
     WHEN QUERY_CANCELED THEN
-        EXECUTE 'SELECT '||v_dblink_schema||'.dblink_get_connections() @> ARRAY['||quote_literal(v_dblink_name)||']' INTO v_link_exists;
+        SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
+        EXECUTE format('SELECT %I.dblink_get_connections() @> ARRAY[%L]', v_dblink_schema, v_dblink_name) INTO v_link_exists;
         IF v_link_exists THEN
-            EXECUTE 'SELECT '||v_dblink_schema||'.dblink_disconnect('||quote_literal(v_dblink_name)||')';
+            EXECUTE format('SELECT %I.dblink_disconnect(%L)', v_dblink_schema, v_dblink_name);
         END IF;
         RAISE EXCEPTION '%', SQLERRM;  
     WHEN OTHERS THEN
-        EXECUTE 'SELECT '||v_dblink_schema||'.dblink_get_connections() @> ARRAY['||quote_literal(v_dblink_name)||']' INTO v_link_exists;
+        SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
+        SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
+        EXECUTE format('SELECT %I.dblink_get_connections() @> ARRAY[%L]', v_dblink_schema, v_dblink_name) INTO v_link_exists;
         IF v_link_exists THEN
-            EXECUTE 'SELECT '||v_dblink_schema||'.dblink_disconnect('||quote_literal(v_dblink_name)||')';
+            EXECUTE format('SELECT %I.dblink_disconnect(%L)', v_dblink_schema, v_dblink_name);
         END IF;
-        IF v_jobmon THEN
+        IF v_jobmon_schema IS NOT NULL THEN
             IF v_job_id IS NULL THEN
-                EXECUTE 'SELECT '||v_jobmon_schema||'.add_job(''Refresh DML: '||p_destination||''')' INTO v_job_id;
-                EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||', ''EXCEPTION before job logging started'')' INTO v_step_id;
+                EXECUTE format('SELECT %I.add_job(%L)', v_jobmon_schema, 'Refresh DML: '||p_destination) INTO v_job_id;
+                EXECUTE format('SELECT %I.add_step(%L, %L)', v_jobmon_schema, v_job_id, 'EXCEPTION before job logging started') INTO v_step_id;
             END IF;
             IF v_step_id IS NULL THEN
-                EXECUTE 'SELECT '||v_jobmon_schema||'.add_step('||v_job_id||', ''EXCEPTION before first step logged'')' INTO v_step_id;
+                EXECUTE format('SELECT %I.add_step(%L, %L)', v_jobmon_schema, v_job_id, 'EXCEPTION before first step logged') INTO v_step_id;
             END IF;
-            EXECUTE 'SELECT '||v_jobmon_schema||'.update_step('||v_step_id||', ''CRITICAL'', ''ERROR: '||coalesce(SQLERRM,'unknown')||''')';
-            EXECUTE 'SELECT '||v_jobmon_schema||'.fail_job('||v_job_id||')';
+            EXECUTE format('SELECT %I.update_step(%L, %L, %L)', v_jobmon_schema, v_step_id, 'CRITICAL', 'ERROR: '||COALESCE(SQLERRM,'unknown'));
+            EXECUTE format('SELECT %I.fail_job(%L)', v_jobmon_schema, v_job_id);
         END IF;
         RAISE EXCEPTION '%', SQLERRM;
 

@@ -77,7 +77,7 @@ LOOP
                     , v_dblink_schema, 'mimeo_col_check', v_sql)
                 INTO v_src_schema_name, v_src_table_name;
 
-        v_sql := format('SELECT a.attname::text, a.atttypid, a.atttypmod, n.nspname AS schemaname, c.relname AS tablename
+        v_sql := format('SELECT a.attname::text, format_type(a.atttypid, a.atttypmod) AS formatted_type, n.nspname AS schemaname, c.relname AS tablename
                     FROM pg_catalog.pg_attribute a
                     JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
                     JOIN pg_catalog.pg_namespace n ON c.relnamespace = n.oid
@@ -89,9 +89,9 @@ LOOP
                 , v_src_schema_name, v_src_table_name);
 
         FOR v_row_col IN EXECUTE 
-            format('SELECT attname, atttypid, atttypmod, schemaname, tablename 
+            format('SELECT attname, formatted_type, schemaname, tablename 
             FROM %I.dblink(%L, %L) 
-            AS (attname text, atttypid oid, atttypmod int, schemaname text, tablename text)'
+            AS (attname text, formatted_type text, schemaname text, tablename text)'
             , v_dblink_schema, 'mimeo_col_check', v_sql)
         LOOP
             IF v_row_col.attname <> ANY (v_row_table.filter) THEN
@@ -113,15 +113,14 @@ LOOP
             AND attnum > 0
             AND attisdropped = false
             AND attname = v_row_col.attname
-            AND atttypid = v_row_col.atttypid
-            AND atttypmod = v_row_col.atttypmod;
+            AND format_type(atttypid, atttypmod) = v_row_col.formatted_type;
 
             -- if column doesn't exist, means it's missing on destination.
             IF v_exists < 1 THEN
                 src_schemaname := v_row_col.schemaname;
                 src_tablename := v_row_col.tablename;
                 missing_column_name := v_row_col.attname;
-                missing_column_type := format_type(v_row_col.atttypid, v_row_col.atttypmod)::text;
+                missing_column_type := v_row_col.formatted_type;
                 data_source := v_row_dblink.data_source_id;
                 RETURN NEXT;
             ELSE

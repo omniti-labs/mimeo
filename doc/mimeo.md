@@ -244,8 +244,8 @@ Extension Objects
  * This function can be used to compare the row count of the source and destination tables of a replication set.
  * Always returns the row counts of the source and destination and a boolean that says whether they match.
  * If checking an incremental replication job, will return the min & max values for the boundries of what rows were counted.
- * For snapshot, table, inserter & updater replication, the rowcounts returned should match exactly.
- * For dml & logdel replication, the row counts may not match due to the nature of the replicaton method.
+ * For snapshot, table, inserter replication, the rowcounts returned should match exactly.
+ * For updater, dml & logdel replication, the row counts may not match due to the nature of the replicaton method.
  * Note that replication will be stopped on the designated table when this function is run with any replication method other than inserter/updater to try and ensure an accurate count.
  * p_src_incr_less, an optional argument, can be set when the source table is known to have fewer rows than the destination. This is only really useful with incremental replication (hence "incr" in the name) and when you are purging the source but keeping the data on the destination.
 

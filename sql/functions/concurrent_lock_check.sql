@@ -11,7 +11,7 @@ BEGIN
 
 SELECT dest_table INTO v_dest_table FROM @extschema@.refresh_config WHERE dest_table = p_dest_table;
 IF v_dest_table IS NULL THEN
-    RAISE EXCEPTION 'Destination table given in argument (%) is not managed by mimeo.', p_dest_table;
+    RAISE EXCEPTION 'Destination table given in argument (%) is not managed by mimeo', p_dest_table;
 END IF;
 
 v_adv_lock := pg_try_advisory_xact_lock(hashtext('mimeo advisory lock'), hashtext(v_dest_table));
