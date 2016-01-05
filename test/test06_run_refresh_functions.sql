@@ -127,6 +127,27 @@ SELECT refresh_logdel('mimeo_source.logdel_test_source_empty');
 SELECT diag('Running refresh for: mimeo_source.LogDel-Test-Source');
 SELECT refresh_logdel('mimeo_source.LogDel-Test-Source');
 
+-- Run snap refreshes again with check_stats option to just make sure the config option works. No real way to test that it actually worked
+SELECT diag('Running check_stat=false refresh for: mimeo_source.snap_test_source');
+SELECT refresh_snap('mimeo_source.snap_test_source', p_check_stats := false);
+SELECT diag('Running check_stat=false refresh for: mimeo_dest.snap_test_dest');
+SELECT refresh_snap('mimeo_dest.snap_test_dest', p_check_stats := false);
+SELECT diag('Running check_stat=false refresh for: mimeo_dest.snap_test_dest_nodata');
+SELECT refresh_snap('mimeo_dest.snap_test_dest_nodata', p_jobmon := false, p_check_stats := false);
+SELECT diag('Running check_stat=false refresh for: mimeo_dest.snap_test_dest_filter');
+SELECT refresh_snap('mimeo_dest.snap_test_dest_filter', p_check_stats := false);
+SELECT diag('Running check_stat=false refresh for: mimeo_dest.snap_test_dest_condition');
+SELECT refresh_snap('mimeo_dest.snap_test_dest_condition', p_check_stats := false);
+SELECT diag('Running check_stat=false refresh for: mimeo_source.snap_test_source_empty');
+SELECT refresh_snap('mimeo_source.snap_test_source_empty', p_check_stats := false);
+SELECT diag('Running check_stat=false refresh for: mimeo_dest.snap_test_dest_change_col');
+SELECT refresh_snap('mimeo_dest.snap_test_dest_change_col', p_check_stats := false);
+SELECT diag('Running check_stat=false refresh for: mimeo_source.Snap-test-Source');
+SELECT refresh_snap('mimeo_source.Snap-test-Source', p_check_stats := false);
+SELECT diag('Running check_stat=false refresh for: mimeo_source.snap_test_source_view');
+SELECT refresh_snap('mimeo_source.snap_test_source_view', p_check_stats := false);
+
 SELECT pass('Completed refresh function runs');
+SELECT pg_sleep(5);
 
 SELECT * FROM finish();

@@ -17,6 +17,7 @@ ALTER SEQUENCE dblink_mapping_mimeo_data_source_id_seq OWNED BY dblink_mapping_m
 
 CREATE TABLE refresh_config (
     dest_table text NOT NULL,
+    source_table text NOT NULL,
     type text NOT NULL,
     dblink integer NOT NULL,
     last_run timestamp with time zone,
@@ -24,7 +25,7 @@ CREATE TABLE refresh_config (
     condition text,
     period interval,
     batch_limit int,
-    jobmon boolean DEFAULT false
+    jobmon boolean DEFAULT false NOT NULL
 );
 SELECT pg_catalog.pg_extension_config_dump('refresh_config', '');
 CREATE RULE refresh_config_parent_nodata AS ON INSERT TO @extschema@.refresh_config DO INSTEAD NOTHING;
@@ -33,7 +34,7 @@ CREATE TABLE refresh_config_snap (LIKE @extschema@.refresh_config INCLUDING ALL)
 SELECT pg_catalog.pg_extension_config_dump('refresh_config_snap', '');
 ALTER TABLE @extschema@.refresh_config_snap ADD CONSTRAINT refresh_config_snap_dblink_fkey FOREIGN KEY (dblink) REFERENCES @extschema@.dblink_mapping_mimeo(data_source_id);
 ALTER TABLE @extschema@.refresh_config_snap ADD CONSTRAINT refresh_config_snap_dest_table_pkey PRIMARY KEY (dest_table);
-ALTER TABLE @extschema@.refresh_config_snap ADD COLUMN source_table text NOT NULL;
+ALTER TABLE @extschema@.refresh_config_snap ADD COLUMN check_stats boolean DEFAULT true NOT NULL;
 ALTER TABLE @extschema@.refresh_config_snap ADD COLUMN n_tup_ins bigint;
 ALTER TABLE @extschema@.refresh_config_snap ADD COLUMN n_tup_upd bigint;
 ALTER TABLE @extschema@.refresh_config_snap ADD COLUMN n_tup_del bigint;
@@ -42,7 +43,6 @@ ALTER TABLE @extschema@.refresh_config_snap ALTER COLUMN type SET DEFAULT 'snap'
 ALTER TABLE @extschema@.refresh_config_snap ADD CONSTRAINT refresh_config_snap_type_check CHECK (type = 'snap');
 
 CREATE TABLE refresh_config_inserter (LIKE @extschema@.refresh_config INCLUDING ALL) INHERITS (@extschema@.refresh_config);
-ALTER TABLE @extschema@.refresh_config_inserter ADD COLUMN source_table text NOT NULL;
 ALTER TABLE @extschema@.refresh_config_inserter ADD COLUMN control text NOT NULL;
 CREATE RULE refresh_config_inserter_parent_nodata AS ON INSERT TO @extschema@.refresh_config_inserter DO INSTEAD NOTHING;
 
@@ -69,7 +69,6 @@ ALTER TABLE @extschema@.refresh_config_inserter_serial ADD CONSTRAINT refresh_co
 
 CREATE TABLE refresh_config_updater (LIKE @extschema@.refresh_config INCLUDING ALL) INHERITS (@extschema@.refresh_config);
 SELECT pg_catalog.pg_extension_config_dump('refresh_config_updater', '');
-ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN source_table text NOT NULL;
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN control text NOT NULL;
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN pk_name text[] NOT NULL; 
 ALTER TABLE @extschema@.refresh_config_updater ADD COLUMN pk_type text[] NOT NULL;
@@ -100,7 +99,6 @@ CREATE TABLE refresh_config_dml (LIKE @extschema@.refresh_config INCLUDING ALL) 
 SELECT pg_catalog.pg_extension_config_dump('refresh_config_dml', '');
 ALTER TABLE @extschema@.refresh_config_dml ADD CONSTRAINT refresh_config_dml_dblink_fkey FOREIGN KEY (dblink) REFERENCES @extschema@.dblink_mapping_mimeo(data_source_id);
 ALTER TABLE @extschema@.refresh_config_dml ADD CONSTRAINT refresh_config_dml_dest_table_pkey PRIMARY KEY (dest_table);
-ALTER TABLE @extschema@.refresh_config_dml ADD COLUMN source_table text NOT NULL;
 ALTER TABLE @extschema@.refresh_config_dml ADD COLUMN control text NOT NULL;  
 ALTER TABLE @extschema@.refresh_config_dml ADD COLUMN pk_name text[] NOT NULL; 
 ALTER TABLE @extschema@.refresh_config_dml ADD COLUMN pk_type text[] NOT NULL;
@@ -112,7 +110,6 @@ CREATE TABLE refresh_config_logdel (LIKE @extschema@.refresh_config INCLUDING AL
 SELECT pg_catalog.pg_extension_config_dump('refresh_config_logdel', '');
 ALTER TABLE @extschema@.refresh_config_logdel ADD CONSTRAINT refresh_config_logdel_dblink_fkey FOREIGN KEY (dblink) REFERENCES @extschema@.dblink_mapping_mimeo(data_source_id);
 ALTER TABLE @extschema@.refresh_config_logdel ADD CONSTRAINT refresh_config_logdel_dest_table_pkey PRIMARY KEY (dest_table);
-ALTER TABLE @extschema@.refresh_config_logdel ADD COLUMN source_table text NOT NULL;
 ALTER TABLE @extschema@.refresh_config_logdel ADD COLUMN control text NOT NULL;  
 ALTER TABLE @extschema@.refresh_config_logdel ADD COLUMN pk_name text[] NOT NULL; 
 ALTER TABLE @extschema@.refresh_config_logdel ADD COLUMN pk_type text[] NOT NULL;
@@ -124,7 +121,6 @@ CREATE TABLE refresh_config_table (LIKE @extschema@.refresh_config INCLUDING ALL
 SELECT pg_catalog.pg_extension_config_dump('refresh_config_table', '');
 ALTER TABLE @extschema@.refresh_config_table ADD CONSTRAINT refresh_config_table_dblink_fkey FOREIGN KEY (dblink) REFERENCES @extschema@.dblink_mapping_mimeo(data_source_id);
 ALTER TABLE @extschema@.refresh_config_table ADD CONSTRAINT refresh_config_table_dest_table_pkey PRIMARY KEY (dest_table);
-ALTER TABLE @extschema@.refresh_config_table ADD COLUMN source_table text NOT NULL;
 ALTER TABLE @extschema@.refresh_config_table ADD COLUMN truncate_cascade boolean NOT NULL DEFAULT false;
 ALTER TABLE @extschema@.refresh_config_table ADD COLUMN sequences text[];
 ALTER TABLE @extschema@.refresh_config_table ALTER COLUMN type SET DEFAULT 'table';

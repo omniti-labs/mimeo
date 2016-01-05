@@ -347,4 +347,6 @@ SELECT results_eq('SELECT match FROM validate_rowcount(''mimeo_dest.logdel_test_
 SELECT dblink_disconnect('mimeo_test');
 --SELECT is('SELECT dblink_get_connections() @> ''{mimeo_test}''','', 'Close remote database connection');
 
+SELECT pg_sleep(5);
+
 SELECT * FROM finish();

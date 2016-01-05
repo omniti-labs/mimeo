@@ -1,3 +1,16 @@
+1.4.0
+-- New option for snapshot refresh to not check for write changes on master and ALWAYS refresh the table. New boolean config option in refresh_config_snap: check_stats (defaults to true) and new parameter to refresh_snap() function: p_check_stats. Default behavior is still to not refresh the table if the source has not changed (Github Issue #15).
+-- Added a sort to the Makefile when creating the sql extension file. Allows more predictable output between builds (Github Push Request #16).
+-- Added parameter option to check_missing_source_tables() function to include views (p_views).
+-- Moved the source_table column to the top parent table in the refresh_config table inheritance tree. It was already a common column in all config tables, so just makes querying for config information easier.
+    -- Simplified code in several support functions to take advantage of this.
+-- Added jobmon logging to the maker functions. They now create their own logged jobs to keep track of where they are (setup, refreshing, index creation).
+    -- New p_jobmon option to the maker function determines both if the creation will be logged in jobmon and if jobmon tracking is enabled for future refreshes of that table. Defaults to true for both if pg_jobmon is installed.
+-- All exception blocks of maker & refresh jobs should now honor the configuration option given for whether or not to use pg_jobmon. Previously you may have still been getting refresh errors logged into jobmon even if you'd explicitly configured it to not use pg_jobmon.
+-- Made jobmon column in refresh_config (and all child tables) NOT NULL. If this update fails due to this change, please ensure all rows have a value for this column.
+-- Fixed more edge cases where mixed-case/special-characters in object names weren't being handled properly.
+
+
 1.3.9
 -- Moved advisory lock check as early as possibly in all refresh functions. Concurrent refresh runs on the same destination table that happened within 0-5 seconds of each other could possibly encounter a race condition. This is only really an issue with incremental inserter replication where the the race condition caused the same time period/id value block to be obtained for two different jobs. This could possibly have caused duplicate data if there is no primary/unique key on the destination. If there is a unique key, no duplication occurred and a duplicate key error was raised. Chance for this is still there, but significantly reduced. Extremely difficult to remove 100% risk at this time (further work to run_refresh.py to reduce risk is under way), so advise that you space refresh runs out as much as you are able to.
     -- IMPORTANT NOTE: Please run the row count check function on any inserter replication tables to check data integrity.

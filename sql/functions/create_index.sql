@@ -26,7 +26,7 @@ v_type              text;
 BEGIN
 
 v_dblink_name := @extschema@.check_name_length('create_index_dblink_'||p_destination);
-SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
+SELECT nspname INTO v_dblink_schema FROM pg_catalog.pg_namespace n, pg_catalog.pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
 SELECT current_setting('search_path') INTO v_old_search_path;
 EXECUTE 'SELECT set_config(''search_path'',''@extschema@,'||v_dblink_schema||''',''false'')';
 
@@ -128,13 +128,12 @@ EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false''
 
 EXCEPTION
     WHEN QUERY_CANCELED OR OTHERS THEN
-        EXECUTE 'SELECT '||v_dblink_schema||'.dblink_get_connections() @> ARRAY['||quote_literal(v_dblink_name)||']' INTO v_link_exists;
+        SELECT nspname INTO v_dblink_schema FROM pg_catalog.pg_namespace n, pg_catalog.pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
+        EXECUTE format('SELECT %I.dblink_get_connections() @> ARRAY[%L]', v_dblink_schema, v_dblink_name) INTO v_link_exists;
         IF v_link_exists THEN
-            EXECUTE 'SELECT '||v_dblink_schema||'.dblink_disconnect('||quote_literal(v_dblink_name)||')';
+            EXECUTE format('SELECT %I.dblink_disconnect(%L)', v_dblink_schema, v_dblink_name);
         END IF;
-        EXECUTE 'SELECT set_config(''search_path'','''||v_old_search_path||''',''false'')';
         RAISE EXCEPTION '%', SQLERRM; 
 END
 $$;
-
 

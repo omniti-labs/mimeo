@@ -54,13 +54,11 @@ IF v_adv_lock = 'false' THEN
     -- This code is known duplication of code below.
     -- This is done in order to keep advisory lock as early in the code as possible to avoid race conditions and still log if issues are encountered.
     v_job_name := 'Refresh Inserter: '||p_destination;
-    SELECT jobmon
-    INTO v_jobmon
-    FROM @extschema@.refresh_config_inserter
-    WHERE dest_table = p_destination;
     SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
-    IF p_jobmon IS TRUE AND v_jobmon_schema IS NULL THEN
-        RAISE EXCEPTION 'p_jobmon parameter set to TRUE, but unable to determine if pg_jobmon extension is installed';
+    SELECT jobmon INTO v_jobmon FROM @extschema@.refresh_config_inserter WHERE dest_table = p_destination;
+    v_jobmon := COALESCE(p_jobmon, v_jobmon);
+    IF v_jobmon IS TRUE AND v_jobmon_schema IS NULL THEN
+        RAISE EXCEPTION 'jobmon config set to TRUE, but unable to determine if pg_jobmon extension is installed';
     END IF;
 
     IF v_jobmon THEN
@@ -384,11 +382,13 @@ EXCEPTION
     WHEN OTHERS THEN
         SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
         SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
+        SELECT jobmon INTO v_jobmon FROM @extschema@.refresh_config_inserter WHERE dest_table = p_destination;
+        v_jobmon := COALESCE(p_jobmon, v_jobmon);
         EXECUTE format('SELECT %I.dblink_get_connections() @> ARRAY[%L]', v_dblink_schema, v_dblink_name) INTO v_link_exists;
         IF v_link_exists THEN
             EXECUTE format('SELECT %I.dblink_disconnect(%L)', v_dblink_schema, v_dblink_name);
         END IF;
-        IF v_jobmon_schema IS NOT NULL THEN
+        IF v_jobmon AND v_jobmon_schema IS NOT NULL THEN
             IF v_job_id IS NULL THEN
                 EXECUTE format('SELECT %I.add_job(%L)', v_jobmon_schema, 'Refresh Inserter: '||p_destination) INTO v_job_id;
                 EXECUTE format('SELECT %I.add_step(%L, %L)', v_jobmon_schema, v_job_id, 'EXCEPTION before job logging started') INTO v_step_id;

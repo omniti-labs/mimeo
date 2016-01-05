@@ -405,4 +405,6 @@ SELECT results_eq('SELECT "COL-1", "group", "Col3" FROM mimeo_source."Updater-Te
 SELECT dblink_disconnect('mimeo_test');
 --SELECT is_empty('SELECT dblink_get_connections() @> ''{mimeo_test}''', 'Close remote database connection');
 
+SELECT pg_sleep(5);
+
 SELECT * FROM finish();

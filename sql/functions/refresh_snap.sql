@@ -1,12 +1,13 @@
 /*
  *  Snap refresh to repull all table data
  */
-CREATE FUNCTION refresh_snap(p_destination text, p_index boolean DEFAULT true, p_pulldata boolean DEFAULT true, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
+CREATE FUNCTION refresh_snap(p_destination text, p_index boolean DEFAULT true, p_pulldata boolean DEFAULT true, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_check_stats boolean DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
 
-v_adv_lock          boolean; 
+v_adv_lock          boolean;
+v_check_stats       boolean;
 v_cols_n_types      text[];
 v_cols              text;
 v_condition         text;
@@ -66,13 +67,11 @@ IF v_adv_lock = 'false' THEN
     -- This code is known duplication of code below.
     -- This is done in order to keep advisory lock as early in the code as possible to avoid race conditions and still log if issues are encountered.
     v_job_name := 'Refresh Snap: '||p_destination;
-    SELECT jobmon
-    INTO v_jobmon
-    FROM @extschema@.refresh_config_snap
-    WHERE dest_table = p_destination;
     SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
-    IF p_jobmon IS TRUE AND v_jobmon_schema IS NULL THEN
-        RAISE EXCEPTION 'p_jobmon parameter set to TRUE, but unable to determine if pg_jobmon extension is installed';
+    SELECT jobmon INTO v_jobmon FROM @extschema@.refresh_config_snap WHERE dest_table = p_destination;
+    v_jobmon := COALESCE(p_jobmon, v_jobmon);
+    IF v_jobmon IS TRUE AND v_jobmon_schema IS NULL THEN
+        RAISE EXCEPTION 'jobmon config set to TRUE, but unable to determine if pg_jobmon extension is installed';
     END IF;
 
     IF v_jobmon THEN
@@ -111,6 +110,7 @@ SELECT source_table
     , n_tup_ins
     , n_tup_upd
     , n_tup_del
+    , check_stats
     , post_script 
     , jobmon
 INTO v_source_table
@@ -121,13 +121,18 @@ INTO v_source_table
     , v_tup_ins
     , v_tup_upd
     , v_tup_del
+    , v_check_stats
     , v_post_script 
     , v_jobmon
 FROM refresh_config_snap
 WHERE dest_table = p_destination; 
 IF NOT FOUND THEN
     RAISE EXCEPTION 'Destination table given in argument (%) is not managed by mimeo.', p_destination; 
-END IF;  
+END IF;
+
+IF p_check_stats IS NOT NULL THEN
+    v_check_stats := p_check_stats;  -- Allow direct parameter override of config table value
+END IF;
 
 -- Allow override with parameter
 v_jobmon := COALESCE(p_jobmon, v_jobmon);
@@ -263,9 +268,9 @@ Allows automatic recreation of snap tables if columns change (add, drop type cha
     END IF;
 END IF;
 
--- Only check the remote data if there have been no column changes and snap table actually exists. 
--- Otherwise maker functions won't work if source is empty & view switch won't happen properly.
-IF  v_table_exists AND v_match THEN
+-- Only check the remote data if there have been no column changes and snap table actually exists.
+-- Otherwise maker functions won't work if source is empty & view switch won't happen properly. And only if check_stats is true of course.
+IF v_check_stats AND v_table_exists AND v_match THEN
     v_remote_sql := format('SELECT n_tup_ins, n_tup_upd, n_tup_del 
                     FROM pg_catalog.pg_stat_all_tables 
                     WHERE schemaname = %L
@@ -432,11 +437,13 @@ EXCEPTION
     WHEN OTHERS THEN
         SELECT nspname INTO v_dblink_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'dblink' AND e.extnamespace = n.oid;
         SELECT nspname INTO v_jobmon_schema FROM pg_namespace n, pg_extension e WHERE e.extname = 'pg_jobmon' AND e.extnamespace = n.oid;
+        SELECT jobmon INTO v_jobmon FROM @extschema@.refresh_config_snap WHERE dest_table = p_destination;
+        v_jobmon := COALESCE(p_jobmon, v_jobmon);
         EXECUTE format('SELECT %I.dblink_get_connections() @> ARRAY[%L]', v_dblink_schema, v_dblink_name) INTO v_link_exists;
         IF v_link_exists THEN
             EXECUTE format('SELECT %I.dblink_disconnect(%L)', v_dblink_schema, v_dblink_name);
         END IF;
-        IF v_jobmon_schema IS NOT NULL THEN
+        IF v_jobmon AND v_jobmon_schema IS NOT NULL THEN
             IF v_job_id IS NULL THEN
                 EXECUTE format('SELECT %I.add_job(%L)', v_jobmon_schema, 'Refresh Snap: '||p_destination) INTO v_job_id;
                 EXECUTE format('SELECT %I.add_step(%L, %L)', v_jobmon_schema, v_job_id, 'EXCEPTION before job logging started') INTO v_step_id;
@@ -450,4 +457,5 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
+
 
