@@ -82,6 +82,8 @@ IF p_jobmon IS TRUE AND v_jobmon_schema IS NULL THEN
     RAISE EXCEPTION 'p_jobmon parameter set to TRUE, but unable to determine if pg_jobmon extension is installed';
 ELSIF (p_jobmon IS TRUE OR p_jobmon IS NULL) AND v_jobmon_schema IS NOT NULL THEN
     v_jobmon := true;
+ELSE
+    v_jobmon := false;
 END IF;
 
 v_job_name := 'Updater Maker: '||p_src_table;
@@ -224,12 +226,13 @@ WHERE schemaname||'.'||tablename = p_dest_table;
 
 IF v_jobmon THEN
     PERFORM update_step(v_step_id, 'OK','Done');
-    v_step_id := add_step(v_job_id,'Adding configuration data');
 END IF;
 
 IF p_pulldata AND v_table_exists = false THEN
     RAISE NOTICE 'Pulling all data from source...';
-    v_step_id := add_step(v_job_id,'Pulling data from source. Check for new job entry under REFRESH UPDATER for current status if this step has not finished');
+    IF v_jobmon THEN
+        v_step_id := add_step(v_job_id,'Pulling data from source. Check for new job entry under REFRESH UPDATER for current status if this step has not finished');
+    END IF;
     EXECUTE 'SELECT @extschema@.refresh_updater('||quote_literal(p_dest_table)||', p_repull := true, p_debug := '||p_debug||')';
 END IF;
 

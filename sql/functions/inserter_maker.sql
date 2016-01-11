@@ -68,6 +68,8 @@ IF p_jobmon IS TRUE AND v_jobmon_schema IS NULL THEN
     RAISE EXCEPTION 'p_jobmon parameter set to TRUE, but unable to determine if pg_jobmon extension is installed';
 ELSIF (p_jobmon IS TRUE OR p_jobmon IS NULL) AND v_jobmon_schema IS NOT NULL THEN
     v_jobmon := true;
+ELSE
+    v_jobmon := false;
 END IF;
 
 v_job_name := 'Inserter Maker: '||p_src_table;

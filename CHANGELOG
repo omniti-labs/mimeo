@@ -1,3 +1,7 @@
+1.4.1
+-- Fixed bug in maker functions that would cause them to fail if pg_jobmon was not installed. Thanks to Myon from #postgresql for the bug report.
+
+
 1.4.0
 -- New option for snapshot refresh to not check for write changes on master and ALWAYS refresh the table. New boolean config option in refresh_config_snap: check_stats (defaults to true) and new parameter to refresh_snap() function: p_check_stats. Default behavior is still to not refresh the table if the source has not changed (Github Issue #15).
 -- Added a sort to the Makefile when creating the sql extension file. Allows more predictable output between builds (Github Push Request #16).
