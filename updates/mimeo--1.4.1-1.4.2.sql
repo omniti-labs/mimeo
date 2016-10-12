@@ -1,9 +1,12 @@
+-- Fix validate_rowcount() function to work properly with incremental replication types. Was not setting proper boundaries to get correct counts.
+    -- This bug was introduced in v1.4.0
+
 /*
  * Simple row count compare. 
  * For any replication type other than inserter/updater, this will fail to run if replication is currently running.
  * For any replication type other than inserter/updater, this will pause replication for the given table until validation is complete
  */
-CREATE FUNCTION validate_rowcount(p_destination text, p_src_incr_less boolean DEFAULT false, p_debug boolean DEFAULT false, OUT match boolean, OUT source_count bigint, OUT dest_count bigint, OUT min_source_value text, OUT max_source_value text) RETURNS record
+CREATE OR REPLACE FUNCTION validate_rowcount(p_destination text, p_src_incr_less boolean DEFAULT false, p_debug boolean DEFAULT false, OUT match boolean, OUT source_count bigint, OUT dest_count bigint, OUT min_source_value text, OUT max_source_value text) RETURNS record
     LANGUAGE plpgsql
     AS $$
 DECLARE

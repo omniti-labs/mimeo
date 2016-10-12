@@ -1,3 +1,8 @@
+1.4.2
+-- Fix validate_rowcount() function to work properly with incremental replication types. Was not setting proper boundaries to get correct counts.
+    -- This bug was introduced in v1.4.0
+
+
 1.4.1
 -- Fixed bug in maker functions that would cause them to fail if pg_jobmon was not installed. Thanks to Myon from #postgresql for the bug report.
 
