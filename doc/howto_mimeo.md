@@ -27,7 +27,7 @@ Mimeo Base Setup
 
 Download mimeo from Github using your preferred method. It's recommended to clone the repository to easily get future updates.
 
-    git clone git://github.com/keithf4/mimeo.git
+    git clone git://github.com/omniti-labs/mimeo.git
 
 To create the files that PostgreSQL requires for extension installation and place them in the correct location, use (gnu) make
 
