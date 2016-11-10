@@ -247,14 +247,15 @@ Extension Objects
 
 ### Maintenance Functions
 
-*validate_rowcount(p_destination text, p_src_incr_less boolean DEFAULT false, p_debug boolean DEFAULT false, OUT match boolean, OUT source_count bigint, OUT dest_count bigint, OUT min_timestamp timestamptz, OUT max_timestamp timestamptz) RETURNS record*
+*validate_rowcount(p_destination text, p_src_incr_less boolean DEFAULT false, p_incr_interval text DEFAULT NULL, p_debug boolean DEFAULT false, OUT match boolean, OUT source_count bigint, OUT dest_count bigint, OUT min_source_value text, OUT max_source_value text) RETURNS record*
  * This function can be used to compare the row count of the source and destination tables of a replication set.
  * Always returns the row counts of the source and destination and a boolean that says whether they match.
  * If checking an incremental replication job, will return the min & max values for the boundries of what rows were counted.
  * For snapshot, table, inserter replication, the rowcounts returned should match exactly.
  * For updater, dml & logdel replication, the row counts may not match due to the nature of the replicaton method.
  * Note that replication will be stopped on the designated table when this function is run with any replication method other than inserter/updater to try and ensure an accurate count.
- * p_src_incr_less, an optional argument, can be set when the source table is known to have fewer rows than the destination. This is only really useful with incremental replication (hence "incr" in the name) and when you are purging the source but keeping the data on the destination.
+ * p_src_incr_less, an optional argument, can be set when the source table is known to have fewer rows than the destination. This is only really useful with incremental replication (hence "incr" in the name) and when you are purging the source but keeping the data on the destination. Note that if data is removed from the source while this validation is running, it may cause inconsistent results. It is recommended to run this during a period of time when source purging is not.
+ *p_incr_interval, an optional argument, can be set when you expect the destination to have a different rowcount for more recent data. This is only useful with incremental replication. The parameter is text, but expects values that can either be cast to the interval or integer types depending on the replication type. It will cause the max value in the comparison range to be less by the given interval. Ex, if you pass "2 days", the max value compared between the source & destination will be 2 days less than the max value on the destination. For serial replication, it will subtract the given value from the max value on the destination.
 
 *check_missing_source_tables(p_data_source_id int DEFAULT NULL, p_views boolean DEFAULT false, OUT schemaname text, OUT tablename text, OUT data_source int) RETURNS SETOF record*
  * Provides monitoring capability for situations where all tables on source should be replicated.

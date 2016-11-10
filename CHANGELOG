@@ -1,3 +1,14 @@
+1.4.4
+-- Snapshot maker now gives a clearer error when the destination table already exists and clarifies that it cannot (Github Issue #18).
+-- Further fixes to validate_rowcount() for incremental replication. May have been giving incorrect match failure before due to not always setting the proper upper boundary value.
+
+
+1.4.3
+-- Added interval option to validate_rowcount() function. This allows the validation to ignore more recent data with incremental replication. For example, if you'd like to ignore the most recent 2 days of data (for a time-based control column), you'd set this parameter to '2 days'. 
+    -- The current max value of the destination table is used as the baseline value when subtracting the given interval.
+    -- Note the parameter is of type text but the value must be able to be cast to either an interval or integer data type.
+
+
 1.4.2
 -- Fix validate_rowcount() function to work properly with incremental replication types. Was not setting proper boundaries to get correct counts.
     -- This bug was introduced in v1.4.0

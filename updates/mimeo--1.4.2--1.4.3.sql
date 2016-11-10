@@ -1,3 +1,19 @@
+-- Added interval option to validate_rowcount() function. This allows the validation to ignore more recent data with incremental replication. For example, if you'd like to ignore the most recent 2 days of data (for a time-based control column), you'd set this parameter to '2 days'. 
+    -- The current max value of the destination table is used as the baseline value when subtracting the given interval.
+    -- Note the parameter is of type text but the value must be able to be cast to either an interval or integer data type.
+
+-- Preserve privileges of dropped functions
+CREATE TEMP TABLE mimeo_preserve_privs_temp (statement text);
+
+INSERT INTO mimeo_preserve_privs_temp 
+SELECT 'GRANT EXECUTE ON FUNCTION @extschema@.validate_rowcount(text, boolean, text, boolean) TO '||string_agg(grantee::text, ',')||';' 
+FROM information_schema.routine_privileges
+WHERE routine_schema = '@extschema@'
+AND routine_name = 'validate_rowcount'; 
+
+DROP FUNCTION validate_rowcount(text, boolean, boolean);
+
+
 /*
  * Simple row count compare. 
  * For any replication type other than inserter/updater, this will fail to run if replication is currently running.
@@ -185,3 +201,17 @@ EXCEPTION
 END
 $$;
 
+-- Restore dropped object privileges
+DO $$
+DECLARE
+v_row   record;
+BEGIN
+    FOR v_row IN SELECT statement FROM mimeo_preserve_privs_temp LOOP
+        IF v_row.statement IS NOT NULL THEN
+            EXECUTE v_row.statement;
+        END IF;
+    END LOOP;
+END
+$$;
+
+DROP TABLE mimeo_preserve_privs_temp;

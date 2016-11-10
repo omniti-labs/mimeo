@@ -17,6 +17,7 @@ RETURNS void
 DECLARE
 
 v_data_source               text;
+v_dest_exists               text;
 v_insert_refresh_config     text;
 v_job_id                    bigint;
 v_job_name                  text;
@@ -43,6 +44,14 @@ END IF;
 IF position('.' in p_dest_table) = 0 AND position('.' in p_src_table) = 0 THEN
     RAISE EXCEPTION 'Source (and destination) table must be schema qualified';
 END IF;
+
+SELECT tablename INTO v_dest_exists
+FROM pg_catalog.pg_tables
+WHERE schemaname = split_part(p_dest_table, '.', 1)::name
+AND tablename = split_part(p_dest_table, '.', 2)::name;
+    IF v_dest_exists IS NOT NULL THEN
+        RAISE EXCEPTION 'Destination table cannot exist before running snapshot_maker(): %', p_dest_table;
+    END IF;
 
 IF p_jobmon IS TRUE AND v_jobmon_schema IS NULL THEN
     RAISE EXCEPTION 'p_jobmon parameter set to TRUE, but unable to determine if pg_jobmon extension is installed';
