@@ -102,6 +102,8 @@ ALTER TABLE @extschema@.refresh_config_dml ADD CONSTRAINT refresh_config_dml_des
 ALTER TABLE @extschema@.refresh_config_dml ADD COLUMN control text NOT NULL;  
 ALTER TABLE @extschema@.refresh_config_dml ADD COLUMN pk_name text[] NOT NULL; 
 ALTER TABLE @extschema@.refresh_config_dml ADD COLUMN pk_type text[] NOT NULL;
+ALTER TABLE @extschema@.refresh_config_dml ADD COLUMN insert_on_fetch boolean NOT NULL DEFAULT true;
+
 ALTER TABLE @extschema@.refresh_config_dml ALTER COLUMN type SET DEFAULT 'dml';
 ALTER TABLE @extschema@.refresh_config_dml ADD CONSTRAINT refresh_config_dml_type_check CHECK (type = 'dml');
 ALTER TABLE @extschema@.refresh_config_dml ADD CONSTRAINT refresh_config_dml_source_dest_unique UNIQUE (source_table, dest_table);
@@ -113,6 +115,7 @@ ALTER TABLE @extschema@.refresh_config_logdel ADD CONSTRAINT refresh_config_logd
 ALTER TABLE @extschema@.refresh_config_logdel ADD COLUMN control text NOT NULL;  
 ALTER TABLE @extschema@.refresh_config_logdel ADD COLUMN pk_name text[] NOT NULL; 
 ALTER TABLE @extschema@.refresh_config_logdel ADD COLUMN pk_type text[] NOT NULL;
+ALTER TABLE @extschema@.refresh_config_logdel ADD COLUMN insert_on_fetch boolean NOT NULL DEFAULT true;
 ALTER TABLE @extschema@.refresh_config_logdel ALTER COLUMN type SET DEFAULT 'logdel';
 ALTER TABLE @extschema@.refresh_config_logdel ADD CONSTRAINT refresh_config_logdel_type_check CHECK (type = 'logdel');
 ALTER TABLE @extschema@.refresh_config_logdel ADD CONSTRAINT refresh_config_logdel_source_dest_unique UNIQUE (source_table, dest_table);

@@ -1,3 +1,18 @@
+1.5.0
+-- Fixed incremental time refresh to work properly when the source table is initially empty and later starts getting data. Previously the lower boundary was always being reset to the value of CURRENT_TIMESTAMP if the destination remained empty after setup. This could cause data that is later added on the source to then be missed if it happens to be outside the current window. Now the lower boundary remains the timestamp at the time of replication setup (as the documentation states) until newer data is added to the source. Then replication begins to work as normal and obeys the boundary configuration as well.
+    -- NOTE: Recommended to do a data validation check on any incremental replication tables that started out empty when they were created.
+
+-- Reworked validate_rowcount() function significantly to allow more customizable checks for inserter & updater validation. Please review changes carefully if you regularly use this function as both the input & output parameters have changed.
+    -- There are now lower and upper interval parameters to determine the block of data to compare. The value is always calculated from the maximum control value on the destination. So the lower boundary value is (max - lower) and the upper boundary is (max - upper).
+    -- If these values are left NULL, then all rows are compared.
+    -- The output values are the conditional values used in the count query and they are now obtained from the destination, not the source.
+
+-- Added new configuration option to dml & logdel replication to reduce transaction times on the source database at the expense of higher disk usage on the destination: insert_on_fetch. Default behavior has not changed so this is only relevant if the option is manually set. See documentation for further explanation of this option.
+
+-- Added new function: snapshot_monitor(). This can monitor for when snapshot tables are possibly growing too large to be easily replicated in their entirety every refresh run. Tables being returned can then be considered for another replication method (incremental or dml). Paramenters are available for setting minimum size and rowcount amounts. Thanks to Nicole Daley (nicoledaley) for the work on this feature.
+
+
+
 1.4.4
 -- Snapshot maker now gives a clearer error when the destination table already exists and clarifies that it cannot (Github Issue #18).
 -- Further fixes to validate_rowcount() for incremental replication. May have been giving incorrect match failure before due to not always setting the proper upper boundary value.

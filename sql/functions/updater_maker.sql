@@ -171,7 +171,7 @@ IF p_type = 'time' THEN
             ||', '||quote_literal(v_boundary_time)
             ||', '||quote_literal(v_pk_name)
             ||', '||quote_literal(v_pk_type)
-            ||', '||quote_literal('0001-01-01'::date)
+            ||', '||quote_literal('-infinity')
             ||', '||quote_literal(CURRENT_TIMESTAMP)
             ||', '||v_dst_active
             ||', '||COALESCE(quote_literal(p_filter), 'NULL')

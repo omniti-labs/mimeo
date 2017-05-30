@@ -344,11 +344,13 @@ IF v_batch_limit_reached <> 3 THEN
         v_step_id := add_step(v_job_id, 'Setting next lower boundary');
     END IF;
     EXECUTE format('SELECT max(%I) FROM %I.%I', v_control, v_dest_schema_name, v_dest_table_name) INTO v_last_value;
-    UPDATE refresh_config_inserter_time SET last_value = coalesce(v_last_value, CURRENT_TIMESTAMP), last_run = CURRENT_TIMESTAMP WHERE dest_table = p_destination;  
-    IF v_jobmon THEN
-        PERFORM update_step(v_step_id, 'OK','Lower boundary value is: '|| coalesce(v_last_value, CURRENT_TIMESTAMP));
-        PERFORM gdb(p_debug, 'Lower boundary value is: '||coalesce(v_last_value, CURRENT_TIMESTAMP));
+    IF v_last_value IS NOT NULL THEN
+        UPDATE refresh_config_inserter_time SET last_value = v_last_value, last_run = CURRENT_TIMESTAMP WHERE dest_table = p_destination;  
     END IF;
+    IF v_jobmon THEN
+        PERFORM update_step(v_step_id, 'OK','Lower boundary value is: '|| coalesce(v_last_value::text, 'NULL'));
+    END IF;
+        PERFORM gdb(p_debug, 'Lower boundary value is: '||coalesce(v_last_value::text, 'NULL'));
 END IF;
 
 DROP TABLE IF EXISTS mimeo_refresh_inserter_temp;

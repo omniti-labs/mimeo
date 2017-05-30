@@ -164,13 +164,15 @@ Extension Objects
 
 ### Refresh Functions
 
-*refresh_dml(p_destination text, p_limit int default NULL, p_repull boolean DEFAULT false, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_debug boolean DEFAULT false)* 
+*refresh_dml(p_destination text, p_limit int default NULL, p_repull boolean DEFAULT false, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_insert_on_fetch boolean DEFAULT NULL, p_debug boolean DEFAULT false)* 
  * Replicate tables by replaying INSERTS, UPDATES and DELETES in the order they occur on the source table. Useful for tables that are too large for snapshots.  
  * Can be setup with dml_maker(...) and removed with dml_destroyer(...) functions.  
  * p_limit, an optional argument, can be used to change the limit on how many rows are grabbed from the source with each run of the function. Defaults to all new rows if not given here or set in configuration table. Has no affect on function performance as it does with inserter/updater.
  * p_repull, an optional argument, sets a flag to repull data from the source instead of getting new data. Note that **ALL local data will be truncated** and the ENTIRE source table will be repulled.
  * p_jobmon, an optional argument, sets whether to use jobmon for the refresh run. By default uses config table value.
  * p_lock_wait, an optional argument, sets whether you want this refresh call to wait for the advisory lock on this table to be released if it is being held. See the **concurrent_lock_check()** function info in this document for more details on what are valid values for this parameter.
+ * p_insert_on_fetch, an optional argument. This function batches data to process from a cursor on the source database.  Each batch is processed in full on the destination before the next is fetched to minimize disk space used, and protect against large batches using significant destination resources. If destination processing is slow (synchronous replication delays, constraint validation, etc) this extends how long share locks are held on the source database. For some workloads, this is a poor trade-off. Setting this option to false will cause all data to be fetched to a temporary table first so that locks can be released before destination processing. Note this can potentially cause very large temp tables, but can greatly lessen the transaction time on the source database. This can be set permanently in the refresh_config_dml table as well. This function argument will always override the config table value.
+
 
 *refresh_inserter(p_destination text, p_limit integer DEFAULT NULL, p_repull boolean DEFAULT false, p_repull_start text DEFAULT NULL, p_repull_end text DEFAULT NULL, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_debug boolean DEFAULT false)*  
  * Replication for tables that have INSERT ONLY data and contain a timestamp or integer column that is incremented with every INSERT.
@@ -181,13 +183,14 @@ Extension Objects
  * p_jobmon, an optional argument, sets whether to use jobmon for the refresh run. By default uses config table value.
  * p_lock_wait, an optional argument, sets whether you want this refresh call to wait for the advisory lock on this table to be released if it is being held. See the **concurrent_lock_check()** function info in this document for more details on what are valid values for this parameter.
     
-*refresh_logdel(p_destination text, p_limit int DEFAULT NULL, p_repull boolean DEFAULT false, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_debug boolean DEFAULT false)*
+*refresh_logdel(p_destination text, p_limit int DEFAULT NULL, p_repull boolean DEFAULT false, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_insert_on_fetch boolean DEFAULT NULL, p_debug boolean DEFAULT false)*
  * Replicate tables by replaying INSERTS, UPDATES and DELETES in the order they occur on the source table, but DO NOT remove deleted tables from the destination table.
  * Can be setup with logdel_maker(...) and removed with logdel_destroyer(...) functions.  
  * p_limit, an optional argument, can be used to change the limit on how many rows are grabbed from the source with each run of the function. Defaults to all new rows if not given here or set in configuration table. Has no affect on function performance as it does with inserter/updater.
  * p_repull, an optional argument, sets a flag to repull data from the source instead of getting new data. Unlike other refresh repull options this does NOT do a TRUNCATE; it deletes all rows where mimeo_source_deleted is not null, so old deleted rows are not lost on the destination. It is highly recommended to do a manual VACUUM after this is done, possibly even a VACUUM FULL to reclaim disk space.
  * p_jobmon, an optional argument, sets whether to use jobmon for the refresh run. By default uses config table value.
  * p_lock_wait, an optional argument, sets whether you want this refresh call to wait for the advisory lock on this table to be released if it is being held. See the **concurrent_lock_check()** function info in this document for more details on what are valid values for this parameter.
+ * p_insert_on_fetch, an optional argument. This function batches data to process from a cursor on the source database.  Each batch is processed in full on the destination before the next is fetched to minimize disk space used, and protect against large batches using significant destination resources. If destination processing is slow (synchronous replication delays, constraint validation, etc) this extends how long share locks are held on the source database. For some workloads, this is a poor trade-off. Setting this option to false will cause all data to be fetched to a temporary table first so that locks can be released before destination processing. Note this can potentially cause very large temp tables, but can greatly lessen the transaction time on the source database. This can be set permanently in the refresh_config_logdel table as well. This function argument will always override the config table value.
 
 *refresh_snap(p_destination text, p_index boolean DEFAULT true, p_pulldata boolean DEFAULT true, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_check_stats boolean DEFAULT NULL, p_debug boolean DEFAULT false)*
  * Full table replication to the destination table given by p_destination. Automatically creates destination view and tables needed if they do not already exist. * If data has not changed on the soure (insert, update or delete), no data will be repulled. pg_jobmon still records that the job ran successfully and updates last_run, so you are still able to monitor that tables using this method are refreshed on a regular basis. It just logs that no new data was pulled.
@@ -247,15 +250,15 @@ Extension Objects
 
 ### Maintenance Functions
 
-*validate_rowcount(p_destination text, p_src_incr_less boolean DEFAULT false, p_incr_interval text DEFAULT NULL, p_debug boolean DEFAULT false, OUT match boolean, OUT source_count bigint, OUT dest_count bigint, OUT min_source_value text, OUT max_source_value text) RETURNS record*
+*validate_rowcount(p_destination text, p_lower_interval text DEFAULT NULL, p_upper_interval text DEFAULT NULL, p_debug boolean DEFAULT false, OUT match boolean, OUT source_count bigint, OUT dest_count bigint, OUT min_dest_value text, OUT max_dest_value text) RETURNS record*
  * This function can be used to compare the row count of the source and destination tables of a replication set.
  * Always returns the row counts of the source and destination and a boolean that says whether they match.
  * If checking an incremental replication job, will return the min & max values for the boundries of what rows were counted.
- * For snapshot, table, inserter replication, the rowcounts returned should match exactly.
+ * For snapshot, table & inserter replication, the rowcounts returned should match exactly.
  * For updater, dml & logdel replication, the row counts may not match due to the nature of the replicaton method.
- * Note that replication will be stopped on the designated table when this function is run with any replication method other than inserter/updater to try and ensure an accurate count.
- * p_src_incr_less, an optional argument, can be set when the source table is known to have fewer rows than the destination. This is only really useful with incremental replication (hence "incr" in the name) and when you are purging the source but keeping the data on the destination. Note that if data is removed from the source while this validation is running, it may cause inconsistent results. It is recommended to run this during a period of time when source purging is not.
- *p_incr_interval, an optional argument, can be set when you expect the destination to have a different rowcount for more recent data. This is only useful with incremental replication. The parameter is text, but expects values that can either be cast to the interval or integer types depending on the replication type. It will cause the max value in the comparison range to be less by the given interval. Ex, if you pass "2 days", the max value compared between the source & destination will be 2 days less than the max value on the destination. For serial replication, it will subtract the given value from the max value on the destination.
+ * Note that replication will be stopped on the designated table when this function is run with any replication method other than inserter/updater to try and ensure an accurate count. However, this is very difficult with any replication method other than incremental if new data is still being added on the source while validation runs.
+ * p_lower_interval - used when checking incremental replication to limit the interval of data checked. This value is always given as text, but must be able to be cast to either an interval (time replication) or integer (serial replication). The value is calculated by getting the current maxiumum control value on the destination and subtracting the given interval. So if you wanted to limit the data checked to newer than the last 30 days, set this value to '30 days'.
+ * p_upper_interval - Similar to p_lower_interval, but this sets the upper boundary for the interval to check. This is useful when newer, recent data is still being entered and could throw off a rowcount comparison. For example, if data within the last day is still being entered on the source, set this value to '1 day' to have it ignore the most recent day's data. Note that if a boundary value exists in the refresh_config table, that will still be used even if this value is left NULL. But if this value is set, it will always override the configured boundary value.
 
 *check_missing_source_tables(p_data_source_id int DEFAULT NULL, p_views boolean DEFAULT false, OUT schemaname text, OUT tablename text, OUT data_source int) RETURNS SETOF record*
  * Provides monitoring capability for situations where all tables on source should be replicated.
@@ -281,6 +284,13 @@ Extension Objects
    * NULL (default value if not set): Do not wait at all for an advisory lock and immediately return FALSE if one cannot be obtained.
    * > 0: Keep retrying to obtain an advisory lock for the given table for this number of seconds before giving up and returning FALSE. If lock is obtained in this time period, will immediately return TRUE.
    * <= 0: Keep retrying indefinitely to obtain an advisory lock. Will only return when the lock is obtained and returns TRUE. Ensure your code handles this condition properly to avoid infinite waits.
+
+*snapshot_monitor(p_rowcount bigint DEFAULT NULL::bigint, p_size bigint DEFAULT NULL::bigint, p_destination text DEFAULT NULL::text, p_debug boolean DEFAULT false) RETURNS TABLE(dest_tablename text, source_rowcount bigint, source_size bigint)*
+ * Function to monitor if snapshot replication tables are possibly becoming too large to replicate in their entirety every refresh run. Given parameters below to set boundaries, tables that are returned should be reviewed for possibly changing to a more efficient replication method for their size and use-case (incremental or dml).
+ * p_rowcount - parameter to set the minimum number of rows the source table has to trigger that it is too large to replicate via snapshot.
+ * p_size - parameter to set the minimum size the source table should be to trigger that it is too large to replicate via snapshot.
+ * p_destination - if this is set, only the given table is checked for rowcount/size.
+ * Returns the destination tablename along with the rowcount and size (in bytes) obtained from the source. When both rowcount and size parameters are set at the same time, if either one matches, the snapshot destination table name will be returned. If only one is set, only that condition is considered when filtering results.
 
 
 ### Tables
@@ -374,6 +384,7 @@ Extension Objects
     control         - Schema qualified name of the queue table on the source database for this table
     pk_name         - Text array of all the column names that make up the source table primary key
     pk_type         - Text array of all the column types that make up the source table primary key
+    insert_on_fetch - See refresh_dml() function for details on this setting. 
  
 *refresh_config_logdel*  
     Child of refresh_config. Contains config info for logdel replication jobs.
@@ -382,6 +393,7 @@ Extension Objects
     control         - Schema qualified name of the queue table on the source database for this table
     pk_name         - Text array of all the column names that make up the source table primary key
     pk_type         - Text array of all the column types that make up the source table primary key
+    insert_on_fetch - See refresh_logdel() function for details on this setting. 
 
 *refresh_config_table*  
     Child of refresh_config. Contains config info for plain table replication jobs.

@@ -107,7 +107,7 @@ IF p_type = 'time' THEN
             ||', '||quote_literal(p_dblink_id)
             ||', '||quote_literal(p_control_field)
             ||', '||quote_literal(v_boundary_time)
-            ||', '||quote_literal('0001-01-01'::date)
+            ||', '||quote_literal('-infinity')
             ||', '||quote_literal(CURRENT_TIMESTAMP)
             ||', '||v_dst_active
             ||', '||COALESCE(quote_literal(p_filter), 'NULL')
@@ -255,4 +255,5 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
+
 

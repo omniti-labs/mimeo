@@ -1,7 +1,7 @@
 /*
  *  Refresh based on DML (Insert, Update, Delete)
  */
-CREATE FUNCTION refresh_dml(p_destination text, p_limit int default NULL, p_repull boolean DEFAULT false, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
+CREATE FUNCTION refresh_dml(p_destination text, p_limit int default NULL, p_repull boolean DEFAULT false, p_jobmon boolean DEFAULT NULL, p_lock_wait int DEFAULT NULL, p_insert_on_fetch boolean DEFAULT NULL, p_debug boolean DEFAULT false) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 DECLARE
@@ -23,13 +23,14 @@ v_exec_status           text;
 v_fetch_sql             text;
 v_field                 text;
 v_filter                text[];
-v_insert_sql            text;
+v_insert_on_fetch       boolean;
 v_job_id                int;
 v_jobmon_schema         text;
 v_job_name              text;
 v_jobmon                boolean;
 v_limit                 int; 
 v_link_exists           boolean;
+v_local_insert_sql      text;
 v_old_search_path       text;
 v_pk_counter            int;
 v_pk_name_csv           text;
@@ -105,6 +106,7 @@ SELECT source_table
     , condition
     , batch_limit 
     , jobmon
+    , insert_on_fetch
 INTO v_source_table
     , v_dest_table
     , v_dblink
@@ -115,6 +117,7 @@ INTO v_source_table
     , v_condition
     , v_limit
     , v_jobmon
+    , v_insert_on_fetch
 FROM refresh_config_dml 
 WHERE dest_table = p_destination; 
 IF NOT FOUND THEN
@@ -123,6 +126,7 @@ END IF;
 
 -- Allow override with parameter
 v_jobmon := COALESCE(p_jobmon, v_jobmon);
+v_insert_on_fetch := COALESCE(p_insert_on_fetch, v_insert_on_fetch);
 
 SELECT schemaname, tablename 
 INTO v_dest_schema_name, v_dest_table_name
@@ -294,14 +298,15 @@ ELSE
     END IF;
 END IF;
 
--- insert records to local table. Have to do temp table in case destination table is partitioned (returns 0 when inserting to parent)
-PERFORM dblink_open(v_dblink_name, 'mimeo_cursor', v_remote_f_sql);
+-- insert records to local table. Have to do temp table in case destination table is non-natively partitioned (returns 0 when inserting to parent). Also allows for when insert_on_fetch is false to reduce the open cursor time on the source.
 IF v_jobmon THEN
     v_step_id := add_step(v_job_id, 'Inserting new records into local table');
 END IF;
 EXECUTE format('CREATE TEMP TABLE refresh_dml_full (%s)', v_cols_n_types);
 v_rowcount := 0;
 v_total := 0;
+v_local_insert_sql := format('INSERT INTO %I.%I (%s) SELECT %s FROM refresh_dml_full', v_dest_schema_name, v_dest_table_name, v_cols, v_cols);
+PERFORM dblink_open(v_dblink_name, 'mimeo_cursor', v_remote_f_sql);
 LOOP
     v_fetch_sql := format('INSERT INTO refresh_dml_full (%s) SELECT %s FROM dblink_fetch(%L, %L, %s) AS (%s)'
             , v_cols
@@ -313,17 +318,41 @@ LOOP
     EXECUTE v_fetch_sql;
     GET DIAGNOSTICS v_rowcount = ROW_COUNT;
     v_total := v_total + coalesce(v_rowcount, 0);
-    EXECUTE format('INSERT INTO %I.%I (%s) SELECT %s FROM refresh_dml_full', v_dest_schema_name, v_dest_table_name, v_cols, v_cols);
-    EXECUTE 'TRUNCATE refresh_dml_full';
-    EXIT WHEN v_rowcount = 0;
     PERFORM gdb(p_debug,'Fetching rows in batches: '||v_total||' done so far.');
-    IF v_jobmon THEN
+    IF v_jobmon AND v_insert_on_fetch THEN
+        -- Avoid the overhead of jobmon logging each batch step to minimize transaction time on source when insert_on_fetch is false
         PERFORM update_step(v_step_id, 'PENDING', 'Fetching rows in batches: '||v_total||' done so far.');
     END IF;
+
+    IF v_insert_on_fetch THEN
+        EXECUTE v_local_insert_sql;
+        EXECUTE 'TRUNCATE refresh_dml_full';
+    END IF;
+
+    IF v_rowcount = 0 THEN
+        -- Above rowcount variable is saved after temp table inserts. 
+        -- So when temp table has the whole queue, this block of code should be reached
+        PERFORM dblink_close(v_dblink_name, 'mimeo_cursor');
+        IF v_insert_on_fetch = false THEN
+            PERFORM gdb(p_debug,'Inserting into destination table in single batch (insert_on_fetch set to false)');
+            IF v_jobmon THEN
+                PERFORM update_step(v_step_id, 'PENDING', 'Inserting into destination table in single batch (insert_on_fetch set to false)...');
+            END IF;
+            EXECUTE v_local_insert_sql;
+            IF v_jobmon THEN
+                PERFORM update_step(v_step_id, 'OK', 'Inserted into destination table in single batch (insert_on_fetch set to false)');
+            END IF;
+        END IF;
+        EXIT; -- leave insert loop
+    END IF;
+
 END LOOP;
-PERFORM dblink_close(v_dblink_name, 'mimeo_cursor');
 IF v_jobmon THEN
-    PERFORM update_step(v_step_id, 'OK','Number of rows inserted: '||v_total);
+    IF v_insert_on_fetch THEN
+        PERFORM update_step(v_step_id, 'OK','Number of rows inserted: '||v_total);
+    ELSE
+        PERFORM update_step(v_step_id, 'OK','Number of rows inserted: '||v_total||'. Final insert to destination done as single batch (insert_on_fetch set to false)');
+    END IF;
 END IF;
 
 IF p_repull = false AND v_total > (v_limit * .75) THEN
@@ -352,8 +381,8 @@ UPDATE refresh_config_dml SET last_run = CURRENT_TIMESTAMP WHERE dest_table = v_
 IF v_jobmon THEN
     PERFORM update_step(v_step_id, 'OK','Last run was '||CURRENT_TIMESTAMP);
 END IF;
-EXECUTE 'DROP TABLE IF EXISTS refresh_dml_full';
-EXECUTE 'DROP TABLE IF EXISTS refresh_dml_queue';
+DROP TABLE IF EXISTS refresh_dml_full;
+DROP TABLE IF EXISTS refresh_dml_queue;
 
 PERFORM dblink_disconnect(v_dblink_name);
 
@@ -402,4 +431,5 @@ EXCEPTION
 
 END
 $$;
+
 

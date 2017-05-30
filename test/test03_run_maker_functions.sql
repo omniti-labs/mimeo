@@ -111,11 +111,13 @@ SELECT updater_maker('mimeo_source.Updater-Test-Source', 'serial', 'COL-1', data
 SELECT diag('Running maker for destination: mimeo_dest.updater_test_dest_serial_view');
 SELECT updater_maker('mimeo_source.updater_test_source_view', 'serial', 'col4', data_source_id, '0', 'mimeo_dest.updater_test_dest_serial_view', p_pk_name := '{"col1"}', p_pk_type := '{"int"}') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
 
-
+-- DML
 SELECT diag('Running maker for destination: mimeo_source.dml_test_source');
 SELECT dml_maker('mimeo_source.dml_test_source', data_source_id) FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
 SELECT diag('Running maker for destination: mimeo_dest.dml_test_dest');
 SELECT dml_maker('mimeo_source.dml_test_source2', data_source_id, 'mimeo_dest.dml_test_dest') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
+-- Testing insert_on_fetch = false
+UPDATE refresh_config_dml SET insert_on_fetch = false WHERE dest_table = 'mimeo_dest.dml_test_dest';
 SELECT diag('Running maker for destination: mimeo_dest.dml_test_dest_multi');
 SELECT dml_maker('mimeo_source.dml_test_source', data_source_id, 'mimeo_dest.dml_test_dest_multi') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
 SELECT diag('Running maker for destination: mimeo_dest.dml_test_dest_nodata');
@@ -129,11 +131,14 @@ SELECT dml_maker('mimeo_source.dml_test_source_empty', data_source_id) FROM dbli
 SELECT diag('Running maker for destination: mimeo_source.Dml-Test-Source');
 SELECT dml_maker('mimeo_source.Dml-Test-Source', data_source_id) FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
 
-
+-- Logdel
 SELECT diag('Running maker for destination: mimeo_source.logdel_test_source');
 SELECT logdel_maker('mimeo_source.logdel_test_source', data_source_id) FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
 SELECT diag('Running maker for destination: mimeo_dest.logdel_test_dest');
 SELECT logdel_maker('mimeo_source.logdel_test_source2', data_source_id, 'mimeo_dest.logdel_test_dest') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
+-- Testing insert_on_fetch = false
+UPDATE refresh_config_logdel SET insert_on_fetch = false WHERE dest_table = 'mimeo_dest.logdel_test_dest';
+
 SELECT diag('Running maker for destination: mimeo_dest.logdel_test_dest_multi');
 SELECT logdel_maker('mimeo_source.logdel_test_source', data_source_id, 'mimeo_dest.logdel_test_dest_multi') FROM dblink_mapping_mimeo WHERE username = 'mimeo_test';
 SELECT diag('Running maker for destination: mimeo_dest.logdel_test_dest_nodata');
