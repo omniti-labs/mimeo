@@ -15,6 +15,7 @@ v_cols                  text;
 v_condition             text;
 v_control               text;
 v_create_sql            text;
+v_cursor_name           text;
 v_dblink                int;
 v_dblink_name           text;
 v_dblink_schema         text;
@@ -286,7 +287,11 @@ END IF;
 v_insert_sql := format('INSERT INTO %I.%I (%s) SELECT %s FROM mimeo_refresh_updater_temp', v_dest_schema_name, v_dest_table_name, v_cols, v_cols); 
 
 PERFORM gdb(p_debug,v_remote_sql);
-PERFORM dblink_open(v_dblink_name, 'mimeo_cursor', v_remote_sql);
+
+-- Ensure name is consistent in case it would get truncated by maximium object name length
+v_cursor_name := @extschema@.check_name_length('mimeo_cursor_' || v_src_table_name, p_convert_standard := true);
+
+PERFORM dblink_open(v_dblink_name, v_cursor_name, v_remote_sql);
 IF v_jobmon THEN
     v_step_id := add_step(v_job_id, 'Inserting new/updated records into local table');
 END IF;
@@ -298,7 +303,7 @@ LOOP
         , v_cols
         , v_cols
         , v_dblink_name
-        , 'mimeo_cursor'
+        , v_cursor_name
         , '50000'
         , v_cols_n_types);
     EXECUTE v_fetch_sql;
@@ -318,7 +323,7 @@ LOOP
         PERFORM update_step(v_step_id, 'PENDING', 'Fetching rows in batches: '||v_total||' done so far. Last fetched: '||v_last_fetched);
     END IF;
 END LOOP;
-PERFORM dblink_close(v_dblink_name, 'mimeo_cursor');
+PERFORM dblink_close(v_dblink_name, v_cursor_name);
 IF v_jobmon THEN
     PERFORM update_step(v_step_id, 'OK','Rows fetched: '||v_total);
 END IF;

@@ -12,6 +12,7 @@ v_cols_n_types          text;
 v_cols                  text;
 v_condition             text;
 v_control               text;
+v_cursor_name           text;
 v_dblink                int;
 v_dblink_name           text;
 v_dblink_schema         text;
@@ -227,6 +228,9 @@ IF v_jobmon THEN
     PERFORM update_step(v_step_id, 'OK','Result was '||v_exec_status);
 END IF;
 
+-- Ensure name is consistent in case it would get truncated by maximium object name length
+v_cursor_name := @extschema@.check_name_length('mimeo_cursor_' || v_src_table_name, p_convert_standard := true);
+
 IF p_repull THEN
     IF v_jobmon THEN
         PERFORM update_step(v_step_id, 'OK','Request to repull ALL data from source. This could take a while...');
@@ -250,7 +254,7 @@ ELSE
     EXECUTE format('CREATE TEMP TABLE refresh_dml_queue (%s, PRIMARY KEY (%s))', v_pk_name_type_csv, v_pk_name_csv);
     -- Copy queue locally for use in removing updated/deleted rows
     v_remote_q_sql := format('SELECT DISTINCT %s FROM %I.%I WHERE processed = true', v_pk_name_csv, v_q_schema_name, v_q_table_name);
-    PERFORM dblink_open(v_dblink_name, 'mimeo_cursor', v_remote_q_sql);
+    PERFORM dblink_open(v_dblink_name, v_cursor_name, v_remote_q_sql);
     IF v_jobmon THEN
         v_step_id := add_step(v_job_id, 'Creating local queue temp table');
     END IF;
@@ -260,7 +264,7 @@ ELSE
                 , v_pk_name_csv
                 , v_pk_name_csv
                 , v_dblink_name
-                , 'mimeo_cursor'
+                , v_cursor_name
                 , '50000'
                 , v_pk_name_type_csv);
         EXECUTE v_fetch_sql;
@@ -272,7 +276,7 @@ ELSE
             PERFORM update_step(v_step_id, 'PENDING', 'Fetching rows in batches: '||v_total||' done so far.');
         END IF;
     END LOOP;
-    PERFORM dblink_close(v_dblink_name, 'mimeo_cursor');
+    PERFORM dblink_close(v_dblink_name, v_cursor_name);
     EXECUTE format('CREATE INDEX ON refresh_dml_queue (%s)', v_pk_name_csv);
     ANALYZE refresh_dml_queue;
     IF v_jobmon THEN
@@ -306,13 +310,13 @@ EXECUTE format('CREATE TEMP TABLE refresh_dml_full (%s)', v_cols_n_types);
 v_rowcount := 0;
 v_total := 0;
 v_local_insert_sql := format('INSERT INTO %I.%I (%s) SELECT %s FROM refresh_dml_full', v_dest_schema_name, v_dest_table_name, v_cols, v_cols);
-PERFORM dblink_open(v_dblink_name, 'mimeo_cursor', v_remote_f_sql);
+PERFORM dblink_open(v_dblink_name, v_cursor_name, v_remote_f_sql);
 LOOP
     v_fetch_sql := format('INSERT INTO refresh_dml_full (%s) SELECT %s FROM dblink_fetch(%L, %L, %s) AS (%s)'
             , v_cols
             , v_cols
             , v_dblink_name
-            , 'mimeo_cursor'
+            , v_cursor_name 
             , '50000'
             , v_cols_n_types);
     EXECUTE v_fetch_sql;
@@ -332,7 +336,7 @@ LOOP
     IF v_rowcount = 0 THEN
         -- Above rowcount variable is saved after temp table inserts. 
         -- So when temp table has the whole queue, this block of code should be reached
-        PERFORM dblink_close(v_dblink_name, 'mimeo_cursor');
+        PERFORM dblink_close(v_dblink_name, v_cursor_name);
         IF v_insert_on_fetch = false THEN
             PERFORM gdb(p_debug,'Inserting into destination table in single batch (insert_on_fetch set to false)');
             IF v_jobmon THEN
@@ -431,5 +435,4 @@ EXCEPTION
 
 END
 $$;
-
 

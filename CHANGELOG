@@ -1,3 +1,7 @@
+1.5.1
+-- Change cursor name to include table name so it's easier to identify which table is getting data pulled on the source just by looking at the query being run. Since a cursor name cannot have non-standard characters, it may not match your table name exactly if it has any.
+
+
 1.5.0
 -- Fixed incremental time refresh to work properly when the source table is initially empty and later starts getting data. Previously the lower boundary was always being reset to the value of CURRENT_TIMESTAMP if the destination remained empty after setup. This could cause data that is later added on the source to then be missed if it happens to be outside the current window. Now the lower boundary remains the timestamp at the time of replication setup (as the documentation states) until newer data is added to the source. Then replication begins to work as normal and obeys the boundary configuration as well.
     -- NOTE: Recommended to do a data validation check on any incremental replication tables that started out empty when they were created.

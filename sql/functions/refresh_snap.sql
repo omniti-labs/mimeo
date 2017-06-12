@@ -12,6 +12,7 @@ v_cols_n_types      text[];
 v_cols              text;
 v_condition         text;
 v_create_sql        text;
+v_cursor_name       text;
 v_dblink            int;
 v_dblink_name       text;
 v_dblink_schema     text;
@@ -307,7 +308,10 @@ END IF;
 IF v_jobmon THEN
     v_step_id := add_step(v_job_id,'Inserting records into local table');
 END IF;
-PERFORM dblink_open(v_dblink_name, 'mimeo_cursor', v_remote_sql);
+
+-- Ensure name is consistent in case it would get truncated by maximium object name length
+v_cursor_name := @extschema@.check_name_length('mimeo_cursor_' || v_src_table_name, p_convert_standard := true);
+PERFORM dblink_open(v_dblink_name, v_cursor_name, v_remote_sql);
 
 v_rowcount := 0;
 LOOP
@@ -317,7 +321,7 @@ LOOP
         , v_cols
         , v_cols
         , v_dblink_name
-        , 'mimeo_cursor'
+        , v_cursor_name
         , '50000'
         , array_to_string(v_cols_n_types, ','));
 
@@ -331,7 +335,7 @@ LOOP
         PERFORM update_step(v_step_id, 'PENDING', 'Fetching rows in batches: '||v_total||' done so far.');
     END IF;
 END LOOP;
-PERFORM dblink_close(v_dblink_name, 'mimeo_cursor');
+PERFORM dblink_close(v_dblink_name, v_cursor_name);
 
 IF v_jobmon THEN
     PERFORM update_step(v_step_id, 'OK','Inserted '||v_total||' rows');
@@ -457,5 +461,4 @@ EXCEPTION
         RAISE EXCEPTION '%', SQLERRM;
 END
 $$;
-
 
